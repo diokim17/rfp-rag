@@ -25,14 +25,14 @@
 
 ## 팀원 및 역할
 
-| 이름 | GitHub | 담당 역할 | 주요 업무 | 협업일지 |
+| 순서 | 담당 역할 | 이름 | GitHub | 협업일지 |
 | --- | --- | --- | --- | --- |
-| 김도영 | [@diokim17](https://github.com/diokim17) | 작성 예정 | 작성 예정 | 링크 추가 예정 |
-| 나상훈 | [@Na-SangHun](https://github.com/Na-SangHun) | 작성 예정 | 작성 예정 | 링크 추가 예정 |
-| 김연주 | [@AIengineeung](https://github.com/AIengineeung) | 작성 예정 | 작성 예정 | 링크 추가 예정 |
-| 유찬혁 | [@jins091125-gif](https://github.com/jins091125-gif) | 작성 예정 | 작성 예정 | 링크 추가 예정 |
-| 박단비 | [@DBDBDEEP02](https://github.com/DBDBDEEP02) | 작성 예정 | 작성 예정 | 링크 추가 예정 |
-| 김시현 | [@dypower1559-cell](https://github.com/dypower1559-cell) | 작성 예정 | 작성 예정 | 링크 추가 예정 |
+| 1 | PM / 통합 | 김도영 | [@diokim17](https://github.com/diokim17) | 링크 추가 예정 |
+| 2 | 파싱 / 전처리 | 나상훈<br>김연주 | [@Na-SangHun](https://github.com/Na-SangHun)<br>[@AIengineeung](https://github.com/AIengineeung) | 나상훈: 링크 추가 예정<br>김연주: 링크 추가 예정 |
+| 3 | 청킹 / 임베딩 | 유찬혁 | [@jins091125-gif](https://github.com/jins091125-gif) | 링크 추가 예정 |
+| 4 | 검색 고도화 | 김연주 | [@AIengineeung](https://github.com/AIengineeung) | 링크 추가 예정 |
+| 5 | 생성 / LLM | 박단비 | [@DBDBDEEP02](https://github.com/DBDBDEEP02) | 링크 추가 예정 |
+| 6 | 평가 | 김시현 | [@dypower1559-cell](https://github.com/dypower1559-cell) | 링크 추가 예정 |
 
 <!-- 협업일지 준비 후 각 행의 '링크 추가 예정'을 [협업일지](실제 URL)로 교체합니다. -->
 
