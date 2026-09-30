@@ -119,7 +119,7 @@ rfp-rag/
 | GitHub Repository | [rfp-rag](https://github.com/diokim17/rfp-rag) |
 | 최종 보고서 PDF | 파일 및 다운로드 링크 추가 예정 |
 | 발표 자료 | 링크 추가 예정 |
-| 개인별 협업일지 | 팀원 및 역할 표에 링크 |
+| 개인별 협업일지 | [팀원 및 역할 바로가기](#팀원-및-역할) |
 
 ## 데이터 및 보안
 
