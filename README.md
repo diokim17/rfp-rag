@@ -109,26 +109,27 @@
 
 ## 프로젝트 구조
 
-아래 구조로 개발할 예정입니다. 역할별로 하나의 Python 파일을 담당하고, `run.py`에서 전체 흐름을 연결합니다.
+역할별로 하나의 Python 파일을 담당하고, `run.py`에서 전체 흐름을 연결합니다. 아래는 개발 예정 파일과 폴더를 포함한 구성입니다.
 
 ```text
 rfp-rag/
-├── README.md
-├── .gitignore
-├── .env               # API 키 등 환경 변수 (Git 제외)
-├── .env.example       # 환경 변수 설정 예시
-├── requirements.txt   # 팀 공통 패키지 목록
-├── run.py             # 김도영: 전체 실행·연결
-├── parsing.py         # 나상훈: 문서 추출·전처리
-├── embedding.py       # 유찬혁: 청킹·임베딩·벡터 DB 구축
-├── retrieval.py       # 김연주: 검색·리랭킹
-├── generation.py      # 박단비: 프롬프트·LLM 호출
-├── evaluation.py      # 김시현: 평가 데이터·성능 평가
-├── data/              # 데이터 파일은 Git 제외
-│   └── raw/           # 원본 데이터
-│       └── .gitkeep   # 폴더 구조 유지용 (Git 포함)
-├── indexes/           # 검색 인덱스 (Git 제외 예정)
-└── results/           # 평가 결과
+├── data/                        # 데이터 저장 (데이터 파일은 Git 제외)
+│   ├── raw/                     # 원본 RFP 문서(HWP·PDF) 및 메타데이터
+│   │   └── .gitkeep             # 빈 폴더 구조 유지용
+│   └── processed/               # 텍스트 추출·정제 및 메타데이터 결합 결과
+├── indexes/                     # 청킹·임베딩으로 생성한 검색 인덱스 (Git 제외 예정)
+├── results/                     # 모델별 평가 결과 및 A/B 비교 실험 기록
+├── run.py                       # 김도영: 전체 파이프라인 연결 및 질의응답 실행
+├── parsing.py                   # 나상훈: HWP·PDF 추출, 정제, 메타데이터 결합
+├── embedding.py                 # 유찬혁: 청킹, 임베딩 생성, 벡터 DB 구축
+├── retrieval.py                 # 김연주: 검색, 메타데이터 필터링, 리랭킹
+├── generation.py                # 박단비: 프롬프트 구성, OpenAI·GCP 모델 호출
+├── evaluation.py                # 김시현: 평가 데이터 구성 및 성능 평가
+├── .env                         # API 키 등 환경 변수 (Git 제외)
+├── .env.example                 # 실제 키가 없는 환경 변수 설정 예시
+├── .gitignore                   # 데이터·환경 변수 등 Git 제외 규칙
+├── requirements.txt             # 팀 공통 패키지 및 버전 목록
+└── README.md                    # 프로젝트 소개 및 실행 안내
 ```
 
 각 파일의 공통 입력·출력 형식을 먼저 정한 뒤, 해당 형식을 유지하면서 내부 구현을 실험합니다. 파일 간 연결과 통합은 `run.py`에서 관리합니다.
