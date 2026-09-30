@@ -124,7 +124,7 @@ rfp-rag/
 ├── retrieval.py       # 김연주: 검색·리랭킹
 ├── generation.py      # 박단비: 프롬프트·LLM 호출
 ├── evaluation.py      # 김시현: 평가 데이터·성능 평가
-├── data/              # 원본·전처리 데이터 (Git 제외 예정)
+├── data/              # 원본·전처리 데이터 (Git 제외)
 ├── indexes/           # 검색 인덱스 (Git 제외 예정)
 └── results/           # 평가 결과
 ```
