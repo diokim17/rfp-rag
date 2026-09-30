@@ -27,20 +27,16 @@
 
 | 담당 역할 | 이름 | GitHub | 협업일지 |
 | --- | --- | --- | --- |
-| PM / 통합 | 김도영 | [@diokim17](https://github.com/diokim17) | 링크 추가 예정 |
-| 파싱 / 전처리 | 나상훈 | [@Na-SangHun](https://github.com/Na-SangHun) | 링크 추가 예정 |
-| 청킹 / 임베딩 | 유찬혁 | [@jins091125-gif](https://github.com/jins091125-gif) | 링크 추가 예정 |
-| 검색 고도화 | 김연주 | [@AIengineeung](https://github.com/AIengineeung) | 링크 추가 예정 |
-| 생성 / LLM | 박단비 | [@DBDBDEEP02](https://github.com/DBDBDEEP02) | 링크 추가 예정 |
-| 평가 | 김시현 | [@dypower1559-cell](https://github.com/dypower1559-cell) | 링크 추가 예정 |
-
-<!-- 협업일지 준비 후 각 행의 '링크 추가 예정'을 [협업일지](실제 URL)로 교체합니다. -->
-
-## 협업
+| PM / 통합 | 김도영 | [@diokim17](https://github.com/diokim17) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.ka3ijil7t5i2) |
+| 파싱 / 전처리 | 나상훈 | [@Na-SangHun](https://github.com/Na-SangHun) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.4bl1rvpraiza#heading=h.qv2phv602y3p) |
+| 청킹 / 임베딩 | 유찬혁 | [@jins091125-gif](https://github.com/jins091125-gif) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.g14lnaobk5xt#heading=h.xrtl9g9gkphg) |
+| 검색 고도화 | 김연주 | [@AIengineeung](https://github.com/AIengineeung) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.sj1bxo9tvmqa#heading=h.qo3mm8oq6yi) |
+| 생성 / LLM | 박단비 | [@DBDBDEEP02](https://github.com/DBDBDEEP02) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.u2cla8e84xyr#heading=h.tg7gi3kx1lvh) |
+| 평가 | 김시현 | [@dypower1559-cell](https://github.com/dypower1559-cell) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.lijv4uvh1zh6#heading=h.qi25fkhl73oj) |
 
 ### 데일리 스크럼
 
-[데일리 스크럼 바로가기](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.ka3ijil7t5i2)
+[데일리 스크럼 일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.ka3ijil7t5i2)
 
 매일 10~15분 동안 어제 한 일, 오늘 할 일, 진행을 막는 이슈(Blocker)를 공유합니다.
 
@@ -58,56 +54,9 @@
 | LLM | 미정 (GCP에서 직접 실행) | 미정 (OpenAI API 사용) |
 | 주요 라이브러리 | 프로젝트 종료 후 작성 | 프로젝트 종료 후 작성 |
 
-## 프로젝트 진행 과정
+## 프로젝트
 
-### 1. 데이터 확인 및 불러오기
-
-- HWP·PDF 문서 처리 방법: 작성 예정
-- 메타데이터 탐색 및 활용 방식: 작성 예정
-- 전처리 과정 및 주요 이슈: 작성 예정
-
-### 2. 문서 청킹
-
-- 청킹 전략 및 선정 이유: 작성 예정
-- 청크 크기 및 중첩 크기: 작성 예정
-- 비교 실험 결과: 작성 예정
-
-### 3. 임베딩 생성
-
-- 임베딩 모델 및 선정 이유: 작성 예정
-- Vector DB 및 구축 방법: 작성 예정
-
-### 4. Retrieval
-
-- 베이스라인 검색 방식: 작성 예정
-- 메타데이터 필터링 방식: 작성 예정
-- 검색 고도화 및 비교 실험: 작성 예정
-
-### 5. Generation
-
-- 생성 모델 및 선정 이유: 작성 예정
-- 프롬프트 설계 및 생성 옵션: 작성 예정
-- 대화 맥락 유지 방식: 작성 예정
-
-### 6. 성능 평가
-
-- 평가 데이터 및 질문 구성: 작성 예정
-- 평가 지표 및 선정 이유: 작성 예정
-- 답변 품질·응답 속도·비용 비교: 작성 예정
-
-| 실험 | 주요 설정 | 평가 지표 및 결과 | 응답 시간 | 비용 |
-| --- | --- | --- | --- | --- |
-| 베이스라인 | 작성 예정 | 작성 예정 | 작성 예정 | 작성 예정 |
-| 개선 모델 | 작성 예정 | 작성 예정 | 작성 예정 | 작성 예정 |
-
-### 7. 결론 및 개선 사항
-
-- 주요 성과: 작성 예정
-- 핵심 의사결정과 근거: 작성 예정
-- 한계 및 개선 방향: 작성 예정
-- 회고 및 멘토링 피드백: 작성 예정
-
-## 프로젝트 구조
+### 프로젝트 구조
 
 역할별로 하나의 Python 파일을 담당하고, `run.py`에서 전체 흐름을 연결합니다. 아래는 개발 예정 파일과 폴더를 포함한 구성입니다.
 
@@ -137,6 +86,21 @@ rfp-rag/
 
 시나리오 A/B의 LLM 호출은 `generation.py`에서 선택하고, 청킹·임베딩 비교 실험은 `embedding.py`에서 진행합니다. 청킹 방식이나 임베딩 모델을 변경하면 인덱스를 다시 생성하며, 문서와 검색 질문에는 동일한 임베딩 모델을 사용합니다.
 
+### 성능 평가
+
+| 실험 | 주요 설정 | 평가 지표 및 결과 | 응답 시간 | 비용 |
+| --- | --- | --- | --- | --- |
+| 베이스라인 | 작성 예정 | 작성 예정 | 작성 예정 | 작성 예정 |
+| 개선 모델 | 작성 예정 | 작성 예정 | 작성 예정 | 작성 예정 |
+
+### 결론 및 개선 사항
+
+- 주요 성과: 작성 예정
+- 핵심 의사결정과 근거: 작성 예정
+- 한계 및 개선 방향: 작성 예정
+- 회고 및 멘토링 피드백: 작성 예정
+
+
 ## 실행 방법
 
 환경 구성이 완료되면 아래 항목을 작성할 예정입니다.
@@ -155,7 +119,7 @@ rfp-rag/
 | GitHub Repository | [rfp-rag](https://github.com/diokim17/rfp-rag) |
 | 최종 보고서 PDF | 파일 및 다운로드 링크 추가 예정 |
 | 발표 자료 | 링크 추가 예정 |
-| 개인별 협업일지 | 팀원 및 역할 표에 링크 추가 예정 |
+| 개인별 협업일지 | 팀원 및 역할 표에 링크 |
 
 ## 데이터 및 보안
 
