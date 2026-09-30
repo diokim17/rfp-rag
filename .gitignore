@@ -3,5 +3,8 @@
 .env.*
 !.env.example
 
-# Project data
-/data/
+# Project data (keep only the raw directory placeholder)
+/data/*
+!/data/raw/
+/data/raw/*
+!/data/raw/.gitkeep
