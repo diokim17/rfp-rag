@@ -58,7 +58,7 @@
 
 ### 프로젝트 구조
 
-역할별로 하나의 Python 파일을 담당하고, `run.py`에서 전체 흐름을 연결합니다. 아래는 현재 구성입니다. 테스트 코드는 `tests/test_pipeline.py`에 있습니다.
+역할별 핵심 로직은 각 Python 파일에서 담당하고, `run.py`에서 전체 흐름을 연결합니다. 실험 번호·평가 보고서·Langfuse 추적은 공통 모듈로 관리합니다. 아래는 현재 파일 구성과 실행 시 사용하는 데이터·산출물 경로입니다.
 
 ```text
 rfp-rag/
@@ -70,17 +70,32 @@ rfp-rag/
 │   └── processed/               # 텍스트 추출·정제 및 메타데이터 결합 결과
 │       └── .gitkeep             # 빈 폴더 구조 유지용
 ├── indexes/                     # 청킹·임베딩으로 생성한 검색 인덱스 (Git 제외)
-├── results/                     # 모델별 평가 결과 및 A/B 비교 실험 기록
+│   └── .gitkeep                 # 빈 폴더 구조 유지용
+├── results/                     # 실행 결과 JSON 등 산출물 (Git 제외)
+│   ├── .gitkeep                 # 빈 폴더 구조 유지용
+│   └── reports/                 # 평가 시 생성되는 팀 공유용 요약 (MD·CSV만 Git 포함 가능)
+├── docs/
+│   ├── TEAM_DEVELOPMENT_GUIDE.md # 역할별 개발·실험 및 공통 입출력 안내
+│   └── LANGFUSE_GUIDE.md         # 개인 Langfuse 설정 및 평가 요약 공유 안내
+├── tests/
+│   ├── test_pipeline.py         # 파이프라인 테스트
+│   ├── test_experiment_ids.py   # 실험 번호 생성 테스트
+│   └── test_observability.py    # 추적·토큰 기록 및 보고서 테스트
 ├── run.py                       # 김도영: 전체 파이프라인 연결 및 질의응답 실행
 ├── parsing.py                   # 나상훈: HWP·PDF 추출, 정제, 메타데이터 결합
 ├── embedding.py                 # 유찬혁: 청킹, 임베딩 생성, 벡터 DB 구축
 ├── retrieval.py                 # 김연주: 검색, 메타데이터 필터링, 리랭킹
 ├── generation.py                # 박단비: 프롬프트 구성, OpenAI·GCP 모델 호출
 ├── evaluation.py                # 김시현: 평가 데이터 구성 및 성능 평가
+├── experiment_ids.py            # 담당자별 실험 번호 자동 생성 및 SQLite 저장
+├── experiment_reports.py        # 원문을 제외한 팀 공유용 평가 요약 생성
+├── observability.py             # Langfuse 추적 및 모델별 토큰 사용량 기록
+├── .experiment-state/           # 실행 시 생성되는 실험 번호 저장소 (Git 제외)
 ├── .env                         # API 키 등 환경 변수 (Git 제외)
 ├── .env.example                 # 실제 키가 없는 환경 변수 설정 예시
 ├── .gitignore                   # 데이터·환경 변수 등 Git 제외 규칙
 ├── requirements.txt             # 팀 공통 패키지 및 버전 목록
+├── requirements-server.lock.txt # 서버 환경의 고정 패키지 버전 목록
 └── README.md                    # 프로젝트 소개 및 실행 안내
 ```
 
