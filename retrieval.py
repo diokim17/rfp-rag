@@ -3,8 +3,10 @@
 import unicodedata
 
 from embedding import embed_texts
+from observability import observed, record_retrieval
 
 
+@observed("retrieve")
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치."""
     if not question.strip() or top_k < 1:
@@ -15,6 +17,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None):
         for key, value in (filters or {}).items()
     )}
     if not eligible:
+        record_retrieval([])
         return []
     vector = embed_texts([question], client, config["embedding_model"])
     if vector.shape[1] != index.d:
@@ -27,4 +30,5 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None):
             hits.append({**chunks[int(i)], "score": float(score)})
             if len(hits) == top_k:
                 break
+    record_retrieval(hits)
     return hits

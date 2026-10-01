@@ -6,8 +6,10 @@ import faiss
 import numpy as np
 
 from parsing import read_json, write_json
+from observability import observed, model_call
 
 
+@observed("chunking")
 def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
     """문자 수 기준 기본 청킹. 반환: [{chunk_id, doc_id, text, metadata}]."""
     if not 0 <= chunk_overlap < chunk_size:
@@ -30,7 +32,9 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
 
 def embed_texts(texts, client, model):
     """문서·질문에 공통으로 사용하는 정규화된 float32 벡터."""
-    response = client.embeddings.create(model=model, input=texts)
+    response = model_call("embedding", model,
+                         lambda: client.embeddings.create(model=model, input=texts),
+                         batch_size=len(texts))
     vectors = np.asarray([item.embedding for item in sorted(response.data, key=lambda x: x.index)], dtype="float32")
     if len(vectors) != len(texts) or not np.isfinite(vectors).all():
         raise ValueError("임베딩 응답이 입력과 맞지 않습니다.")
@@ -38,6 +42,7 @@ def embed_texts(texts, client, model):
     return vectors
 
 
+@observed("build-index")
 def build_index(documents, client, index_dir="indexes", model="text-embedding-3-small",
                 chunk_size=1000, chunk_overlap=150):
     chunks = chunk_documents(documents, chunk_size, chunk_overlap)

@@ -1,10 +1,13 @@
 """김도영: 전처리 → 인덱스 → 검색 → 생성 → 평가 연결."""
 
 import argparse
+import hashlib
+import json
 from datetime import datetime, timezone
 import os
 from pathlib import Path
 import sys
+import sqlite3
 
 from parsing import parse_documents, read_json, write_json
 
@@ -20,6 +23,8 @@ def main():
     parser = argparse.ArgumentParser(description="시나리오 B: 최소 RFP RAG 파이프라인")
     parser.add_argument("command", choices=["parse", "build", "ask", "all", "evaluate"])
     parser.add_argument("--question", help="ask/all 실행 질문")
+    parser.add_argument("--owner", help="담당자 영문 이니셜 (기본: EXPERIMENT_OWNER)")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
     parser.add_argument("--limit", type=int, help="전처리할 CSV 앞쪽 N행 (생략: 전체)")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--chunk-size", type=int, default=1000)
@@ -59,21 +64,56 @@ def main():
             parser.error("--filter는 '발주 기관=기관명' 형태로 입력하세요.")
         filters[key] = item
 
+    from dotenv import load_dotenv
+    from observability import Trace, code_version
+    from experiment_reports import file_hash
+    from experiment_ids import owner_initials, next_experiment_id
+
+    load_dotenv(ROOT / ".env", override=False)
+    try:
+        owner = owner_initials(args.owner or os.getenv("EXPERIMENT_OWNER", ""))
+        experiment_id = next_experiment_id(owner, ROOT / ".experiment-state")
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        parser.error(str(exc))
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    experiment = {
+        "experiment_id": experiment_id,
+        "owner": owner,
+        **code_version(ROOT),
+        "evaluation_sha256": file_hash(args.eval_file) if args.eval_file else None,
+        "documents_sha256": file_hash(args.processed_dir / "documents.json"),
+        "index_sha256": file_hash(args.index_dir / "index.faiss"),
+        "chunks_sha256": file_hash(args.index_dir / "chunks.json"),
+        "index_config_sha256": file_hash(args.index_dir / "config.json"),
+        "filters_sha256": hashlib.sha256(
+            json.dumps(filters, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+    }
+    trace = Trace.from_env({**experiment, "command": args.command, "top_k": args.top_k})
+    print(f"실험 ID: {experiment_id} (담당자: {owner})")
+    print("Langfuse: " + ("기록 활성화" if trace.client else "비활성화 (로컬 결과 저장)"))
+    with trace.run(f"{experiment_id}-{args.command}"):
+        run_pipeline(args, parser, filters, experiment, trace, timestamp)
+
+
+def run_pipeline(args, parser, filters, experiment, trace, timestamp):
     if args.command in {"parse", "all"}:
         documents = parse_documents(args.raw_dir, args.processed_dir, args.limit)
         errors = read_json(args.processed_dir / "parsing_errors.json")
         print(f"전처리: 성공 {len(documents)}건, 실패 {len(errors)}건")
+        from experiment_reports import file_hash
+        experiment["documents_sha256"] = file_hash(args.processed_dir / "documents.json")
+        with trace.span("parsing-summary", output={"documents": len(documents), "errors": len(errors)},
+                        metadata={"documents_sha256": experiment["documents_sha256"]}):
+            pass
         if args.command == "parse":
             return
 
     # 사용자가 실행할 때만 .env를 로드하며 키를 출력하거나 결과에 저장하지 않습니다.
-    from dotenv import load_dotenv
     from openai import OpenAI, RateLimitError
     from embedding import build_index, load_index
     from retrieval import retrieve
     from generation import generate_answer
 
-    load_dotenv(ROOT / ".env", override=False)
     if not os.getenv("OPENAI_API_KEY"):
         parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
     client = OpenAI(timeout=60.0, max_retries=2)
@@ -87,12 +127,28 @@ def main():
                              os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
                              args.chunk_size, args.chunk_overlap)
         print(f"인덱스 생성: {config['chunk_count']}개 청크")
+        from experiment_reports import file_hash
+        for key, filename in (("index_sha256", "index.faiss"), ("chunks_sha256", "chunks.json"),
+                              ("index_config_sha256", "config.json")):
+            experiment[key] = file_hash(args.index_dir / filename)
+        with trace.span("build-settings", metadata={**config, **experiment}):
+            pass
         if args.command == "build":
             return
 
     index, chunks, config = load_index(args.index_dir)
+    with trace.span("index-settings", metadata={**config, "generation_model": generation_model,
+                                               "top_k": args.top_k}):
+        pass
 
+    from observability import observed
+
+    @observed("question-answer")
     def answer(question, case_filters=None):
+        with trace.span("question-settings", metadata={
+                "question_sha256": hashlib.sha256(question.encode()).hexdigest(),
+                "filter_keys": sorted({**filters, **(case_filters or {})})}):
+            pass
         hits = retrieve(question, client, index, chunks, config, args.top_k,
                         {**filters, **(case_filters or {})})
         try:
@@ -122,8 +178,15 @@ def main():
                   f"(doc_id={source['doc_id']}, score={source['score']:.3f})")
     result["settings"] = {**config, "generation_model": generation_model,
                           "top_k": args.top_k, "filters": filters}
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    output = args.results_dir / f"{args.command}_{timestamp}.json"
+    result["experiment"] = {**experiment, "trace_id": trace.trace_id}
+    result["token_usage"] = trace.usage
+    if args.command == "evaluate":
+        from experiment_reports import save_report
+        trace.scores(result["summary"])
+        report = save_report(args.reports_dir, timestamp, result["summary"],
+                             result["settings"], result["experiment"], trace.usage)
+        print(f"팀 공유용 요약: {report}")
+    output = args.results_dir / f"{args.command}_{experiment['experiment_id']}_{timestamp}.json"
     write_json(output, result)
     print(f"결과 저장: {output}")
 
