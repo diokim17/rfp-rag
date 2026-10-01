@@ -119,9 +119,9 @@ CSV는 UTF-8(또는 UTF-8 BOM), 원본 파일은 `data/raw/files/`에 둡니다.
 
 ### VS Code 실행 버튼으로 실행
 
-프로젝트의 `.venv` Python 인터프리터를 선택하고 `run.py`를 연 뒤 오른쪽 위 **Run Python File(▶)** 버튼을 누르세요. 현재 기본 실행은 `ask`이며 저장된 인덱스로 검색 → 답변 생성을 실행합니다. 처음 실행하여 인덱스가 없다면 `DEFAULT_COMMAND = "all"`로 설정하여 문서 3개로 전체 과정을 실행하세요.
+프로젝트의 `.venv` Python 인터프리터를 선택하고 `run.py`를 연 뒤 오른쪽 위 **Run Python File(▶)** 버튼을 누르세요. 기본 설정인 `DEFAULT_COMMAND = "auto"`는 `indexes/`의 `index.faiss`, `chunks.json`, `config.json`이 모두 있으면 `ask`로 기존 인덱스를 사용하고, 하나라도 없으면 `all`로 문서 3개를 처리하여 인덱스를 생성하고 답변합니다.
 
-질문과 문서 수는 `run.py` 상단의 `DEFAULT_QUESTION`, `DEFAULT_LIMIT`에서 변경합니다. `DEFAULT_LIMIT`은 `parse`/`all`에서 적용하며 `None`이면 전체 문서를 처리합니다. `DEFAULT_COMMAND = "all"`은 실행할 때마다 인덱스를 다시 생성하며 OpenAI API 비용이 발생합니다. 인덱스 생성 이후에는 `DEFAULT_COMMAND = "ask"`로 변경하세요.
+질문과 문서 수는 `run.py` 상단의 `DEFAULT_QUESTION`, `DEFAULT_LIMIT`에서 변경합니다. `DEFAULT_LIMIT`은 `parse`/`all`에서 적용하며 `None`이면 전체 문서를 처리합니다. 인덱스를 강제로 재생성하려면 `DEFAULT_COMMAND = "all"`로 설정하세요. `all`은 실행할 때마다 인덱스를 다시 생성하며 OpenAI API 비용이 발생합니다. 생성 이후에는 `"auto"`로 되돌리면 기존 인덱스를 재사용합니다.
 
 답변 생성 중 429 오류에 `RPM: Limit 0`이 표시되면 해당 프로젝트의 모델 요청 한도가 0인 상태입니다. OpenAI 프로젝트의 Limits를 확인하거나, 사용 가능한 모델명을 `.env`의 `OPENAI_GENERATION_MODEL`에 설정하세요. 답변 모델만 변경할 때는 인덱스를 다시 만들 필요가 없습니다.
 
