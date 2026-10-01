@@ -11,7 +11,7 @@ from parsing import parse_documents, read_json, write_json
 ROOT = Path(__file__).resolve().parent
 
 # VS Code에서 인자 없이 실행할 때 사용할 설정입니다.
-DEFAULT_COMMAND = "ask"  # 생성된 인덱스 재사용. 최초 생성·재생성 시 "all"
+DEFAULT_COMMAND = "auto"  # 인덱스가 있으면 ask, 없으면 all. 재생성하려면 "all"
 DEFAULT_LIMIT = 3
 DEFAULT_QUESTION = "한영대학교 교육환경 구축 사업의 주요 요구사항은 무엇인가요?"
 
@@ -32,11 +32,15 @@ def main():
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
     argv = sys.argv[1:]
     if not argv:
-        argv = [DEFAULT_COMMAND, "--question", DEFAULT_QUESTION]
+        command = DEFAULT_COMMAND
+        if command == "auto":
+            index_files = ("index.faiss", "chunks.json", "config.json")
+            command = "ask" if all((ROOT / "indexes" / name).is_file() for name in index_files) else "all"
+        argv = [command, "--question", DEFAULT_QUESTION]
         if DEFAULT_LIMIT is not None:
             argv += ["--limit", str(DEFAULT_LIMIT)]
-        print(f"기본 실행: {DEFAULT_COMMAND}")
-        if DEFAULT_COMMAND in {"parse", "all"}:
+        print(f"기본 실행: {command}")
+        if command in {"parse", "all"}:
             print(f"처리할 문서 수: {DEFAULT_LIMIT or '전체'}")
         print(f"질문: {DEFAULT_QUESTION}")
     args = parser.parse_args(argv)
