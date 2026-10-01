@@ -1,0 +1,9 @@
+openai==2.26.0
+faiss-cpu==1.13.2
+numpy==2.4.3
+pyhwp==0.1b15
+# pyhwp 런타임 및 XSLT 백엔드
+six==1.17.0
+lxml==6.1.0
+pypdf==6.9.1
+python-dotenv==1.2.2

@@ -11,3 +11,22 @@
 !/data/processed/
 /data/processed/*
 !/data/processed/.gitkeep
+
+# Generated artifacts and local Python environment
+/indexes/*
+!/indexes/.gitkeep
+
+# 실행 결과 JSON 및 원문이 포함된 산출물은 제외
+/results/*
+!/results/.gitkeep
+# 원문·민감정보를 제거한 평가 요약만 reports/에 선별하여 공유
+!/results/reports/
+/results/reports/*
+!/results/reports/*.md
+!/results/reports/*.csv
+
+# Local Python environment
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store

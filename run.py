@@ -1,0 +1,128 @@
+"""김도영: 전처리 → 인덱스 → 검색 → 생성 → 평가 연결."""
+
+import argparse
+from datetime import datetime, timezone
+import os
+from pathlib import Path
+import sys
+
+from parsing import parse_documents, read_json, write_json
+
+ROOT = Path(__file__).resolve().parent
+
+# VS Code에서 인자 없이 실행할 때 사용할 설정입니다.
+DEFAULT_COMMAND = "ask"  # 생성된 인덱스 재사용. 최초 생성·재생성 시 "all"
+DEFAULT_LIMIT = 3
+DEFAULT_QUESTION = "한영대학교 교육환경 구축 사업의 주요 요구사항은 무엇인가요?"
+
+
+def main():
+    parser = argparse.ArgumentParser(description="시나리오 B: 최소 RFP RAG 파이프라인")
+    parser.add_argument("command", choices=["parse", "build", "ask", "all", "evaluate"])
+    parser.add_argument("--question", help="ask/all 실행 질문")
+    parser.add_argument("--limit", type=int, help="전처리할 CSV 앞쪽 N행 (생략: 전체)")
+    parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--chunk-size", type=int, default=1000)
+    parser.add_argument("--chunk-overlap", type=int, default=150)
+    parser.add_argument("--filter", action="append", default=[], metavar="KEY=VALUE")
+    parser.add_argument("--eval-file", type=Path, help="수동 작성한 평가 JSON 파일")
+    parser.add_argument("--raw-dir", type=Path, default=ROOT / "data/raw")
+    parser.add_argument("--processed-dir", type=Path, default=ROOT / "data/processed")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
+    argv = sys.argv[1:]
+    if not argv:
+        argv = [DEFAULT_COMMAND, "--question", DEFAULT_QUESTION]
+        if DEFAULT_LIMIT is not None:
+            argv += ["--limit", str(DEFAULT_LIMIT)]
+        print(f"기본 실행: {DEFAULT_COMMAND}")
+        if DEFAULT_COMMAND in {"parse", "all"}:
+            print(f"처리할 문서 수: {DEFAULT_LIMIT or '전체'}")
+        print(f"질문: {DEFAULT_QUESTION}")
+    args = parser.parse_args(argv)
+    if args.command in {"ask", "all"} and not (args.question or "").strip():
+        parser.error("ask/all에는 --question이 필요합니다.")
+    if args.command == "evaluate" and not args.eval_file:
+        parser.error("evaluate에는 --eval-file이 필요합니다.")
+    if args.top_k < 1 or (args.limit is not None and args.limit < 1):
+        parser.error("top-k, limit은 1 이상이어야 합니다.")
+    if not 0 <= args.chunk_overlap < args.chunk_size:
+        parser.error("0 <= chunk-overlap < chunk-size 조건이 필요합니다.")
+    filters = {}
+    for value in args.filter:
+        key, separator, item = value.partition("=")
+        if not separator or not key or not item:
+            parser.error("--filter는 '발주 기관=기관명' 형태로 입력하세요.")
+        filters[key] = item
+
+    if args.command in {"parse", "all"}:
+        documents = parse_documents(args.raw_dir, args.processed_dir, args.limit)
+        errors = read_json(args.processed_dir / "parsing_errors.json")
+        print(f"전처리: 성공 {len(documents)}건, 실패 {len(errors)}건")
+        if args.command == "parse":
+            return
+
+    # 사용자가 실행할 때만 .env를 로드하며 키를 출력하거나 결과에 저장하지 않습니다.
+    from dotenv import load_dotenv
+    from openai import OpenAI, RateLimitError
+    from embedding import build_index, load_index
+    from retrieval import retrieve
+    from generation import generate_answer
+
+    load_dotenv(ROOT / ".env", override=False)
+    if not os.getenv("OPENAI_API_KEY"):
+        parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
+    client = OpenAI(timeout=60.0, max_retries=2)
+    generation_model = os.getenv("OPENAI_GENERATION_MODEL", "gpt-5-mini")
+    if generation_model not in {"gpt-5-mini", "gpt-5-nano"}:
+        parser.error("허용된 답변 모델은 gpt-5-mini, gpt-5-nano입니다. "
+                     ".env의 OPENAI_GENERATION_MODEL을 수정하거나 삭제하세요.")
+    if args.command in {"build", "all"}:
+        documents = read_json(args.processed_dir / "documents.json")
+        config = build_index(documents, client, args.index_dir,
+                             os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+                             args.chunk_size, args.chunk_overlap)
+        print(f"인덱스 생성: {config['chunk_count']}개 청크")
+        if args.command == "build":
+            return
+
+    index, chunks, config = load_index(args.index_dir)
+
+    def answer(question, case_filters=None):
+        hits = retrieve(question, client, index, chunks, config, args.top_k,
+                        {**filters, **(case_filters or {})})
+        try:
+            return generate_answer(question, hits, client, generation_model)
+        except RateLimitError as exc:
+            import re
+            if re.search(r"RPM\).*?Limit\s+0(?:\D|$)", str(exc)):
+                detail = "분당 요청 한도(RPM)가 0입니다. 대기하거나 질문을 줄여도 해결되지 않습니다."
+            elif exc.code == "insufficient_quota":
+                detail = "API 사용 가능 할당량이 부족합니다. 결제·크레딧·사용 한도를 확인하세요."
+            else:
+                detail = "요청/토큰 사용 한도에 도달했습니다. 한도를 확인하고 잠시 후 재시도하세요."
+            parser.exit(1, f"\n답변 생성 실패 ({generation_model}): {detail}\n"
+                        "OpenAI 프로젝트의 Limits에서 해당 모델의 사용 한도를 확인하세요.\n"
+                        "다른 사용 가능한 모델로 바꾸려면 .env의 OPENAI_GENERATION_MODEL을 설정하세요.\n"
+                        "인덱스는 저장되어 있으므로 기본 실행 ask로 재시도할 수 있습니다.\n")
+
+    if args.command == "evaluate":
+        from evaluation import evaluate
+        result = evaluate(read_json(args.eval_file), answer)
+        print(result["summary"])
+    else:
+        result = answer(args.question)
+        print(result["answer"])
+        for source in result["sources"]:
+            print(f"[{source['citation']}] {source['metadata']['filename']} "
+                  f"(doc_id={source['doc_id']}, score={source['score']:.3f})")
+    result["settings"] = {**config, "generation_model": generation_model,
+                          "top_k": args.top_k, "filters": filters}
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    output = args.results_dir / f"{args.command}_{timestamp}.json"
+    write_json(output, result)
+    print(f"결과 저장: {output}")
+
+
+if __name__ == "__main__":
+    main()
