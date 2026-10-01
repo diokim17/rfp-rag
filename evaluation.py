@@ -2,8 +2,10 @@
 
 import time
 import unicodedata
+from observability import observed
 
 
+@observed("evaluate")
 def evaluate(cases, answer_fn):
     """cases: [{question, expected_doc_ids, expected_keywords?, filters?}]."""
     if not cases:

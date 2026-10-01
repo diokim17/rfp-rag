@@ -8,6 +8,7 @@ import subprocess
 import sys
 import unicodedata
 from pathlib import Path
+from observability import observed
 
 
 def write_json(path, value):
@@ -44,6 +45,7 @@ def extract_text(path):
     return text
 
 
+@observed("parse-documents")
 def parse_documents(raw_dir="data/raw", output_dir="data/processed", limit=None):
     """반환: [{doc_id, text, metadata}]. limit은 CSV 앞쪽 N행입니다."""
     if limit is not None and limit < 1:

@@ -7,3 +7,4 @@ six==1.17.0
 lxml==6.1.0
 pypdf==6.9.1
 python-dotenv==1.2.2
+langfuse==4.16.0
