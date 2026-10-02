@@ -92,7 +92,7 @@ An index directory is three files that must stay in sync: `index.faiss`, `chunks
 - **Config via env vars, read at call time**: `RFP_CHUNKING_STRATEGY` (`fixed` | `boundary`), `RETRIEVAL_RERANK` (`none` | `lexical` | `cross-encoder`), `RETRIEVAL_CANDIDATES` (default 50), `RETRIEVAL_RERANK_MODEL` (default `BAAI/bge-reranker-v2-m3`), `OPENAI_EMBEDDING_MODEL`, `OPENAI_GENERATION_MODEL` (only `gpt-5-mini` or `gpt-5-nano` are accepted), `EXPERIMENT_OWNER`, `LANGFUSE_*`.
 - **`cross-encoder`** needs `torch` and `transformers`, which are intentionally not in `requirements.txt`.
 - **Every `run.py` invocation** needs an owner (`EXPERIMENT_OWNER` or `--owner`) and consumes an experiment number (`yjk-0007`), including `parse` and failed runs.
-- **Imports must stay side-effect free**: no API calls, key loading, or file writes at import time. Heavy imports (`openai`, `dotenv`, `langfuse`, `torch`) are done lazily inside functions.
+- **Imports must stay side-effect free**: no API calls, key loading, or file writes at import time. `run.py` imports everything at module scope (stdlib, third-party, project modules, in that order), so tests patch names on `run` itself. Optional heavy dependencies (`langfuse`, `torch`, `transformers`) are still imported lazily inside functions.
 - **`limit`** in `parse_documents` means the first N CSV rows, not N successful documents. Per-file failures go to `parsing_errors.json` and the run continues.
 
 ## Privacy rules (enforced by design, keep them)

@@ -1,15 +1,18 @@
-"""김연주: 질문 임베딩 → FAISS 검색 → lexical 재정렬 → 문서당 청크 상한 적용 → 검색 결과(hits) 반환.
+"""김연주: 질문 임베딩 → FAISS 검색 → (선택) 리랭킹 → 문서당 청크 상한 적용 → 검색 결과(hits) 반환.
 
 검색 단계만 평가하는 실험 스크립트 (답변 생성 호출 없음).
 
 사용 예:
     python exp_max_per_doc.py --eval-file data/eval_retrieval_yjk_e2e24.json --max-per-doc 2 3
+    RETRIEVAL_RERANK=lexical python exp_max_per_doc.py --eval-file ... --max-per-doc 2 3
 
 기준선(문서당 상한 없음)은 항상 먼저 실행되고, --max-per-doc 값마다 같은 평가셋으로 비교합니다.
-lexical 등 다른 검색 옵션을 함께 쓰려면 아래 retrieve 호출 부분에 인자를 추가하세요.
+리랭킹은 기본으로 꺼져 있으며 환경 변수 RETRIEVAL_RERANK, RETRIEVAL_CANDIDATES로 켭니다 (retrieval.py 참고).
+설정마다 질문을 다시 임베딩하므로 임베딩 API를 (설정 수 × 질문 수)번 호출하고, 지연에는 그 시간이 포함됩니다.
 """
 import argparse
 import json
+import os
 import statistics
 import time
 from datetime import datetime, timezone
@@ -17,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# TODO: 평가 JSON의 실제 키 이름에 맞게 수정하세요.
+# 평가 JSON의 키 이름 (data/eval_retrieval_yjk*.json 기준). 다른 평가 파일을 쓰면 맞게 수정하세요.
 QUESTION_KEY = "question"
 GOLD_KEY = "expected_doc_ids"        # 정답 문서 ID (여러 개면 리스트도 가능)
 FILTER_KEY = "filters"     # 질문별 필터가 있는 경우
@@ -44,6 +47,8 @@ def evaluate_cases(cases, search, top_k):
         ids = [hit["doc_id"] for hit in hits[:top_k]]
         gold = case[GOLD_KEY]
         gold = set(gold) if isinstance(gold, (list, tuple, set)) else {gold}
+        if not gold:
+            raise ValueError(f"{number}번 질문에 정답 문서 ID가 없습니다.")
         rank = next((i + 1 for i, doc_id in enumerate(ids) if doc_id in gold), None)
         if rank:
             found += 1
@@ -73,6 +78,14 @@ def main():
     parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/parsing-v2-yjk")
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
     args = parser.parse_args()
+    # API를 호출하기 전에 입력을 먼저 확인합니다. (기준선을 돌린 뒤에 실패하면 비용만 듭니다.)
+    if args.top_k < 1 or any(limit < 1 for limit in args.max_per_doc):
+        parser.error("top-k, max-per-doc은 1 이상이어야 합니다.")
+    cases = json.loads(args.eval_file.read_text(encoding="utf-8"))
+    if isinstance(cases, dict):  # {"cases": [...]} 또는 {"questions": [...]} 구조도 허용
+        cases = cases.get("cases") or cases.get("questions")
+    if not isinstance(cases, list) or not cases:
+        parser.error("평가 파일에 질문 목록이 없습니다.")
 
     from dotenv import load_dotenv
     from openai import OpenAI
@@ -80,11 +93,10 @@ def main():
     from retrieval import retrieve
 
     load_dotenv(ROOT / ".env", override=False)  # 키는 이 컴퓨터의 .env에서만 읽습니다.
+    if not os.getenv("OPENAI_API_KEY"):
+        parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
     client = OpenAI(timeout=60.0, max_retries=2)
     index, chunks, config = load_index(args.index_dir)
-    cases = json.loads(args.eval_file.read_text(encoding="utf-8"))
-    if isinstance(cases, dict):  # TODO: 평가 파일이 {"cases": [...]} 같은 구조라면 키 이름 확인
-        cases = cases.get("cases") or cases.get("questions")
 
     results = {}
     for limit in [None, *args.max_per_doc]:
@@ -104,7 +116,10 @@ def main():
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = args.results_dir / f"retrieval_exp_{stamp}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps({"eval_file": str(args.eval_file), "top_k": args.top_k,
+    # 인덱스와 리랭킹 설정에 따라 수치가 달라지므로 함께 남깁니다.
+    settings = {**config, "index_dir": str(args.index_dir),
+                **{key: os.getenv(key) for key in ("RETRIEVAL_RERANK", "RETRIEVAL_CANDIDATES", "RETRIEVAL_RERANK_MODEL")}}
+    output.write_text(json.dumps({"eval_file": str(args.eval_file), "top_k": args.top_k, "settings": settings,
                                   "results": results}, ensure_ascii=False, indent=2),
                       encoding="utf-8")
     print(f"결과 저장: {output}")
