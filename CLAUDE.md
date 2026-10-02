@@ -116,7 +116,7 @@ The RFP source documents may not be shared outside the team.
 
 Not derivable from git, and likely to drift:
 
-- Branch `retrieval/max-per-doc`, with uncommitted changes. The working-tree `parsing.py` is a rewrite (direct HWP5 record parsing with table reconstruction, `pymupdf` for PDF), and `run.py` defaults now point at `data/processed/parsing-v2-yjk` and `indexes/parsing-v2-yjk`.
+- Branch `retrieval/max-per-doc` (PR #3 into `dev`). It carries the `parsing.py` rewrite from PR #2 (direct HWP5 record parsing with table reconstruction, `pymupdf` for PDF). `run.py` keeps the shared defaults `data/processed` and `indexes`; pass `--processed-dir data/processed/parsing-v2-yjk --index-dir indexes/parsing-v2-yjk` to use the table-restored data.
 - `indexes/` (2,932 chunks, 98 docs) is the older baseline index; `indexes/parsing-v2-yjk/` (9,789 chunks, 100 docs) is built from the new parser. `exp_max_per_doc.py` defaults to the v2 index, `experiments/max_per_doc_effect_yjk.py` to the old one.
 - `data/eval_retrieval_yjk.json` (325 cases) and `data/eval_retrieval_yjk_e2e24.json` (24 cases) are auto-generated from CSV metadata by `experiments/retrieval_eval_yjk.py make-evalset`. They are personal retrieval eval sets, not the team's shared eval set, which does not exist yet.
 - `README.md` and `docs/TEAM_DEVELOPMENT_GUIDE.md` lag the code in places: they still describe `pyhwp`/`pypdf` parsing and say reranking is not implemented.
