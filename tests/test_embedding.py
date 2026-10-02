@@ -5,10 +5,18 @@ import inspect
 import json
 import os
 from pathlib import Path
+import shutil
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
+
+# discover 외의 실행 방식에서도 프로젝트 모듈과 테스트 보조 모듈을 찾도록 합니다.
+TESTS_DIR = Path(__file__).resolve().parent
+for path in (TESTS_DIR, TESTS_DIR.parent):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 import numpy as np
 
@@ -131,6 +139,29 @@ class ChunkingTests(unittest.TestCase):
             explicit = chunk_documents([document("가나다\n\n라마바" * 3)], 10, 2)
             os.environ.pop("RFP_CHUNKING_STRATEGY")
             self.assertEqual(chunk_documents([document("가나다\n\n라마바" * 3)], 10, 2), explicit)
+
+    def test_multiple_documents_keep_order_ids_and_independent_metadata(self):
+        documents = [document("가나다라마.\n\n" * 6, "a"), document("가나다라마.\n\n" * 6, "b")]
+        before = copy.deepcopy(documents)
+
+        def positions(chunks, doc_id):
+            return [(c["chunk_id"].split(":", 1)[1], c["text"], c["metadata"]["start_char"],
+                     c["metadata"]["end_char"]) for c in chunks if c["doc_id"] == doc_id]
+
+        for strategy in ("fixed", "boundary"):
+            with self.subTest(strategy=strategy), patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": strategy}):
+                chunks = chunk_documents(documents, 20, 3)
+                doc_ids = [c["doc_id"] for c in chunks]
+                self.assertEqual(set(doc_ids), {"a", "b"})
+                self.assertEqual(doc_ids, sorted(doc_ids))
+                self.assertEqual(len({c["chunk_id"] for c in chunks}), len(chunks))
+                for chunk in chunks:
+                    self.assertTrue(chunk["chunk_id"].startswith(chunk["doc_id"] + ":"))
+                # 같은 본문이면 문서 ID만 다르고 순번·위치는 같아야 합니다.
+                self.assertEqual(positions(chunks, "a"), positions(chunks, "b"))
+                chunks[0]["metadata"]["발주 기관"] = "CHANGED"
+                self.assertTrue(all(c["metadata"]["발주 기관"] == "PRIVATE_AGENCY" for c in chunks[1:]))
+                self.assertEqual(documents, before)
 
     def test_invalid_settings_fail(self):
         for size, overlap in ((0, 0), (-1, 0), (5, -1), (5, 5), (5, 6)):
@@ -285,6 +316,117 @@ class IndexContractTests(unittest.TestCase):
                     self.assertEqual(result["summary"]["keyword_coverage"], 1.)
                     self.assertEqual(json.loads(json.dumps(answer)), answer)
                 self.assertEqual(set(client.models), {"test-embedding"})
+
+
+class IndexIntegrityTests(unittest.TestCase):
+    def setUp(self):
+        self.env = patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "fixed"})
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.documents = [document("예산 100원.\n\n" * 8, "a"), document("일정 10월.\n\n" * 8, "b")]
+
+    def build(self, directory, model="test-embedding", client=None):
+        return build_index(self.documents, client or FakeClient(), directory, model, 20, 3)
+
+    def test_saved_files_match_chunking_config_and_vector_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.build(directory)
+            expected_chunks = chunk_documents(self.documents, 20, 3)
+            index, chunks, loaded = load_index(directory)
+            self.assertEqual(chunks, expected_chunks)
+            self.assertEqual(config, {
+                "embedding_model": "test-embedding", "dimension": 2,
+                "chunk_count": len(expected_chunks), "chunk_size": 20, "chunk_overlap": 3,
+                "chunking_strategy": "fixed", "chunking_version": 1,
+            })
+            self.assertEqual(loaded, config)
+            # FAISS 벡터 i번이 chunks i번 본문의 임베딩이어야 합니다.
+            expected = [[1., 0.] if "예산" in c["text"] else [0., 1.] for c in chunks]
+            np.testing.assert_allclose(index.reconstruct_n(0, index.ntotal), expected, atol=1e-7)
+            raw_chunks = (Path(directory) / "chunks.json").read_text(encoding="utf-8")
+            self.assertIn("예산", raw_chunks)
+            self.assertNotIn("\\u", raw_chunks)
+
+    def test_batch_boundaries_keep_all_chunks_in_order(self):
+        for count, sizes in ((1, [1]), (31, [31]), (32, [32]), (33, [32, 1]),
+                             (64, [32, 32]), (65, [32, 32, 1])):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                client = response_client(None)
+                client.embeddings.create.side_effect = lambda model, input: response([[1., 1.]] * len(input))
+                documents = [document(f"본문 {i}", str(i)) for i in range(count)]
+                config = build_index(documents, client, directory, "test-model")
+                index, chunks, _ = load_index(directory)
+                calls = [c.kwargs["input"] for c in client.embeddings.create.call_args_list]
+                self.assertEqual([len(batch) for batch in calls], sizes)
+                self.assertEqual([text for batch in calls for text in batch], [c["text"] for c in chunks])
+                self.assertEqual((index.ntotal, config["chunk_count"]), (count, count))
+
+    def test_invalid_settings_fail_before_api_or_write(self):
+        for env, size, overlap in (({}, 5, 5), ({}, 0, 0), ({"RFP_CHUNKING_STRATEGY": "unknown"}, 20, 3)):
+            with self.subTest(env=env, size=size, overlap=overlap), \
+                    patch.dict(os.environ, env), tempfile.TemporaryDirectory() as directory:
+                client = response_client(None)
+                target = Path(directory) / "index"
+                with self.assertRaises(ValueError):
+                    build_index(self.documents, client, target, "test-model", size, overlap)
+                client.embeddings.create.assert_not_called()
+                self.assertFalse(target.exists())
+
+    def test_load_rejects_mismatched_saved_files_without_changing_them(self):
+        def drop_chunk(chunks, config):
+            chunks.pop()
+
+        def drop_chunk_and_count(chunks, config):
+            chunks.pop()
+            config["chunk_count"] -= 1
+
+        def add_chunk_and_count(chunks, config):
+            chunks.append(copy.deepcopy(chunks[0]))
+            config["chunk_count"] += 1
+
+        def wrong_dimension(chunks, config):
+            config["dimension"] += 1
+
+        def wrong_count(chunks, config):
+            config["chunk_count"] += 1
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            self.build(source)
+            for tamper in (drop_chunk, drop_chunk_and_count, add_chunk_and_count,
+                           wrong_dimension, wrong_count):
+                with self.subTest(tamper=tamper.__name__):
+                    target = Path(directory) / tamper.__name__
+                    shutil.copytree(source, target)
+                    chunks, config = read_json(target / "chunks.json"), read_json(target / "config.json")
+                    tamper(chunks, config)
+                    write_json(target / "chunks.json", chunks)
+                    write_json(target / "config.json", config)
+                    before = {p.name: p.read_bytes() for p in target.iterdir()}
+                    with self.assertRaisesRegex(ValueError, "불일치"):
+                        load_index(target)
+                    self.assertEqual({p.name: p.read_bytes() for p in target.iterdir()}, before)
+
+    def test_load_fails_when_any_saved_file_is_missing(self):
+        for name in ("index.faiss", "chunks.json", "config.json"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                self.build(directory)
+                (Path(directory) / name).unlink()
+                with self.assertRaises((RuntimeError, OSError)):
+                    load_index(directory)
+
+    def test_retrieve_embeds_question_with_saved_model_and_checks_dimension(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.build(directory, model="saved-model")
+            index, chunks, config = load_index(directory)
+            client = FakeClient()
+            with patch.dict(os.environ, {"OPENAI_EMBEDDING_MODEL": "other-model"}):
+                hits = retrieve("예산", client, index, chunks, config, 1)
+            self.assertEqual(client.models, ["saved-model"])
+            self.assertEqual(hits[0]["doc_id"], "a")
+            wrong = response_client(response([[1., 0., 0.]]))
+            with self.assertRaisesRegex(ValueError, "차원"):
+                retrieve("예산", wrong, index, chunks, config, 1)
 
 
 if __name__ == "__main__":
