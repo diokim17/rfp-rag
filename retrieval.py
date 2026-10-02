@@ -79,15 +79,20 @@ def _rerank(question, hits, mode):
 
 
 @observed("retrieve")
-def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None):
+def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
+             max_per_doc=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
 
     rerank: none(기본)·lexical·cross-encoder. 생략하면 환경 변수 RETRIEVAL_RERANK를 사용합니다.
     리랭킹은 필터를 통과한 코사인 상위 candidates개(기본 RETRIEVAL_CANDIDATES 또는 50)만 재정렬하여
     top_k개를 반환하고 rerank_score(float)를 추가합니다. score는 항상 코사인 유사도입니다.
+    max_per_doc: 한 문서(doc_id)에서 반환할 최대 청크 수. 생략하면 제한하지 않습니다.
+    리랭킹과 함께 쓰면 재정렬된 후보에 적용하므로 후보가 소수 문서에 몰리면 top_k보다 적게 반환할 수 있습니다.
     """
     if not question.strip() or top_k < 1:
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
+    if max_per_doc is not None and max_per_doc < 1:
+        raise ValueError("문서당 최대 청크 수는 1 이상이어야 합니다.")
     mode = (os.getenv("RETRIEVAL_RERANK", "") if rerank is None else rerank).strip().lower() or "none"
     if mode not in RERANK_MODES:
         raise ValueError(f"지원하는 리랭킹 방식: {', '.join(RERANK_MODES)}")
@@ -109,15 +114,26 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     if vector.shape[1] != index.d:
         raise ValueError("질문 임베딩 차원이 인덱스와 다릅니다.")
     # 소규모 baseline: 전체 순위를 얻고 필터를 적용하여 후보를 채웁니다.
-    scores, ids = index.search(vector, index.ntotal if filters else min(pool, index.ntotal))
+    # 문서당 상한이 있으면 건너뛰는 청크만큼 더 아래 순위까지 봐야 합니다.
+    scores, ids = index.search(vector, index.ntotal if filters or max_per_doc else min(pool, index.ntotal))
+    per_doc = Counter()
+    # 리랭킹을 할 때는 후보를 줄이지 않고 재정렬한 뒤에 상한을 적용합니다.
+    within_limit = lambda doc_id: max_per_doc is None or per_doc[doc_id] < max_per_doc
     hits = []
     for score, i in zip(scores[0], ids[0]):
-        if int(i) in eligible:
+        if int(i) in eligible and (mode != "none" or within_limit(chunks[int(i)]["doc_id"])):
+            per_doc[chunks[int(i)]["doc_id"]] += 1
             hits.append({**chunks[int(i)], "score": float(score)})
             if len(hits) == pool:
                 break
     if mode != "none":
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
-        hits = observed(f"rerank-{mode}")(_rerank)(question, hits, mode)[:top_k]
+        ranked, hits = observed(f"rerank-{mode}")(_rerank)(question, hits, mode), []
+        per_doc.clear()
+        for hit in ranked:
+            if within_limit(hit["doc_id"]):
+                per_doc[hit["doc_id"]] += 1
+                hits.append(hit)
+        hits = hits[:top_k]
     record_retrieval(hits)
     return hits
