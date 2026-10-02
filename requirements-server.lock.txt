@@ -31,7 +31,7 @@ pycparser==3.0
 pydantic==2.13.5
 pydantic_core==2.46.5
 pyhwp==0.1b15
-pypdf==6.9.1
+pymupdf==1.28.2
 python-dotenv==1.2.2
 six==1.17.0
 sniffio==1.3.1

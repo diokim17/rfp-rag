@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
     parser.add_argument("--limit", type=int, help="전처리할 CSV 앞쪽 N행 (생략: 전체)")
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--max-per-doc", type=int, help="문서당 최대 청크 수 (생략: 제한 없음)")
     parser.add_argument("--chunk-size", type=int, default=1000)
     parser.add_argument("--chunk-overlap", type=int, default=150)
     parser.add_argument("--filter", action="append", default=[], metavar="KEY=VALUE")
@@ -66,6 +67,8 @@ def main():
         parser.error("evaluate에는 --eval-file이 필요합니다.")
     if args.top_k < 1 or (args.limit is not None and args.limit < 1):
         parser.error("top-k, limit은 1 이상이어야 합니다.")
+    if args.max_per_doc is not None and args.max_per_doc < 1:
+        parser.error("max-per-doc은 1 이상이어야 합니다.")
     if not 0 <= args.chunk_overlap < args.chunk_size:
         parser.error("0 <= chunk-overlap < chunk-size 조건이 필요합니다.")
     filters = {}
@@ -147,7 +150,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                 "filter_keys": sorted({**filters, **(case_filters or {})})}):
             pass
         hits = retrieve(question, client, index, chunks, config, args.top_k,
-                        {**filters, **(case_filters or {})})
+                        {**filters, **(case_filters or {})}, max_per_doc=args.max_per_doc)
         try:
             return generate_answer(question, hits, client, generation_model)
         except RateLimitError as exc:
@@ -172,7 +175,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
             print(f"[{source['citation']}] {source['metadata']['filename']} "
                   f"(doc_id={source['doc_id']}, score={source['score']:.3f})")
     result["settings"] = {**config, "generation_model": generation_model,
-                          "top_k": args.top_k, "filters": filters}
+                          "top_k": args.top_k, "max_per_doc": args.max_per_doc, "filters": filters}
     result["experiment"] = {**experiment, "trace_id": trace.trace_id}
     result["token_usage"] = trace.usage
     if args.command == "evaluate":
