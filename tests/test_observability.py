@@ -117,8 +117,8 @@ class ObservabilityTests(unittest.TestCase):
                     "--index-dir", str(root / "index"), "--results-dir", str(root / "results"),
                     "--reports-dir", str(root / "reports"), "--owner", "tester"]
             with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "LANGFUSE_ENABLED": "false"}, clear=True), \
-                    patch("sys.argv", argv), patch("dotenv.load_dotenv"), \
-                    patch("openai.OpenAI", return_value=client), patch.object(run, "ROOT", root):
+                    patch("sys.argv", argv), patch("run.load_dotenv"), \
+                    patch("run.OpenAI", return_value=client), patch.object(run, "ROOT", root):
                 run.main()
             result = json.loads(next((root / "results").glob("evaluate_*.json")).read_text())
             self.assertEqual(result["summary"]["recall_at_k"], 1)

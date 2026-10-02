@@ -3,13 +3,24 @@
 import argparse
 import hashlib
 import json
-from datetime import datetime, timezone
 import os
-from pathlib import Path
-import sys
+import re
 import sqlite3
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
+from dotenv import load_dotenv
+from openai import OpenAI, RateLimitError
+
+from embedding import build_index, load_index
+from evaluation import evaluate
+from experiment_ids import next_experiment_id, owner_initials
+from experiment_reports import file_hash, save_report
+from generation import generate_answer
+from observability import Trace, code_version, observed
 from parsing import parse_documents, read_json, write_json
+from retrieval import retrieve
 
 ROOT = Path(__file__).resolve().parent
 
@@ -64,11 +75,7 @@ def main():
             parser.error("--filter는 '발주 기관=기관명' 형태로 입력하세요.")
         filters[key] = item
 
-    from dotenv import load_dotenv
-    from observability import Trace, code_version
-    from experiment_reports import file_hash
-    from experiment_ids import owner_initials, next_experiment_id
-
+    # 사용자가 실행할 때만 .env를 로드하며 키를 출력하거나 결과에 저장하지 않습니다.
     load_dotenv(ROOT / ".env", override=False)
     try:
         owner = owner_initials(args.owner or os.getenv("EXPERIMENT_OWNER", ""))
@@ -100,19 +107,12 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         documents = parse_documents(args.raw_dir, args.processed_dir, args.limit)
         errors = read_json(args.processed_dir / "parsing_errors.json")
         print(f"전처리: 성공 {len(documents)}건, 실패 {len(errors)}건")
-        from experiment_reports import file_hash
         experiment["documents_sha256"] = file_hash(args.processed_dir / "documents.json")
         with trace.span("parsing-summary", output={"documents": len(documents), "errors": len(errors)},
                         metadata={"documents_sha256": experiment["documents_sha256"]}):
             pass
         if args.command == "parse":
             return
-
-    # 사용자가 실행할 때만 .env를 로드하며 키를 출력하거나 결과에 저장하지 않습니다.
-    from openai import OpenAI, RateLimitError
-    from embedding import build_index, load_index
-    from retrieval import retrieve
-    from generation import generate_answer
 
     if not os.getenv("OPENAI_API_KEY"):
         parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
@@ -127,7 +127,6 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                              os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
                              args.chunk_size, args.chunk_overlap)
         print(f"인덱스 생성: {config['chunk_count']}개 청크")
-        from experiment_reports import file_hash
         for key, filename in (("index_sha256", "index.faiss"), ("chunks_sha256", "chunks.json"),
                               ("index_config_sha256", "config.json")):
             experiment[key] = file_hash(args.index_dir / filename)
@@ -141,8 +140,6 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                                                "top_k": args.top_k}):
         pass
 
-    from observability import observed
-
     @observed("question-answer")
     def answer(question, case_filters=None):
         with trace.span("question-settings", metadata={
@@ -154,7 +151,6 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         try:
             return generate_answer(question, hits, client, generation_model)
         except RateLimitError as exc:
-            import re
             if re.search(r"RPM\).*?Limit\s+0(?:\D|$)", str(exc)):
                 detail = "분당 요청 한도(RPM)가 0입니다. 대기하거나 질문을 줄여도 해결되지 않습니다."
             elif exc.code == "insufficient_quota":
@@ -167,7 +163,6 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                         "인덱스는 저장되어 있으므로 기본 실행 ask로 재시도할 수 있습니다.\n")
 
     if args.command == "evaluate":
-        from evaluation import evaluate
         result = evaluate(read_json(args.eval_file), answer)
         print(result["summary"])
     else:
@@ -181,7 +176,6 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
     result["experiment"] = {**experiment, "trace_id": trace.trace_id}
     result["token_usage"] = trace.usage
     if args.command == "evaluate":
-        from experiment_reports import save_report
         trace.scores(result["summary"])
         report = save_report(args.reports_dir, timestamp, result["summary"],
                              result["settings"], result["experiment"], trace.usage)
