@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parent
 DEFAULT_COMMAND = "auto"  # 인덱스가 있으면 ask, 없으면 all. 재생성하려면 "all"
 DEFAULT_LIMIT = 3
 DEFAULT_QUESTION = "한영대학교 교육환경 구축 사업의 주요 요구사항은 무엇인가요?"
+# --processed-dir, --index-dir을 생략할 때 사용할 경로입니다. (표 추출 전처리로 다시 만든 결과)
+DEFAULT_PROCESSED_DIR = ROOT / "data/processed/parsing-v2-yjk"
+DEFAULT_INDEX_DIR = ROOT / "indexes/parsing-v2-yjk"
 
 
 def main():
@@ -33,15 +36,15 @@ def main():
     parser.add_argument("--filter", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--eval-file", type=Path, help="수동 작성한 평가 JSON 파일")
     parser.add_argument("--raw-dir", type=Path, default=ROOT / "data/raw")
-    parser.add_argument("--processed-dir", type=Path, default=ROOT / "data/processed")
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes")
+    parser.add_argument("--processed-dir", type=Path, default=DEFAULT_PROCESSED_DIR)
+    parser.add_argument("--index-dir", type=Path, default=DEFAULT_INDEX_DIR)
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
     argv = sys.argv[1:]
     if not argv:
         command = DEFAULT_COMMAND
         if command == "auto":
             index_files = ("index.faiss", "chunks.json", "config.json")
-            command = "ask" if all((ROOT / "indexes" / name).is_file() for name in index_files) else "all"
+            command = "ask" if all((DEFAULT_INDEX_DIR / name).is_file() for name in index_files) else "all"
         argv = [command, "--question", DEFAULT_QUESTION]
         if DEFAULT_LIMIT is not None:
             argv += ["--limit", str(DEFAULT_LIMIT)]

@@ -24,8 +24,19 @@ FILTER_KEY = "filters"     # 질문별 필터가 있는 경우
 
 
 def evaluate_cases(cases, search, top_k):
-    """search(question, filters) -> 점수순 hits 리스트(각 hit에 doc_id)."""
+    """search(question, filters) -> 점수순 hits 리스트(각 hit에 doc_id).
+
+    recall·mrr은 정답 문서가 하나라도 나오면 성공으로 보므로 문서당 상한의 효과가 잘 드러나지 않습니다.
+    그래서 top-k 구성을 보는 지표를 함께 계산합니다.
+      recall_frac: 정답 문서 중 찾은 비율 (정답 문서가 여러 개인 질문에서 일부만 찾은 경우를 구분)
+      unique_docs: top-k 안의 고유 문서 수 평균
+      non_gold_share: top-k에서 정답 문서가 아닌 청크가 차지하는 비율 평균
+      gold_chunks: top-k 안의 정답 문서 청크 수 평균
+      gold_chunks_ge2: 정답 문서 청크가 2개 이상 들어온 질문 수
+      short: top-k보다 적게 반환된 질문 수
+    """
     found, rr_sum, times, misses = 0, 0.0, [], []
+    frac_sum, unique_sum, non_gold_sum, gold_sum, gold_ge2, short = 0.0, 0, 0.0, 0, 0, 0
     for number, case in enumerate(cases):
         start = time.perf_counter()
         hits = search(case[QUESTION_KEY], case.get(FILTER_KEY) or {})
@@ -39,9 +50,18 @@ def evaluate_cases(cases, search, top_k):
             rr_sum += 1 / rank
         else:
             misses.append(number)  # 놓친 질문 번호 (원인 분석용)
+        gold_chunks = sum(doc_id in gold for doc_id in ids)
+        frac_sum += len(gold & set(ids)) / len(gold)
+        unique_sum += len(set(ids))
+        non_gold_sum += (len(ids) - gold_chunks) / len(ids) if ids else 0.0
+        gold_sum += gold_chunks
+        gold_ge2 += gold_chunks >= 2
+        short += len(ids) < top_k
     n = len(cases)
     return {"recall": found / n, "mrr": rr_sum / n, "median_ms": statistics.median(times),
-            "cases": n, "misses": misses}
+            "cases": n, "misses": misses,
+            "recall_frac": frac_sum / n, "unique_docs": unique_sum / n, "non_gold_share": non_gold_sum / n,
+            "gold_chunks": gold_sum / n, "gold_chunks_ge2": gold_ge2, "short": short}
 
 
 def main():
@@ -50,7 +70,7 @@ def main():
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--max-per-doc", type=int, nargs="*", default=[],
                         help="비교할 문서당 최대 청크 수 (기준선은 항상 포함)")
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/parsing-v2-yjk")
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
     args = parser.parse_args()
 
@@ -77,6 +97,9 @@ def main():
         results[name] = result
         print(f"{name}: Recall@{args.top_k} {result['recall']:.3f} / MRR {result['mrr']:.3f} / "
               f"중앙 지연 {result['median_ms']:.0f}ms / 놓친 {len(result['misses'])}건")
+        print(f"  구성: Recall(비율) {result['recall_frac']:.3f} / 고유 문서 {result['unique_docs']:.2f}개 / "
+              f"정답 외 청크 {result['non_gold_share']:.1%} / 정답 청크 평균 {result['gold_chunks']:.2f}개 / "
+              f"정답 청크 2개 이상 {result['gold_chunks_ge2']}건 / {args.top_k}개 미만 반환 {result['short']}건")
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = args.results_dir / f"retrieval_exp_{stamp}.json"
