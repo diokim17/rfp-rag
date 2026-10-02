@@ -57,7 +57,7 @@ def main():
     if args.top_k < 1 or (args.limit is not None and args.limit < 1):
         parser.error("top-k, limit은 1 이상이어야 합니다.")
     if args.max_per_doc is not None and args.max_per_doc < 1:
-        parser.error("max-per-doc은 1 이상이어야 합니다.")    
+        parser.error("max-per-doc은 1 이상이어야 합니다.")
     if not 0 <= args.chunk_overlap < args.chunk_size:
         parser.error("0 <= chunk-overlap < chunk-size 조건이 필요합니다.")
     filters = {}
@@ -153,7 +153,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                 "filter_keys": sorted({**filters, **(case_filters or {})})}):
             pass
         hits = retrieve(question, client, index, chunks, config, args.top_k,
-                        {**filters, **(case_filters or {})}), , max_per_doc=args.max_per_doc)
+                        {**filters, **(case_filters or {})}, max_per_doc=args.max_per_doc)
         try:
             return generate_answer(question, hits, client, generation_model)
         except RateLimitError as exc:

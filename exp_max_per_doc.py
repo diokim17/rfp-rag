@@ -1,4 +1,6 @@
-"""검색 단계만 평가하는 실험 스크립트 (답변 생성 호출 없음, run.py는 수정하지 않음).
+"""김연주: 질문 임베딩 → FAISS 검색 → lexical 재정렬 → 문서당 청크 상한 적용 → 검색 결과(hits) 반환.
+
+검색 단계만 평가하는 실험 스크립트 (답변 생성 호출 없음).
 
 사용 예:
     python exp_max_per_doc.py --eval-file data/eval_retrieval_yjk_e2e24.json --max-per-doc 2 3
