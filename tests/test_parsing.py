@@ -3,7 +3,8 @@
 import struct
 import unittest
 
-from parsing import _cell_text, _clean_text, _merge_pages, _number_tables, _reading_order, _render_table, _section_text, _sections, section_of
+from parsing import (_cell_text, _clean_text, _drop_toc, _fields, _merge_pages, _number_tables, _reading_order,
+                     _render_table, _section_text, _sections, _won, section_of)
 
 
 def record(tag, level, payload):
@@ -71,6 +72,10 @@ class CleanTextTest(unittest.TestCase):
         self.assertEqual(_clean_text(raw),
                          "합계 | 77 |\n다음\n현상태사용[ ]\n☑적용) 보고서\n• GPA 분석\n• 주소 | FAX 02-6312")
 
+    def test_spaced_label_before_colon_joined_but_form_run_kept(self):
+        self.assertEqual(_clean_text("○ 사 업 비: 금150,000,000원\n○ 기 간 : 180일\n년 월 일 주 소 :"),
+                         "○ 사업비: 금150,000,000원\n○ 기간 : 180일\n년 월 일 주 소 :")
+
 
 class SectionTextTest(unittest.TestCase):
     def test_table_records_become_markdown(self):
@@ -103,16 +108,47 @@ class SectionsTest(unittest.TestCase):
             "Ⅰ. 사업개요", "1. 사업 개요", "가. 추진 배경", "나. 사업기간: 12개월",  # 콜론 → 목록
             "| 1 사업 | 표 |", "3. 건너뛴 번호",   # 표 줄, 순서 안 맞는 번호 → 제외
             "2. 사업 범위", "Ⅱ 제안요청 내용", "1 상세 요구사항",
-            "1. 입찰참가자격", "1.1 참가 자격",          # 장 제목 없이 번호 재시작 → 상위 비움
+            "1. 입찰참가자격", "1.1 참가 자격", "1.1.1 세부 자격",          # 장 제목 없이 번호 재시작 → 상위 비움
             "Ⅳ 기타",                                    # 장 번호 건너뜀(Ⅲ 누락) 허용
         ])
         doc = {"sections": _sections(text)}
         self.assertEqual([p for _, p in doc["sections"]], [
             "Ⅰ. 사업개요", "Ⅰ. 사업개요 > 1. 사업 개요", "Ⅰ. 사업개요 > 1. 사업 개요 > 가. 추진 배경",
             "Ⅰ. 사업개요 > 2. 사업 범위", "Ⅱ 제안요청 내용", "Ⅱ 제안요청 내용 > 1 상세 요구사항",
-            "1. 입찰참가자격", "1. 입찰참가자격 > 1.1 참가 자격", "Ⅳ 기타"])
+            "1. 입찰참가자격", "1. 입찰참가자격 > 1.1 참가 자격",
+            "1. 입찰참가자격 > 1.1 참가 자격 > 1.1.1 세부 자격", "Ⅳ 기타"])
         self.assertEqual(section_of(doc, 0), "")
         self.assertEqual(section_of(doc, text.index("나. 사업기간")), "Ⅰ. 사업개요 > 1. 사업 개요 > 가. 추진 배경")
+
+
+class FieldsTest(unittest.TestCase):
+    def test_won_units(self):
+        self.assertEqual(_won("금 130,000,000원(VAT 포함)"), 130_000_000)
+        self.assertEqual(_won("40,000천원"), 40_000_000)
+        self.assertEqual(_won("196백만원"), 196_000_000)
+        self.assertEqual(_won("1억 5천만 원"), 150_000_000)
+        self.assertIsNone(_won("추후 공지"))
+
+    def test_first_valid_value_per_field(self):
+        text = "\n".join([
+            "사업비 5억 원 미만으로 감리 비대상",               # ':' 없음 → 무시
+            "| 계약기간 | 계약금액 |",                        # 값 확인 실패(표 헤더) → 다음 후보
+            "ㅇ (사업예산) 1억원 미만",                        # 범위 표현 → 제외
+            "3) 사업 예산 : 220,000천원(VAT 포함)",
+            "□ 사업기간 : 계약일로부터 3개월",
+            "| 입찰방식 | 제한경쟁입찰(협상에 의한 계약) |",
+        ])
+        self.assertEqual(_fields(text), {
+            "원문 사업 예산": "220,000천원(VAT 포함)", "원문 사업 기간": "계약일로부터 3개월",
+            "원문 계약 방법": "제한경쟁입찰(협상에 의한 계약)", "원문 사업 금액": "220000000"})
+
+
+class DropTocTest(unittest.TestCase):
+    def test_toc_at_front_dropped_list_at_back_kept(self):
+        toc = ("목 차\nⅠ. 사업개요 1\n1. 추진배경 1\n2. 사업범위 3\n[양식 1] 제안서 표지 72\n"
+               "Ⅱ. 추진방안 4 1. 추진목표 4 2. 추진체계 5 3. 추진일정 6 4. 협상내용과 범위 7\n")  # 한 문단 목차
+        body = "본문 " * 200 + "\n1. 웹서버 2\n2. DB서버 2\n3. 백업서버 1\n"
+        self.assertEqual(_drop_toc("제안요청서\n" + toc + body), "제안요청서\n" + body)
 
 
 if __name__ == "__main__":

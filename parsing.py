@@ -241,7 +241,25 @@ def _clean_text(text: str) -> str:
     text = re.sub(r"(^|\s)\u00ad ?", r"\1• ", text, flags=re.M)  # 글머리표로 쓰인 soft hyphen
     text = text.replace("\u00ad", "-")  # 단어 중간(전화번호 등)은 하이픈
     text = "\n".join(_join_spaced(line) for line in text.split("\n"))
+    # '사 업 비: 금…'처럼 콜론 앞 2~4글자 라벨의 자간 공백 제거 (앞에 띄운 글자가 더 있으면 서식 칸이라 둠)
+    text = re.sub(r"(?<![가-힣])(?<![가-힣] )((?:[가-힣] ){1,3}[가-힣])(?=\s*[:：])", lambda m: m[1].replace(" ", ""), text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+TOC_ITEM = r"(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]\.?|\d{1,2}(?:\.\d{1,2})*\.?|[가-하]\.|제\s?\d+\s?장|[\[<][가-힣\s]{1,6}\d{1,2}[\]>])\s?"  # [양식 1]·<붙임 2> 등 붙임 목록 포함
+TOC_LINES = re.compile(rf"(?:^{TOC_ITEM}[^\n]{{1,40}}?\s\d{{1,3}}\n){{3,}}", re.M)  # 제목 + 쪽번호 줄 3개 이상
+TOC_INLINE = re.compile(rf"{TOC_ITEM}[가-힣][가-힣 ·]{{1,20}}\s\d{{1,3}}\s")  # 표 한 칸·한 문단에 몰아 쓴 목차
+
+
+def _drop_toc(text: str) -> str:
+    """앞부분(20%) 목차 제거: 제목이 다 모여 있어 어떤 질문에도 검색돼 top-k를 차지함. 섹션 정보는 sections로 대체.
+    본문 뒤쪽의 '1. 서버 2' 같은 목록은 건드리지 않게 위치로 제한."""
+    head = len(text) // 5
+    text = TOC_LINES.sub(lambda m: "" if m.start() < head else m[0], text)
+    many = lambda m: "" if m.start() < head and len(TOC_INLINE.findall(m[0] + " ")) >= 5 else m[0]  # 한 덩어리에 목차 항목 5개+
+    text = re.sub(f"{TABLE_OPEN}.*?{TABLE_CLOSE}\n?", many, text, flags=re.S)
+    text = re.sub(r"^[^|<\n].*\n?", many, text, flags=re.M)  # 한 문단으로 이어 쓴 목차
+    return re.sub(r"\n{3,}", "\n\n", re.sub(r"^목\s*차\n", "", text, flags=re.M))
 
 
 def extract_text(path):
@@ -256,21 +274,22 @@ def extract_text(path):
         text = parse_pdf(path)
     else:
         raise ValueError(f"지원하지 않는 형식: {path.suffix}")
-    text = _number_tables(_clean_text(text))
+    text = _number_tables(_drop_toc(_clean_text(text)))
     if not text:
         raise ValueError("추출된 텍스트 없음: 스캔 PDF는 OCR이 필요합니다.")
     return text
 
 
 ROMAN, KOR = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ", "가나다라마바사아자차카타파하"
-HEADINGS = (  # (단계, 정규식): 장 Ⅰ / 제1장 → 절 1. → 1.1 → 항 가.
+HEADINGS = (  # (단계, 정규식): 장 Ⅰ / 제1장 → 절 1. → 1.1 → 1.1.1 → 항 가.
     (0, re.compile(rf"([{ROMAN}])\.?\s*[가-힣].*")),
     (0, re.compile(r"제\s?(\d{1,2})\s?장\s*[가-힣].*")),
     (1, re.compile(r"(\d{1,2})\.?\s+[가-힣][^:：]*")),
     (2, re.compile(r"\d{1,2}\.(\d{1,2})\.?\s+[가-힣][^:：]*")),
-    (3, re.compile(rf"([{KOR}])\.\s*[가-힣][^:：]*")),
+    (3, re.compile(r"\d{1,2}\.\d{1,2}\.(\d{1,2})\.?\s+[가-힣][^:：]*")),
+    (4, re.compile(rf"([{KOR}])\.\s*[가-힣][^:：]*")),
 )
-DEPTH = 4
+DEPTH = 5
 
 
 def _sections(text: str) -> list:
@@ -302,10 +321,49 @@ def section_of(document, pos: int) -> str:
     return sections[i - 1][1] if i else ""
 
 
+WON_UNIT = {"억": 10**8, "천만": 10**7, "백만": 10**6, "만": 10**4, "천": 10**3}
+
+
+def _won(s: str):
+    """'130,000,000원', '40,000천원', '196백만원', '1억 5천만 원' → 원 단위 int. 금액이 없으면 None."""
+    m = re.search(r"(\d[\d,]*(?:\.\d+)?)(억|천만|백만|만|천)?(?:(\d[\d,]*)(천만|백만|만))?원", s.replace(" ", ""))
+    if not m:
+        return None
+    value = float(m[1].replace(",", "")) * WON_UNIT.get(m[2], 1)
+    if m[3]:
+        value += float(m[3].replace(",", "")) * WON_UNIT[m[4]]
+    return int(value)
+
+
+_labels = lambda *names: "|".join(r"\s?".join(name) for name in names)  # '사업 예산'처럼 띄어 써도 매칭
+FIELDS = {  # metadata 키: (라벨 묶음들, 값 확인). 앞 묶음(구체적 라벨)에서 못 찾을 때만 뒤 묶음(범용 라벨)
+    "원문 사업 예산": ((_labels("사업예산액", "사업예산", "소요예산", "총사업비", "사업금액", "사업비", "배정예산",
+                          "기초금액", "추정가격", "예산소요액", "사업규모", "과업예산", "용역예산", "용역금액",
+                          "용역비용", "설계금액", "집행한도액"), _labels("예산액", "예산")),
+                 lambda v: _won(v) and not re.search("미만|이상|초과", v)),
+    "원문 사업 기간": ((_labels("사업수행기간", "사업기간", "계약기간", "용역기간", "과업기간", "구축기간"), _labels("기간")),
+                 lambda v: re.search(r"\d+\s*(?:일|개월|년|월)|\d{2,4}\s*[.\-]\s*\d|계약일|착수일|체결일", v)),
+    "원문 계약 방법": ((_labels("입찰및계약방법", "낙찰자결정방법", "계약방법", "계약방식", "입찰방식", "입찰방법"),),
+                 lambda v: re.search("경쟁|협상|수의|입찰", v)),
+}
+
+
+def _fields(text: str) -> dict:
+    """원문에서 예산·기간·계약 방법 추출. CSV 값 검수용 (CSV 사업 금액은 대부분 VAT 포함 금액).
+    라벨 뒤 ':' / ')' / 표 칸 '|' 다음 값 중 확인을 통과한 첫 번째."""
+    values = lambda labels: (m[1].strip()[:100]
+                             for m in re.finditer(rf"(?<![가-힣])(?:{labels})\s*[:：)|]\s*([^|\n]+)", text))
+    out = {key: next((v for labels in groups for v in values(labels) if ok(v)), "")
+           for key, (groups, ok) in FIELDS.items()}
+    out["원문 사업 금액"] = str(_won(out["원문 사업 예산"]) or "")
+    return out
+
+
 @observed("parse-documents")
 def parse_documents(raw_dir="data/raw", output_dir="data/processed", limit=None):
     """반환: [{doc_id, text, metadata, sections}]. limit은 CSV 앞쪽 N행입니다.
-    sections는 metadata와 달리 청크마다 복사되지 않으니 section_of()로 조회하세요."""
+    metadata: CSV 열 + 원문에서 뽑은 '원문 사업 예산'·'원문 사업 금액'(원, 숫자 문자열)·'원문 사업 기간'·'원문 계약 방법'
+    (못 찾으면 빈 문자열). sections는 metadata와 달리 청크마다 복사되지 않으니 section_of()로 조회하세요."""
     if limit is not None and limit < 1:
         raise ValueError("limit은 1 이상이어야 합니다.")
     raw_dir, output_dir = Path(raw_dir), Path(output_dir)
@@ -334,7 +392,7 @@ def parse_documents(raw_dir="data/raw", output_dir="data/processed", limit=None)
                 raise ValueError("CSV 파일명에 해당하는 원본 파일 없음")
             text = extract_text(path)
             metadata = {k: v or "" for k, v in row.items() if k and k != "텍스트"}
-            metadata.update(filename=filename, source=f"files/{filename}")
+            metadata.update(filename=filename, source=f"files/{filename}", **_fields(text))
             documents.append({
                 "doc_id": hashlib.sha256(filename.encode()).hexdigest()[:16],
                 "text": text, "metadata": metadata, "sections": _sections(text),
