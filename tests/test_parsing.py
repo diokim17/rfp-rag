@@ -3,7 +3,7 @@
 import struct
 import unittest
 
-from parsing import _cell_text, _render_table, _section_text
+from parsing import _cell_text, _clean_text, _merge_pages, _number_tables, _reading_order, _render_table, _section_text
 
 
 def record(tag, level, payload):
@@ -21,7 +21,14 @@ def cell(col, row, colspan=1, rowspan=1):
 class RenderTableTest(unittest.TestCase):
     def test_rowspan_repeated_with_header_line(self):
         cells = [(0, 0, 2, 1, "구분"), (0, 1, 1, 1, "a"), (1, 1, 1, 1, "b")]
-        self.assertEqual(_render_table(2, 2, cells), "| 구분 | a |\n|---|---|\n| 구분 | b |")
+        self.assertEqual(_render_table(2, 2, cells), "<!-- table -->\n| 구분 | a |\n|---|---|\n| 구분 | b |\n<!-- /table -->")
+
+    def test_colspan_header_repeated_but_long_text_not(self):
+        cells = [(0, 0, 2, 1, "구분"), (0, 1, 1, 2, "예산"), (1, 1, 1, 1, "국비"), (1, 2, 1, 1, "지방비"),
+                 (2, 0, 1, 1, "비고"), (2, 1, 1, 2, "가" * 31)]
+        self.assertEqual(_render_table(3, 3, cells),
+                         "<!-- table -->\n| 구분 | 예산 | 예산 |\n|---|---|---|\n| 구분 | 국비 | 지방비 |\n"
+                         f"| 비고 | {'가' * 31} |  |\n<!-- /table -->")
 
     def test_single_row_table_becomes_paragraph(self):
         self.assertEqual(_render_table(1, 4, [(0, 0, 1, 1, "7"), (0, 2, 1, 1, "기타사항")]), "7 기타사항")
@@ -33,6 +40,33 @@ class CellTextTest(unittest.TestCase):
         self.assertEqual(_cell_text("사업 기간 a|b"), "사업 기간 a/b")
 
 
+class NumberTablesTest(unittest.TestCase):
+    def test_adjacent_tables_get_separate_ids(self):
+        t = "<!-- table -->\n| a | b |\n<!-- /table -->"
+        self.assertEqual(_number_tables(f"글\n{t}\n{t}"),
+                         "글\n<!-- table:T1 -->\n| a | b |\n<!-- /table:T1 -->"
+                         "\n<!-- table:T2 -->\n| a | b |\n<!-- /table:T2 -->")
+
+
+class ReadingOrderTest(unittest.TestCase):
+    def test_two_column_page_reads_left_then_right(self):
+        items = [(10, 90, y, f"L{y}") for y in (1, 2, 3)] + [(110, 190, y, f"R{y}") for y in (1, 2, 3)]
+        self.assertEqual([it[3] for it in sorted(items, key=_reading_order(items, 200))],
+                         ["L1", "L2", "L3", "R1", "R2", "R3"])
+
+    def test_single_column_page_reads_top_down(self):
+        items = [(10, 190, 2, "b"), (10, 190, 1, "a"), (110, 190, 3, "c")]
+        self.assertEqual([it[3] for it in sorted(items, key=_reading_order(items, 200))], ["a", "b", "c"])
+
+
+class CleanTextTest(unittest.TestCase):
+    def test_form_noise_removed_and_checkbox_bullet_restored(self):
+        raw = ("합계 | 77 |\n(이 하 여 백)\n다음\n현상태사용[\n]\n□\n√적용) 보고서\nŸ\nGPA 분석"
+               "\n\u00ad 주소 | FAX 02\u00ad6312")
+        self.assertEqual(_clean_text(raw),
+                         "합계 | 77 |\n다음\n현상태사용[ ]\n☑적용) 보고서\n• GPA 분석\n• 주소 | FAX 02-6312")
+
+
 class SectionTextTest(unittest.TestCase):
     def test_table_records_become_markdown(self):
         data = (para(0, "본문")
@@ -41,8 +75,21 @@ class SectionTextTest(unittest.TestCase):
                 + cell(0, 1) + para(2, "예산") + cell(1, 1) + para(2, "100원")
                 + para(0, "다음 문단"))
         self.assertEqual(_section_text(data),
-                         ["본문", "| 항목 | 금액 |\n|---|---|\n| 예산 | 100원 |", "다음 문단"])
+                         ["본문", "<!-- table -->\n| 항목 | 금액 |\n|---|---|\n| 예산 | 100원 |\n<!-- /table -->",
+                          "다음 문단"])
 
+
+class MergePagesTest(unittest.TestCase):
+    def test_continued_tables_joined_cards_kept(self):
+        pages = [
+            ["본문", [["구분", "내용"], ["가", "1"]]],
+            [[["구분", "내용"], ["나", "2"]]],          # 헤더 반복 → 한 번만
+            [[["다", "3"]], [["ID", "SFR-001"]]],     # 헤더 없이 이어짐
+            [[["ID", "SFR-002"]]],                    # 일부만 같은 첫 행 → 별개 카드
+        ]
+        self.assertEqual(_merge_pages(pages), [
+            "본문", [["구분", "내용"], ["가", "1"], ["나", "2"], ["다", "3"]],
+            [["ID", "SFR-001"]], [["ID", "SFR-002"]]])
 
 if __name__ == "__main__":
     unittest.main()

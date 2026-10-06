@@ -2,6 +2,7 @@
 
 import csv
 import hashlib
+import itertools
 import json
 import re
 import struct
@@ -67,13 +68,31 @@ def _records(data: bytes):
         i += size
 
 
+TABLE_OPEN, TABLE_CLOSE = "<!-- table -->", "<!-- /table -->"
+
+
+def _number_tables(text: str) -> str:
+    """표 시작·끝 표시에 문서 안 순번 ID를 붙임: <!-- table:T1 --> ... <!-- /table:T1 -->"""
+    ids = itertools.count(1)
+    return re.sub(f"{TABLE_OPEN}(.*?){TABLE_CLOSE}",
+                  lambda m: f"<!-- table:T{(i := next(ids))} -->{m[1]}<!-- /table:T{i} -->",
+                  text, flags=re.S)
+
+
 def _render_table(rows: int, cols: int, cells: list, nested: bool = False) -> str:
     """cells [(row, col, rowspan, colspan, text)] → 마크다운 표.
     세로 병합 셀은 값을 반복해서 행 하나만 떼어 봐도 뜻이 통하게 함 (청킹 대비)."""
     grid = [[""] * cols for _ in range(rows)]
+    filled = {(r, c) for r, c, _, _, text in cells if text}
     for r, c, rs, cs, text in cells:
+        # 다단 헤더: 바로 아래 행이 이 범위에 글자 있는 칸을 2개 이상 두면 상위 헤더로 보고 반복.
+        # 첫 열 병합은 행 제목·각주, 표 전체 폭은 제목, 3행 이하는 중간 구분 행이라 제외
+        # ponytail: 위치 기반 휴리스틱. 3단 이상 헤더가 많이 보이면 r 상한을 올릴 것
+        is_parent = r < 2 and 0 < c and cs < cols and sum((r + rs, cc) in filled for cc in range(c, c + cs)) >= 2
+        span = cs if is_parent else 1
         for rr in range(r, min(r + rs, rows)):
-            grid[rr][c] = text
+            for cc in range(c, min(c + span, cols)):
+                grid[rr][cc] = text
     lines = [row for row in grid if any(row)]
     if not lines:
         return ""
@@ -85,7 +104,7 @@ def _render_table(rows: int, cols: int, cells: list, nested: bool = False) -> st
         return "\n".join(" ".join(row) for row in lines)
     out = ["| " + " | ".join(row) + " |" for row in lines]
     out.insert(1, "|" + "---|" * len(keep))
-    return "\n".join(out)
+    return "\n".join([TABLE_OPEN, *out, TABLE_CLOSE])  # 번호는 extract_text에서 문서 단위로
 
 
 def _section_text(data: bytes) -> list[str]:
@@ -156,25 +175,71 @@ def _cell_text(text) -> str:
     return _join_spaced(" ".join((text or "").split()).replace("|", "/"))
 
 
+def _reading_order(items, width):
+    """좌우 2단(두 쪽 모아찍기 등) 페이지면 왼쪽 단 → 오른쪽 단, 아니면 위 → 아래."""
+    mid = width / 2
+    left = sum(x1 <= mid for x0, x1, *_ in items)
+    right = sum(x0 >= mid for x0, x1, *_ in items)
+    if left >= 3 and right >= 3 and len(items) - left - right <= 2:
+        return lambda it: (it[0] >= mid, it[2])
+    return lambda it: it[2]
+
+
+def _merge_pages(pages):
+    """쪽별 [글(str) | 표(행 list)] → 한 목록.
+    쪽 끝 표와 다음 쪽 첫 표가 같은 표면 하나로 이음 (반복된 헤더 행은 한 번만)."""
+    out = []
+    for page in pages:
+        if page and out and isinstance(page[0], list) and isinstance(out[-1], list):
+            a, b = out[-1], page[0]
+            shared = {x for x in a[0] if x} & {x for x in b[0] if x}
+            # 첫 행이 같으면 헤더 반복, 하나도 안 겹치면 헤더 없이 이어짐. 일부만 같으면 별개 표(요구사항 카드 등)
+            # ponytail: 열 수가 같고 헤더가 안 겹치는 별개 표도 이어 붙음. 오탐이 보이면 쪽 위치 조건 추가
+            if len(a[0]) == len(b[0]) and (b[0] == a[0] or not shared):
+                a += b[1:] if b[0] == a[0] else b
+                page = page[1:]
+        out += page
+    return out
+
+
 def parse_pdf(path) -> str:
     """텍스트 PDF: 표는 find_tables()로 마크다운 복원, 나머지 글은 블록 단위로 위→아래 순서대로."""
-    parts = []
+    pages = []
     with pymupdf.open(path) as doc:
         for page in doc:
             tables = page.find_tables().tables
             boxes = [pymupdf.Rect(t.bbox) for t in tables]
-            items = []
-            for t in tables:
-                rows = t.extract()
-                cells = [(r, c, 1, 1, _cell_text(x)) for r, row in enumerate(rows) for c, x in enumerate(row)]
-                items.append((t.bbox[1], _render_table(len(rows), t.col_count, cells)))
+            items = [(t.bbox[0], t.bbox[2], t.bbox[1], t.extract()) for t in tables]  # (x0, x1, y0, 글|표)
             for x0, y0, x1, y1, text, _, kind in page.get_text("blocks"):
                 center = pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2)
-                if kind == 0 and not PDF_PAGE_NO.fullmatch(text.strip()) \
+                if kind == 0 and text.strip() and not PDF_PAGE_NO.fullmatch(text.strip()) \
                         and not any(center in box for box in boxes):  # 쪽번호·표 안 글(중복) 제외
-                    items.append((y0, text))
-            parts += [text for _, text in sorted(items, key=lambda it: it[0]) if text]
+                    items.append((x0, x1, y0, text))
+            pages.append([it[3] for it in sorted(items, key=_reading_order(items, page.rect.width)) if it[3]])
+    parts = []
+    for x in _merge_pages(pages):
+        if isinstance(x, list):
+            x = _render_table(len(x), len(x[0]), [(r, c, 1, 1, _cell_text(v))
+                                                  for r, row in enumerate(x) for c, v in enumerate(row)])
+        if x:
+            parts.append(x)
     return "\n".join(parts)
+
+
+def _clean_text(text: str) -> str:
+    text = unicodedata.normalize("NFC", text)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ue000-\uf8ff]", "", text)  # 제어문자 + PUA(깨진 기호)
+    text = re.sub(r"[·.…ㆍ‥․]{5,}", " ", text)  # 목차 점선
+    text = re.sub(r"[ \t\u3000]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\(?이 ?하 ?여 ?백\)?\n?", "", text)  # 서식 끝 표시
+    text = re.sub(r"\[\n+\]", "[ ]", text)  # PDF에서 줄이 갈린 체크박스
+    text = re.sub(r"□\n+√", "☑", text)
+    text = re.sub(r"Ÿ\s*", "• ", text)  # PDF 깨진 글머리표(Wingdings)
+    text = re.sub(r"(^|\s)\u00ad ?", r"\1• ", text, flags=re.M)  # 글머리표로 쓰인 soft hyphen
+    text = text.replace("\u00ad", "-")  # 단어 중간(전화번호 등)은 하이픈
+    text = "\n".join(_join_spaced(line) for line in text.split("\n"))
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
 def extract_text(path):
@@ -189,13 +254,7 @@ def extract_text(path):
         text = parse_pdf(path)
     else:
         raise ValueError(f"지원하지 않는 형식: {path.suffix}")
-    text = unicodedata.normalize("NFC", text)
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ue000-\uf8ff]", "", text)  # 제어문자 + PUA(깨진 기호)
-    text = re.sub(r"[·.…ㆍ‥․]{5,}", " ", text)  # 목차 점선
-    text = re.sub(r"[ \t\u3000]+", " ", text)
-    text = re.sub(r" *\n *", "\n", text)
-    text = "\n".join(_join_spaced(line) for line in text.split("\n"))
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = _number_tables(_clean_text(text))
     if not text:
         raise ValueError("추출된 텍스트 없음: 스캔 PDF는 OCR이 필요합니다.")
     return text
