@@ -94,11 +94,13 @@ Document = {
     "doc_id": "문서 ID 문자열",
     "text": "추출 본문 문자열",
     "metadata": {"filename": "문서.hwp", "source": "files/문서.hwp", "발주 기관": "기관명"},
+    "sections": [[0, "Ⅰ 개요"]],  # 파서가 제공하는 선택 필드. 구형 문서에는 없을 수 있음
 }
 Chunk = {
     "chunk_id": "문서ID:0", "doc_id": "문서 ID 문자열", "text": "청크 본문",
     "metadata": {"filename": "문서.hwp", "source": "files/문서.hwp", "발주 기관": "기관명",
-                 "start_char": 0, "end_char": 1000},
+                 "start_char": 0, "end_char": 1000,
+                 "section_path": "Ⅰ 개요", "tables": []},
 }
 Hit = {**Chunk, "score": 0.85}
 Answer = {
@@ -127,6 +129,11 @@ Answer = {
 - `doc_id`는 NFC 정규화 파일명의 SHA-256 앞 16자리입니다. 같은 파일명은 같은 ID를 유지하며 내용 변경을 ID로 감지하지 못합니다. 파일명이나 ID 규칙을 바꾸면 평가 정답도 영향을 받습니다.
 - `metadata`는 CSV 열 이름과 문자열 값을 유지합니다. `텍스트` 열은 제외하고 실제 원본에서 본문을 추출합니다. `filename`, `source`를 유지해야 출처 출력이 동작합니다.
 - `chunk_id`는 현재 `doc_id:순번`입니다. 청크마다 고유해야 하며 원문 문서의 `doc_id`를 유지합니다. 문자 위치를 토큰 위치로 바꾸거나 가짜 위치를 넣지 않습니다. 원문에 대응하지 않는 청킹 전략은 위치 규약부터 협의합니다.
+- `RFP_CHUNKING_STRATEGY=structured`는 선택형 섹션·표 경계 청킹입니다. v2는 독립된 목차 제목 뒤 첫 섹션을 첫 청크에서 곧바로 분리하지 않고 문단 경계를 사용해 제목과 개요를 함께 담도록 합니다. 크기·원문 좌표·표 보호 규칙은 유지하며 `config.chunking_version=2`로 구분합니다. 기본 fixed 및 boundary는 버전 1과 기존 분할을 유지합니다. 전략·버전 변경을 적용하려면 별도 인덱스를 생성합니다.
+- 모든 전략에서 `metadata.section_path`는 `section_of(document, start_char)` 기준입니다. 여러 섹션에 걸쳐도 시작 위치의 경로 하나를 저장합니다. sections가 없거나 첫 섹션 전이면 빈 문자열이며, 잘못된 sections 항목은 원본을 변경하지 않고 제외합니다. structured도 크기·표 보호·overlap 조건을 고려하므로 섹션마다 반드시 분리하지는 않습니다.
+- 모든 전략에서 `metadata.tables`는 청크의 `[start_char, end_char)`와 겹치는 유효한 표 목록입니다. 각 항목은 `table_id`, `start_char`, `end_char`, `header_text`, `header_start_char`, `header_end_char`를 갖습니다. 좌표는 모두 **문서 원문의 문자 위치**이고 끝은 제외합니다. 표 범위에는 시작·종료 표시가 포함되고 헤더는 첫 Markdown 행과 바로 다음 구분선의 원문 슬라이스입니다. 문서 안에서만 고유한 ID이므로 문서 간에는 doc_id와 함께 사용합니다. ID 없는 구형 표는 null, 헤더를 확인할 수 없으면 빈 문자열·null 좌표, 유효한 표가 없으면 빈 목록입니다. 다단 헤더 전체를 추론하지 않습니다.
+- structured는 표시까지 포함해 chunk_size 이하인 표를 함께 유지하고 긴 표는 행 경계를 보호합니다. 행 하나가 chunk_size를 넘으면 문자 분할합니다. fixed/boundary에는 표 경계 보장을 추가하지 않습니다. 합의한 헤더 반복은 metadata에만 적용하며 Chunk.text와 임베딩 입력에는 붙이지 않습니다. metadata는 기존 retrieve → generate_answer의 sources 경로로 전달되므로 답변 입력 토큰은 늘어날 수 있습니다. 원문 헤더나 섹션 경로를 Langfuse 기록에 추가하지 않습니다.
+- 위 청크 파생 필드(section_path/tables)는 새 빌드에서 추가되고 `config.chunk_metadata_version=1`로 구분합니다. 구형 인덱스 로드는 유지하지만 기존 인덱스에 자동 반영하지 않습니다. run.py의 문서 해시는 청킹 코드·메타데이터 버전 변경을 검출하지 않으므로 적용하려면 별도 경로로 build해야 합니다. 동일 모델·문맥·청크 본문이면 벡터 재사용은 가능하나 기본 CLI build는 다시 API를 호출합니다.
 - `limit`은 성공 문서 수가 아니라 CSV 앞쪽 N행입니다. 개별 실패는 `parsing_errors.json`에 남기며, 성공 문서가 하나도 없으면 실패합니다.
 
 ### 인덱스·검색 규칙

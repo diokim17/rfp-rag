@@ -101,6 +101,47 @@ class StructuredTests(unittest.TestCase):
         title_end = text.index("\n", pos) + 1
         self.assertTrue(all(c["metadata"]["end_char"] != title_end for c in chunks))
 
+    def test_toc_preface_keeps_first_overview_facts_with_document_title(self):
+        for toc in ("목 차", "목차", "< 목 차 >"):
+            for newline in ("\n", "\r\n"):
+                with self.subTest(toc=toc, newline=repr(newline)):
+                    preface = newline.join(["사업 표지", toc, "목록 " * 175, "", ""])
+                    overview = newline.join(["Ⅰ 사업 개요", "사업명: 예시 시스템", "기간: 180일",
+                                             "예산: 150,000,000원", "", ""])
+                    text = preface + overview + "후속 설명 " * 200
+                    doc = {**document(text), "sections": [[len(preface), "Ⅰ 사업 개요"]]}
+                    chunks = self.assert_contract(doc, 1000, 150)
+                    self.assertTrue(chunks[0]["text"].startswith("사업 표지"))
+                    self.assertIn("기간: 180일", chunks[0]["text"])
+                    self.assertIn("예산: 150,000,000원", chunks[0]["text"])
+
+    def test_inline_toc_word_does_not_disable_normal_section_boundary(self):
+        preface = "본문에서 목차를 설명 " + "가" * 60 + "\n"
+        text = preface + "Ⅱ 새 제목\n다음 본문\n" + "나" * 150
+        doc = {**document(text), "sections": [[len(preface), "Ⅱ 새 제목"]]}
+        chunks = self.assert_contract(doc, 100, 15)
+        self.assertEqual(chunks[0]["metadata"]["end_char"], len(preface))
+
+    def test_toc_overview_preserves_tables_size_and_overlap_limits(self):
+        preface = "사업 표지\n목 차\n" + "목록 " * 175 + "\n\n"
+        overview = "Ⅰ 사업 개요\n사업명: 예시\n" + table() + "\n\n"
+        text = preface + overview + "후속 설명 " * 200
+        doc = {**document(text), "sections": [[len(preface), "Ⅰ 사업 개요"]]}
+        for size in (1000, len(preface) + 10, len(preface) + 40):
+            for overlap in (0, 150, size - 1):
+                with self.subTest(size=size, overlap=overlap):
+                    chunks = self.assert_contract(doc, size, overlap)
+                    self.assertTrue(any(table() in c["text"] for c in chunks))
+
+    def test_structured_revision_is_saved_without_changing_other_strategy_versions(self):
+        for strategy, version in (("fixed", 1), ("boundary", 1), ("structured", 2)):
+            with self.subTest(strategy=strategy), tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": strategy,
+                                            "RFP_EMBEDDING_CONTEXT": "none"}):
+                config = build_index([document("예산 100원")], FakeClient(), directory)
+                self.assertEqual(config["chunking_version"], version)
+                self.assertEqual(load_index(directory)[2], config)
+
     def test_adjacent_titles_and_title_before_table(self):
         text = "Ⅰ 제목\n1. 소제목\n본문입니다\n" + table() + "\n후속" * 20
         doc = {**document(text), "sections": [[0, "Ⅰ 제목"], [5, "소제목"]]}

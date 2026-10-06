@@ -9,7 +9,7 @@ import unicodedata
 import faiss
 import numpy as np
 
-from parsing import read_json, write_json
+from parsing import read_json, section_of, write_json
 from observability import observed, model_call
 
 
@@ -17,8 +17,12 @@ _BOUNDARIES = tuple(re.compile(pattern) for pattern in (
     r"\r?\n(?:[ \t]*\r?\n)+", r"\r?\n", r"[.!?。！？]\s+",
 ))
 _TABLE_MARKER = re.compile(r"<!-- (?P<close>/)?table(?::(?P<id>T\d+))? -->")
+_TABLE_HEADER = re.compile(
+    r"\|[^\r\n]*\|[ \t]*\r?\n[ \t]*\|(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*(?=\r?\n|$)"
+)
 _NEWLINE = re.compile("\n")
 _NONSPACE = re.compile(r"\S")
+_TOC_HEADING = re.compile(r"(?m)^[ \t]*(?:목[ \t]*차|<[ \t]*목[ \t]*차[ \t]*>)[ \t]*\r?$")
 # project_blend v1의 고정 비중. 변경 시 embedding_context_version을 올립니다.
 _PROJECT_CONTEXT_WEIGHT = 0.2
 
@@ -95,18 +99,51 @@ def _containing_span(pos, spans, starts):
     return None
 
 
-def _structure(document, chunk_size):
-    """원문 좌표의 섹션 경계와 보호 구간(짧은 표/큰 표의 행/제목)을 준비."""
-    text = document["text"]
+def _table_entries(text, spans):
+    """표 헤더는 본문에 복제하지 않고 원문 슬라이스와 문서 기준 좌표로 보관."""
+    entries = []
+    for start, end in spans:
+        marker = _TABLE_MARKER.match(text, start)
+        first = _NONSPACE.search(text, marker.end(), end)
+        header = _TABLE_HEADER.match(text, first.start(), end) if first else None
+        entries.append({
+            "table_id": marker["id"],
+            "start_char": start, "end_char": end,
+            "header_text": header.group() if header else "",
+            "header_start_char": header.start() if header else None,
+            "header_end_char": header.end() if header else None,
+        })
+    return entries
+
+
+def _chunk_tables(entries, ends, start, end):
+    # 구간은 [start, end). 인접 표나 이전 표를 잘못 붙이지 않습니다.
+    result = []
+    i = bisect_right(ends, start)
+    while i < len(entries) and entries[i]["start_char"] < end:
+        result.append(dict(entries[i]))
+        i += 1
+    return result
+
+
+def _section_entries(document):
+    """구형/불완전한 sections를 원본 변경 없이 안전한 위치 목록으로 정리."""
     raw_sections = document.get("sections")
     if not isinstance(raw_sections, (list, tuple)):
-        raw_sections = []
-    sections = sorted({item[0] for item in raw_sections
-                       if isinstance(item, (list, tuple)) and len(item) == 2
-                       and type(item[0]) is int and 0 <= item[0] < len(text)
-                       and isinstance(item[1], str) and item[1].strip()
-                       and (item[0] == 0 or text[item[0] - 1] == "\n")})
-    tables = _table_spans(text)
+        return []
+    text = document["text"]
+    return sorted((item for item in raw_sections
+                   if isinstance(item, (list, tuple)) and len(item) == 2
+                   and type(item[0]) is int and 0 <= item[0] < len(text)
+                   and isinstance(item[1], str) and item[1].strip()
+                   and (item[0] == 0 or text[item[0] - 1] == "\n")), key=lambda item: item[0])
+
+
+def _structure(document, chunk_size, table_spans=None):
+    """원문 좌표의 섹션 경계와 보호 구간(짧은 표/큰 표의 행/제목)을 준비."""
+    text = document["text"]
+    sections = sorted({pos for pos, _ in _section_entries(document)})
+    tables = _table_spans(text) if table_spans is None else table_spans
     table_starts = [a for a, _ in tables]
     protected = []
     for start, end in tables:
@@ -152,7 +189,12 @@ def _structured_end(text, start, size, overlap, structure):
         return limit
     minimum = start + max((size + 1) // 2, overlap + 1)
     i = bisect_right(sections, limit) - 1
-    end = (sections[i] if i >= 0 and sections[i] >= minimum
+    use_section = i >= 0 and sections[i] >= minimum
+    if use_section and start == 0 and i == 0 and _TOC_HEADING.search(text, 0, sections[0]):
+        # 목차만 담긴 첫 청크를 만들지 않도록 첫 개요의 문단 경계를 사용합니다.
+        # 크기 제한과 아래 표/제목 보호 규칙은 그대로 적용합니다.
+        use_section = False
+    end = (sections[i] if use_section
            else _boundary_end(text, start, limit, size, overlap))
     span = _containing_span(end, spans, starts)
     if span:
@@ -190,7 +232,11 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
     chunks = []
     for document in documents:
         text = document["text"]
-        structure = _structure(document, chunk_size) if strategy == "structured" else None
+        section_document = {**document, "sections": _section_entries(document)}
+        table_spans = _table_spans(text)
+        tables = _table_entries(text, table_spans)
+        table_ends = [end for _, end in table_spans]
+        structure = _structure(section_document, chunk_size, table_spans) if strategy == "structured" else None
         start, number = 0, 0
         previous_end = 0
         while start < len(text):
@@ -207,7 +253,9 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
                 chunks.append({
                     "chunk_id": f"{document['doc_id']}:{number}",
                     "doc_id": document["doc_id"], "text": text[start:end],
-                    "metadata": {**document["metadata"], "start_char": start, "end_char": end},
+                    "metadata": {**document["metadata"], "start_char": start, "end_char": end,
+                                 "section_path": section_of(section_document, start),
+                                 "tables": _chunk_tables(tables, table_ends, start, end)},
                 })
             if end == len(text):
                 break
@@ -273,8 +321,9 @@ def build_index(documents, client, index_dir="indexes", model="text-embedding-3-
     write_json(path / "chunks.json", chunks)
     config = {"embedding_model": model, "dimension": index.d, "chunk_count": len(chunks),
               "chunk_size": chunk_size, "chunk_overlap": chunk_overlap,
-              "chunking_strategy": strategy, "chunking_version": 1,
+              "chunking_strategy": strategy, "chunking_version": 2 if strategy == "structured" else 1,
               "embedding_context": context, "embedding_context_version": 1,
+              "chunk_metadata_version": 1,
               "documents_sha256": documents_sha256}
     write_json(path / "config.json", config)
     return config
