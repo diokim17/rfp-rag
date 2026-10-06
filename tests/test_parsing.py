@@ -3,7 +3,7 @@
 import struct
 import unittest
 
-from parsing import _cell_text, _clean_text, _merge_pages, _number_tables, _reading_order, _render_table, _section_text
+from parsing import _cell_text, _clean_text, _merge_pages, _number_tables, _reading_order, _render_table, _section_text, _sections, section_of
 
 
 def record(tag, level, payload):
@@ -32,6 +32,11 @@ class RenderTableTest(unittest.TestCase):
 
     def test_single_row_table_becomes_paragraph(self):
         self.assertEqual(_render_table(1, 4, [(0, 0, 1, 1, "7"), (0, 2, 1, 1, "기타사항")]), "7 기타사항")
+
+    def test_rows_identical_after_rowspan_repeat_dropped(self):
+        cells = [(0, 0, 1, 1, "목차"), (0, 1, 2, 1, "목 차"), (1, 0, 1, 1, "목차"), (2, 0, 1, 1, "Ⅰ"), (2, 1, 1, 1, "개요")]
+        self.assertEqual(_render_table(3, 2, cells),
+                         "<!-- table -->\n| 목차 | 목 차 |\n|---|---|\n| Ⅰ | 개요 |\n<!-- /table -->")
 
 
 class CellTextTest(unittest.TestCase):
@@ -90,6 +95,25 @@ class MergePagesTest(unittest.TestCase):
         self.assertEqual(_merge_pages(pages), [
             "본문", [["구분", "내용"], ["가", "1"], ["나", "2"], ["다", "3"]],
             [["ID", "SFR-001"]], [["ID", "SFR-002"]]])
+
+class SectionsTest(unittest.TestCase):
+    def test_heading_path_skips_toc_lists_and_tables(self):
+        text = "\n".join([
+            "Ⅰ. 사업개요 4",                 # 목차(쪽번호) → 제외
+            "Ⅰ. 사업개요", "1. 사업 개요", "가. 추진 배경", "나. 사업기간: 12개월",  # 콜론 → 목록
+            "| 1 사업 | 표 |", "3. 건너뛴 번호",   # 표 줄, 순서 안 맞는 번호 → 제외
+            "2. 사업 범위", "Ⅱ 제안요청 내용", "1 상세 요구사항",
+            "1. 입찰참가자격", "1.1 참가 자격",          # 장 제목 없이 번호 재시작 → 상위 비움
+            "Ⅳ 기타",                                    # 장 번호 건너뜀(Ⅲ 누락) 허용
+        ])
+        doc = {"sections": _sections(text)}
+        self.assertEqual([p for _, p in doc["sections"]], [
+            "Ⅰ. 사업개요", "Ⅰ. 사업개요 > 1. 사업 개요", "Ⅰ. 사업개요 > 1. 사업 개요 > 가. 추진 배경",
+            "Ⅰ. 사업개요 > 2. 사업 범위", "Ⅱ 제안요청 내용", "Ⅱ 제안요청 내용 > 1 상세 요구사항",
+            "1. 입찰참가자격", "1. 입찰참가자격 > 1.1 참가 자격", "Ⅳ 기타"])
+        self.assertEqual(section_of(doc, 0), "")
+        self.assertEqual(section_of(doc, text.index("나. 사업기간")), "Ⅰ. 사업개요 > 1. 사업 개요 > 가. 추진 배경")
+
 
 if __name__ == "__main__":
     unittest.main()

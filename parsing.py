@@ -1,5 +1,6 @@
 """나상훈: 원본 파일 → Document 목록. CSV 열 이름은 metadata에 유지합니다."""
 
+import bisect
 import csv
 import hashlib
 import itertools
@@ -94,6 +95,7 @@ def _render_table(rows: int, cols: int, cells: list, nested: bool = False) -> st
             for cc in range(c, min(c + span, cols)):
                 grid[rr][cc] = text
     lines = [row for row in grid if any(row)]
+    lines = [row for i, row in enumerate(lines) if i == 0 or row != lines[i - 1]]  # 병합 반복으로 똑같아진 행
     if not lines:
         return ""
     keep = [j for j in range(cols) if any(row[j] for row in lines)]  # 빈 열(여백용) 제거
@@ -260,9 +262,50 @@ def extract_text(path):
     return text
 
 
+ROMAN, KOR = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ", "가나다라마바사아자차카타파하"
+HEADINGS = (  # (단계, 정규식): 장 Ⅰ / 제1장 → 절 1. → 1.1 → 항 가.
+    (0, re.compile(rf"([{ROMAN}])\.?\s*[가-힣].*")),
+    (0, re.compile(r"제\s?(\d{1,2})\s?장\s*[가-힣].*")),
+    (1, re.compile(r"(\d{1,2})\.?\s+[가-힣][^:：]*")),
+    (2, re.compile(r"\d{1,2}\.(\d{1,2})\.?\s+[가-힣][^:：]*")),
+    (3, re.compile(rf"([{KOR}])\.\s*[가-힣][^:：]*")),
+)
+DEPTH = 4
+
+
+def _sections(text: str) -> list:
+    """[[시작 위치, "Ⅳ 제안요청 내용 > 2. 상세 요구사항"], ...]. 30자 이하·번호가 1 또는 직전+1인 줄만 제목으로 봄."""
+    out, path, last = [], [None] * DEPTH, [0] * DEPTH
+    for m in re.finditer(r"^.+$", text, re.M):
+        line = m[0].strip()
+        if len(line) > 30 or line[:1] in "|<" or re.search(r"\s\d+$", line):  # 긴 문장·표·목차(쪽번호) 제외
+            continue
+        for level, pattern in HEADINGS:
+            h = pattern.fullmatch(line)
+            if not h:
+                continue
+            n = int(h[1]) if h[1].isdigit() else (ROMAN if level == 0 else KOR).find(h[1]) + 1
+            if n in (1, last[level] + 1) or (level == 0 and n > last[level]):  # 장 번호는 빠진 장이 있어도 허용
+                if n == 1 and last[level]:  # 상위 제목 없이 번호가 다시 시작 → 놓친 상위 제목, 틀린 경로보다 빈 경로
+                    path[:level] = [None] * level
+                last[level:] = [n] + [0] * (DEPTH - 1 - level)
+                path[level:] = [line] + [None] * (DEPTH - 1 - level)
+                out.append([m.start(), " > ".join(p for p in path if p)])
+                break
+    return out
+
+
+def section_of(document, pos: int) -> str:
+    """청킹용: 원문 위치(start_char)가 속한 섹션 경로. 첫 제목 앞이면 빈 문자열."""
+    sections = document.get("sections") or []
+    i = bisect.bisect_right([s for s, _ in sections], pos)
+    return sections[i - 1][1] if i else ""
+
+
 @observed("parse-documents")
 def parse_documents(raw_dir="data/raw", output_dir="data/processed", limit=None):
-    """반환: [{doc_id, text, metadata}]. limit은 CSV 앞쪽 N행입니다."""
+    """반환: [{doc_id, text, metadata, sections}]. limit은 CSV 앞쪽 N행입니다.
+    sections는 metadata와 달리 청크마다 복사되지 않으니 section_of()로 조회하세요."""
     if limit is not None and limit < 1:
         raise ValueError("limit은 1 이상이어야 합니다.")
     raw_dir, output_dir = Path(raw_dir), Path(output_dir)
@@ -294,7 +337,7 @@ def parse_documents(raw_dir="data/raw", output_dir="data/processed", limit=None)
             metadata.update(filename=filename, source=f"files/{filename}")
             documents.append({
                 "doc_id": hashlib.sha256(filename.encode()).hexdigest()[:16],
-                "text": text, "metadata": metadata,
+                "text": text, "metadata": metadata, "sections": _sections(text),
             })
         except (ValueError, OSError, UnicodeError) as exc:
             errors.append({"filename": filename, "error": str(exc)})
