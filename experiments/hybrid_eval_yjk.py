@@ -46,12 +46,17 @@ SETTINGS = {
                                      "hybrid_vector_k": 50, "hybrid_bm25_k": 50},
     "hybrid-lexical-c200": {"rerank": "lexical", "candidates": 200, "hybrid": True,
                             "hybrid_vector_k": 100, "hybrid_bm25_k": 100},
+    # cross-encoder 비교: 하이브리드 후보(벡터 100 + BM25 100, RRF)는 같게 두고 상위 candidates개만 재정렬
+    **{f"hybrid-ce-c{n}": {"rerank": "cross-encoder", "candidates": n, "hybrid": True,
+                           "hybrid_vector_k": 100, "hybrid_bm25_k": 100} for n in (30, 50, 100)},
+    "hybrid-lexical-c100-cap2": {"rerank": "lexical", "candidates": 100, "hybrid": True, "max_per_doc": 2},
     "rewrite-only-lexical": {"rerank": "lexical", "candidates": 100, "rewrite": "only"},
     "rewrite-both-lexical": {"rerank": "lexical", "candidates": 100, "rewrite": "both"},
     "hybrid-rewrite-only-lexical": {"rerank": "lexical", "candidates": 100, "hybrid": True, "rewrite": "only"},
     "hybrid-rewrite-both-lexical": {"rerank": "lexical", "candidates": 100, "hybrid": True, "rewrite": "both"},
 }
-NO_API = [name for name, options in SETTINGS.items() if options.get("rewrite", "off") == "off"]
+NO_API = [name for name, options in SETTINGS.items() if options.get("rewrite", "off") == "off"
+          and options.get("rerank") != "cross-encoder"]  # cross-encoder는 GPU에서 오래 걸려 직접 지정
 DISCLAIMER = ("평가셋은 개인이 CSV 메타데이터로 자동 구성한 문서 단위 정답 325문항이며 팀 공통 평가셋이 아닙니다. "
               "답변 생성과 답변 사실성은 측정하지 않습니다.")
 
@@ -174,7 +179,7 @@ def report_lines(meta, results, rewrite_info):
         lines.append(f"| {result['setting']} | {result['mean_ms']:.1f} | {result['p95_ms']:.1f} | `{enabled}` |")
     if rewrite_info:
         lines += ["", "## 질문 재작성 호출", "", f"`{rewrite_info}`"]
-    lines += ["", "처리 시간은 질문 임베딩·재작성 캐시를 쓴 검색 시간입니다 (API 지연·BM25 색인 생성 시간 제외).", ""]
+    lines += ["", "처리 시간은 retrieve() 한 번의 시간으로 벡터 검색·필터·BM25·RRF·리랭킹·문서당 상한을 포함합니다. 질문 임베딩·재작성은 캐시를 썼으므로 API 지연은 빠져 있고, BM25 색인 생성과 cross-encoder 모델 로드 시간도 제외했습니다.", ""]
     return lines
 
 
@@ -243,6 +248,14 @@ def main():
         bm25_ms = (time.perf_counter() - start) * 1000
         print(f"BM25 색인 생성: {bm25_ms:.0f}ms")
 
+    ce_load_ms = 0.0
+    if any(SETTINGS[name].get("rerank") == "cross-encoder" for name in args.settings):
+        start = time.perf_counter()  # 모델 로드·GPU 초기화를 측정에서 분리
+        retrieval.retrieve(cases[0]["question"], client, index, chunks, config, 1, None,
+                           rerank="cross-encoder", candidates=1)
+        ce_load_ms = (time.perf_counter() - start) * 1000
+        print(f"cross-encoder 모델 준비: {ce_load_ms:.0f}ms")
+
     embedding_calls_before = client.api_calls
     results, records = [], []
     for name in args.settings:
@@ -260,7 +273,9 @@ def main():
             "evaluation_sha256": file_hash(args.eval_file), "cases": len(cases), "index_dir": relative(args.index_dir),
             "chunks_file": "chunks.json", "chunks_sha256": file_hash(args.index_dir / "chunks.json"),
             "index_sha256": file_hash(args.index_dir / "index.faiss"), "chunk_count": config["chunk_count"],
-            "embedding_model": config["embedding_model"], "ks": list(KS), "bm25_build_ms": round(bm25_ms)}
+            "embedding_model": config["embedding_model"], "ks": list(KS), "bm25_build_ms": round(bm25_ms),
+            "cross_encoder_model": os.getenv("RETRIEVAL_RERANK_MODEL", "BAAI/bge-reranker-v2-m3") if ce_load_ms else None,
+            "cross_encoder_load_ms": round(ce_load_ms)}
     output = args.results_dir / f"hybrid_eval_{experiment_id}_{stamp}.json"
     write_json(output, {"settings": meta, "disclaimer": DISCLAIMER, "rewrite": rewrite_info,
                         "results": results, "records": records})
