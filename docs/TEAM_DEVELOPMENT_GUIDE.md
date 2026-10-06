@@ -131,6 +131,8 @@ Answer = {
 
 ### 인덱스·검색 규칙
 
+- `feature/index-check` 연동 변경: `run.py`의 ask/evaluate는 현재 `--processed-dir/documents.json` 파일 바이트의 SHA-256과 `config.json`의 `documents_sha256`을 비교합니다. 누락·불일치 시 질의 전에 중단하며 자동 재빌드하지 않습니다. build/all은 문서를 읽은 동일한 바이트에서 해시를 계산해 `build_index(..., documents_sha256=해시)`로 전달하고, 저장된 config를 검사합니다.
+- **embedding 담당 구현 대기:** 기존 위치 인자를 유지하면서 `build_index`에 선택적 키워드 인자 `documents_sha256=None`을 추가하고, 전달된 해시를 반환 config와 저장 config에 그대로 기록해야 합니다. run.py만 반영한 상태에서는 build/all이 새 인자를 받을 수 없어 실패합니다. embedding 변경과 함께 통합해야 하며, 기존 인덱스는 재빌드가 필요합니다. 현재 문서의 해시만 기존 config에 덧붙여 검사를 우회하지 않습니다.
 - 현재 저장 세트는 `index.faiss`, `chunks.json`, `config.json`입니다. FAISS 벡터 i번과 chunks i번이 같은 청크여야 합니다.
 - config 필수 키는 `embedding_model`, `dimension`, `chunk_count`, `chunk_size`, `chunk_overlap`입니다. 로드할 때 벡터 수·청크 수·차원을 검증합니다.
 - 현재는 L2 정규화 벡터 + `IndexFlatIP`로 코사인 유사도를 구합니다. 질문은 `.env`의 새 모델이 아니라 **저장된 config의 임베딩 모델**로 임베딩합니다. 같은 차원이라도 서로 다른 모델의 벡터를 섞으면 안 됩니다.
@@ -158,8 +160,8 @@ Answer = {
 ```bash
 python run.py parse --limit 3 --processed-dir data/processed/retrieval-yj-001
 python run.py build --processed-dir data/processed/retrieval-yj-001 --index-dir indexes/retrieval-yj-001 --chunk-size 1000 --chunk-overlap 150
-python run.py ask --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001 --question "주요 요구사항은 무엇인가요?" --top-k 5
-python run.py evaluate --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001 --eval-file data/eval.json --top-k 5
+python run.py ask --processed-dir data/processed/retrieval-yj-001 --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001 --question "주요 요구사항은 무엇인가요?" --top-k 5
+python run.py evaluate --processed-dir data/processed/retrieval-yj-001 --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001 --eval-file data/eval.json --top-k 5
 ```
 
 `data/eval.json`은 원문을 보고 팀이 작성해야 하는 파일이며 현재 자동 제공되지 않습니다. build/ask/evaluate는 API 비용이 발생합니다. 먼저 소수 문서로 연결을 확인하고 규모를 늘립니다. `build`는 해당 processed 폴더의 documents.json 전체를 사용합니다.
@@ -174,7 +176,7 @@ python run.py evaluate --index-dir indexes/retrieval-yj-001 --results-dir result
 | 생성 프롬프트·답변 모델 | ask/evaluate |
 | 정답셋·평가 지표 | evaluate |
 
-`python run.py`처럼 인자 없이 실행하면 기본 indexes의 세 파일 존재 여부만으로 ask/all을 선택합니다. 데이터 최신 여부나 모델 일치까지 판단하지 않습니다. 파일이 없으면 all이 실행되어 기본 processed/indexes를 생성하고 API 비용이 듭니다. 개인 실험에서는 명령과 경로를 명시하고 `DEFAULT_COMMAND`, `DEFAULT_LIMIT`, `DEFAULT_QUESTION` 변경을 실험 PR에 섞지 않습니다.
+`python run.py`처럼 인자 없이 실행하면 기본 indexes의 세 파일 존재 여부로 ask/all을 선택합니다. ask는 이후 문서 해시 검사를 통과해야 질의합니다. 이 검사는 전처리 파일 변경만 감지하며, 원본이나 파싱 코드 변경은 parse를 다시 실행해야 반영됩니다. 파일이 없으면 all이 실행되어 기본 processed/indexes를 생성하고 API 비용이 듭니다. 개인 실험에서는 명령과 경로를 명시하고 `DEFAULT_COMMAND`, `DEFAULT_LIMIT`, `DEFAULT_QUESTION` 변경을 실험 PR에 섞지 않습니다.
 
 ## 6. 브랜치·PR·검증
 

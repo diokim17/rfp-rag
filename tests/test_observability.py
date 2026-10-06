@@ -107,8 +107,13 @@ class ObservabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             client = FakeClient()
-            build_index([{"doc_id": "a", "text": "예산 PRIVATE_DOCUMENT", "metadata": {
-                "filename": "private.hwp"}}], client, root / "index")
+            documents = [{"doc_id": "a", "text": "예산 PRIVATE_DOCUMENT", "metadata": {
+                "filename": "private.hwp"}}]
+            run.write_json(root / "data/processed/documents.json", documents)
+            config = build_index(documents, client, root / "index")
+            # 새 저장 계약을 갖춘 인덱스 fixture. 실제 저장 기능은 embedding 담당 변경입니다.
+            config["documents_sha256"] = run.file_hash(root / "data/processed/documents.json")
+            run.write_json(root / "index/config.json", config)
             eval_file = root / "eval.json"
             eval_file.write_text(json.dumps([{"question": "예산 PRIVATE_QUESTION",
                                               "expected_doc_ids": ["a"],
