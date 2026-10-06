@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from parsing import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
+from retrieval_metrics_yjk import score_case  # noqa: E402
 
 MODES = ("lexical", "cross-encoder")
 CANDIDATES = (30, 50, 70, 100)
@@ -38,11 +39,8 @@ TABLE_HEADER = ["| 리랭킹 | 후보 수 | top-k | Recall@k | MRR@k | 질문당
 
 
 def score(case, hits, top_k):
-    """질문 하나의 Recall@k, MRR@k."""
-    gold = set(case["expected_doc_ids"])
-    docs = [hit["doc_id"] for hit in hits[:top_k]]
-    first = next((rank for rank, doc in enumerate(docs, 1) if doc in gold), None)
-    return {"recall": len(gold & set(docs)) / len(gold), "mrr": 1 / first if first else 0.0}
+    """질문 하나의 Recall@k, MRR@k (정의: retrieval_metrics_yjk.py)."""
+    return score_case(case["expected_doc_ids"], [hit["doc_id"] for hit in hits], top_k)
 
 
 def run_setting(cases, search, top_k):
