@@ -2,6 +2,7 @@
 
 - `3dfbb90` merge: feature/parsing(청킹 연계용 파싱 개선)을 retrieval/max-per-doc에 병합
 - `ba412a8` feat: 리랭킹 방식·후보 수·top-k 조합별 Recall@k·MRR@k·처리 시간 비교 실험 추가
+- `97bb486` feat: 리랭킹 비교 실험 노트북과 PR 댓글 자동 생성 추가
 
 ## 리랭킹 × 후보 수 × top-k 비교: eval_sample_v0.json (14문항)
 
