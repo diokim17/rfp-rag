@@ -1,8 +1,10 @@
 """유찬혁: Document → Chunk → OpenAI 임베딩 → FAISS 인덱스."""
 
+from bisect import bisect_right
 import os
 from pathlib import Path
 import re
+import unicodedata
 
 import faiss
 import numpy as np
@@ -14,13 +16,153 @@ from observability import observed, model_call
 _BOUNDARIES = tuple(re.compile(pattern) for pattern in (
     r"\r?\n(?:[ \t]*\r?\n)+", r"\r?\n", r"[.!?。！？]\s+",
 ))
+_TABLE_MARKER = re.compile(r"<!-- (?P<close>/)?table(?::(?P<id>T\d+))? -->")
+_NEWLINE = re.compile("\n")
+_NONSPACE = re.compile(r"\S")
+# project_blend v1의 고정 비중. 변경 시 embedding_context_version을 올립니다.
+_PROJECT_CONTEXT_WEIGHT = 0.2
 
 
 def _chunking_strategy():
     strategy = os.getenv("RFP_CHUNKING_STRATEGY", "fixed")
-    if strategy not in {"fixed", "boundary"}:
-        raise ValueError("RFP_CHUNKING_STRATEGY는 fixed 또는 boundary여야 합니다.")
+    if strategy not in {"fixed", "boundary", "structured"}:
+        raise ValueError("RFP_CHUNKING_STRATEGY는 fixed, boundary 또는 structured여야 합니다.")
     return strategy
+
+
+def _embedding_context():
+    context = os.getenv("RFP_EMBEDDING_CONTEXT", "none")
+    if context not in {"none", "project", "project_blend"}:
+        raise ValueError("RFP_EMBEDDING_CONTEXT는 none, project 또는 project_blend여야 합니다.")
+    return context
+
+
+def _embedding_input(chunk, context):
+    # 저장 본문/metadata는 그대로 두고 문서 임베딩 요청에만 문맥을 붙입니다.
+    lines = []
+    if context == "project":
+        for key in ("사업명", "발주 기관"):
+            value = chunk["metadata"].get(key)
+            if isinstance(value, str):
+                value = " ".join(unicodedata.normalize("NFC", value).split())
+                if value:
+                    lines.append(f"{key}: {value}")
+    return "\n".join(lines) + "\n\n" + chunk["text"] if lines else chunk["text"]
+
+
+def _document_vectors(chunks, client, model, context):
+    """문서 전용 처리. blend는 본문 80% + 문맥 포함 입력 20% 후 재정규화.
+
+    문맥이 있는 청크는 두 번 임베딩하므로 추가 토큰을 사용합니다.
+    none/project와 질문 임베딩 경로는 유지합니다.
+    """
+    if context != "project_blend":
+        return embed_texts([_embedding_input(c, context) for c in chunks], client, model)
+    bodies = [c["text"] for c in chunks]
+    vectors = embed_texts(bodies, client, model)
+    inputs = [_embedding_input(c, "project") for c in chunks]
+    positions = [i for i, text in enumerate(inputs) if text != bodies[i]]
+    if positions:
+        contextual = embed_texts([inputs[i] for i in positions], client, model)
+        if contextual.shape[1] != vectors.shape[1]:
+            raise ValueError("본문과 문맥 임베딩의 벡터 차원이 다릅니다.")
+        mixed = ((1 - _PROJECT_CONTEXT_WEIGHT) * vectors[positions]
+                 + _PROJECT_CONTEXT_WEIGHT * contextual)
+        faiss.normalize_L2(mixed)
+        vectors[positions] = mixed
+    return vectors
+
+
+def _table_spans(text):
+    """짝이 맞는 비중첩 표만 사용합니다. 잘못된 표시는 일반 본문으로 처리."""
+    spans, stack, invalid = [], [], False
+    for match in _TABLE_MARKER.finditer(text):
+        if not match["close"]:
+            invalid = bool(stack)
+            stack.append((match.start(), match["id"]))
+        elif stack:
+            start, table_id = stack.pop()
+            invalid = invalid or table_id != match["id"]
+            if not stack and not invalid:
+                spans.append((start, match.end()))
+    return spans
+
+
+def _containing_span(pos, spans, starts):
+    i = bisect_right(starts, pos) - 1
+    if i >= 0 and spans[i][0] < pos < spans[i][1]:
+        return spans[i]
+    return None
+
+
+def _structure(document, chunk_size):
+    """원문 좌표의 섹션 경계와 보호 구간(짧은 표/큰 표의 행/제목)을 준비."""
+    text = document["text"]
+    raw_sections = document.get("sections")
+    if not isinstance(raw_sections, (list, tuple)):
+        raw_sections = []
+    sections = sorted({item[0] for item in raw_sections
+                       if isinstance(item, (list, tuple)) and len(item) == 2
+                       and type(item[0]) is int and 0 <= item[0] < len(text)
+                       and isinstance(item[1], str) and item[1].strip()
+                       and (item[0] == 0 or text[item[0] - 1] == "\n")})
+    tables = _table_spans(text)
+    table_starts = [a for a, _ in tables]
+    protected = []
+    for start, end in tables:
+        if end - start <= chunk_size:
+            protected.append((start, end))
+        else:
+            # 긴 행도 구간에 포함: 행 자체가 제한을 넘을 때만 문자 분할합니다.
+            row_start = start
+            for match in _NEWLINE.finditer(text, start, end):
+                row_end = match.end()
+                protected.append((row_start, row_end))
+                row_start = row_end
+            if row_start < end:
+                protected.append((row_start, end))
+    for pos in sections:
+        # 표 안의 제목처럼 보이는 텍스트는 표 규칙에 맡깁니다.
+        i = bisect_right(table_starts, pos) - 1
+        if i >= 0 and pos < tables[i][1]:
+            continue
+        line_end = text.find("\n", pos)
+        next_text = _NONSPACE.search(text, line_end + 1) if line_end >= 0 else None
+        body_end = text.find("\n", next_text.start()) if next_text else -1
+        end = body_end + 1 if body_end >= 0 else len(text)
+        # 제목 직후 표가 있더라도 표와 합쳐 큰 보호 구간을 만들지 않습니다.
+        next_table = bisect_right(table_starts, pos)
+        if next_table < len(tables):
+            end = min(end, tables[next_table][0])
+        if end > pos:
+            protected.append((pos, end))
+    merged = []
+    for start, end in sorted(protected):
+        if merged and start < merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return sections, merged, [a for a, _ in merged]
+
+
+def _structured_end(text, start, size, overlap, structure):
+    sections, spans, starts = structure
+    limit = min(start + size, len(text))
+    if limit == len(text):
+        return limit
+    minimum = start + max((size + 1) // 2, overlap + 1)
+    i = bisect_right(sections, limit) - 1
+    end = (sections[i] if i >= 0 and sections[i] >= minimum
+           else _boundary_end(text, start, limit, size, overlap))
+    span = _containing_span(end, spans, starts)
+    if span:
+        left, right = span
+        if right <= limit:
+            return right
+        if left > start:
+            return left
+        return limit  # 행/제목 자체가 너무 길 때는 크기 제한을 지킵니다.
+    return end
 
 
 def _boundary_end(text, start, end, chunk_size, chunk_overlap):
@@ -37,9 +179,10 @@ def _boundary_end(text, start, end, chunk_size, chunk_overlap):
 
 @observed("chunking")
 def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
-    """문자 기준 청킹. RFP_CHUNKING_STRATEGY=boundary로 원문 경계를 우선합니다.
+    """문자 기준 청킹. boundary는 문장, structured는 섹션/표 경계를 우선.
 
-    기본 fixed 결과와 원문 문자 위치를 유지합니다. 반환: Chunk dict 목록.
+    structured의 실제 중복은 chunk_overlap 이하입니다. 원문 위치/기본 fixed 유지.
+    반환: Chunk dict 목록.
     """
     if not 0 <= chunk_overlap < chunk_size:
         raise ValueError("0 <= chunk_overlap < chunk_size 조건이 필요합니다.")
@@ -47,11 +190,19 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
     chunks = []
     for document in documents:
         text = document["text"]
+        structure = _structure(document, chunk_size) if strategy == "structured" else None
         start, number = 0, 0
+        previous_end = 0
         while start < len(text):
             end = min(start + chunk_size, len(text))
             if strategy == "boundary" and end < len(text):
                 end = _boundary_end(text, start, end, chunk_size, chunk_overlap)
+            elif strategy == "structured":
+                end = _structured_end(text, start, chunk_size, chunk_overlap, structure)
+                if end <= previous_end:
+                    # 표 앞에 남은 overlap 때문에 같은 내용만 반복하지 않습니다.
+                    start = previous_end
+                    end = _structured_end(text, start, chunk_size, chunk_overlap, structure)
             if text[start:end].strip():
                 chunks.append({
                     "chunk_id": f"{document['doc_id']}:{number}",
@@ -60,7 +211,13 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
                 })
             if end == len(text):
                 break
-            start = end - chunk_overlap
+            if strategy == "structured":
+                next_start = max(start + 1, end - chunk_overlap)
+                span = _containing_span(next_start, structure[1], structure[2])
+                start = min(span[1], end) if span else next_start
+                previous_end = end
+            else:
+                start = end - chunk_overlap
             number += 1
     return chunks
 
@@ -96,12 +253,13 @@ def embed_texts(texts, client, model):
 def build_index(documents, client, index_dir="indexes", model="text-embedding-3-small",
                 chunk_size=1000, chunk_overlap=150):
     strategy = _chunking_strategy()
+    context = _embedding_context()
     chunks = chunk_documents(documents, chunk_size, chunk_overlap)
     if not chunks:
         raise ValueError("인덱스를 생성할 청크가 없습니다.")
     index = None
     for start in range(0, len(chunks), 32):
-        vectors = embed_texts([c["text"] for c in chunks[start:start + 32]], client, model)
+        vectors = _document_vectors(chunks[start:start + 32], client, model, context)
         if index is None:
             index = faiss.IndexFlatIP(vectors.shape[1])
         elif vectors.shape[1] != index.d:
@@ -114,7 +272,8 @@ def build_index(documents, client, index_dir="indexes", model="text-embedding-3-
     write_json(path / "chunks.json", chunks)
     config = {"embedding_model": model, "dimension": index.d, "chunk_count": len(chunks),
               "chunk_size": chunk_size, "chunk_overlap": chunk_overlap,
-              "chunking_strategy": strategy, "chunking_version": 1}
+              "chunking_strategy": strategy, "chunking_version": 1,
+              "embedding_context": context, "embedding_context_version": 1}
     write_json(path / "config.json", config)
     return config
 
