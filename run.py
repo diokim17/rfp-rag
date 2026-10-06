@@ -181,6 +181,8 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
     with trace.span("index-settings", metadata={**config, "generation_model": generation_model,
                                                "top_k": args.top_k}):
         pass
+    # CLI 밖에서 args를 직접 만들어 넘길 때(테스트 등) 항목이 없어도 기존처럼 상한 없이 동작합니다.
+    max_per_doc = getattr(args, "max_per_doc", None)
 
     @observed("question-answer")
     def answer(question, case_filters=None):
@@ -189,7 +191,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                 "filter_keys": sorted({**filters, **(case_filters or {})})}):
             pass
         hits = retrieve(question, client, index, chunks, config, args.top_k,
-                        {**filters, **(case_filters or {})}, max_per_doc=args.max_per_doc)
+                        {**filters, **(case_filters or {})}, max_per_doc=max_per_doc)
         try:
             return generate_answer(question, hits, client, generation_model)
         except RateLimitError as exc:
@@ -214,7 +216,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
             print(f"[{source['citation']}] {source['metadata']['filename']} "
                   f"(doc_id={source['doc_id']}, score={source['score']:.3f})")
     result["settings"] = {**config, "generation_model": generation_model,
-                          "top_k": args.top_k, "max_per_doc": args.max_per_doc, "filters": filters}
+                          "top_k": args.top_k, "max_per_doc": max_per_doc, "filters": filters}
     result["experiment"] = {**experiment, "trace_id": trace.trace_id}
     result["token_usage"] = trace.usage
     if args.command == "evaluate":
