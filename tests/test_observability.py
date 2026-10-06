@@ -107,8 +107,11 @@ class ObservabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             client = FakeClient()
-            build_index([{"doc_id": "a", "text": "예산 PRIVATE_DOCUMENT", "metadata": {
-                "filename": "private.hwp"}}], client, root / "index")
+            documents = [{"doc_id": "a", "text": "예산 PRIVATE_DOCUMENT", "metadata": {
+                "filename": "private.hwp"}}]
+            run.write_json(root / "data/processed/documents.json", documents)
+            build_index(documents, client, root / "index",
+                        documents_sha256=run.file_hash(root / "data/processed/documents.json"))
             eval_file = root / "eval.json"
             eval_file.write_text(json.dumps([{"question": "예산 PRIVATE_QUESTION",
                                               "expected_doc_ids": ["a"],
@@ -124,6 +127,8 @@ class ObservabilityTests(unittest.TestCase):
             self.assertEqual(result["summary"]["recall_at_k"], 1)
             self.assertEqual(result["experiment"]["experiment_id"], "tester-0001")
             self.assertIsNotNone(result["experiment"]["index_sha256"])
+            self.assertEqual(result["settings"]["documents_sha256"],
+                             run.file_hash(root / "data/processed/documents.json"))
             self.assertIsNone(result["experiment"]["trace_id"])
             report = next((root / "reports").glob("*.md")).read_text()
             self.assertNotIn("PRIVATE_QUESTION", report)
