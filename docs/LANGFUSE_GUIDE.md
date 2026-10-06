@@ -47,11 +47,13 @@ BASE_URL은 Markdown 링크가 아닌 URL 문자열입니다. 미국 리전 프�
 상태 폴더는 Git에서 제외합니다. 삭제하면 번호가 처음부터 시작하므로 보존하세요. 같은 owner가 새 clone이나 다른 서버에서 별도 상태 파일로 실행하면 번호가 중복될 수 있으므로 기존 상태 파일을 실행이 없는 때 함께 이전하거나, 별도 작업 공간에는 다른 owner 식별자를 사용합니다. 팀원별 고유 이니셜을 정하면 서로 다른 계정의 첫 실행도 구분됩니다.
 
 ```bash
-python run.py ask --question "주요 요구사항은 무엇인가요?" --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001
-python run.py evaluate --eval-file data/eval.json --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001 --top-k 5
+python run.py ask --question "주요 요구사항은 무엇인가요?" --processed-dir data/processed/retrieval-yj-001 --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001
+python run.py evaluate --eval-file data/eval.json --processed-dir data/processed/retrieval-yj-001 --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001 --top-k 5
 ```
 
 본인의 인덱스와 OpenAI 키가 필요하고 API 비용이 발생합니다. 평가셋은 원문에서 정답을 확인해 팀이 별도 준비해야 합니다. parse/build에서도 자동 실험 ID가 배정됩니다. 각 CLI 실행은 별도 trace입니다.
+
+`--processed-dir`는 인덱스 빌드에 사용한 문서 폴더와 일치해야 합니다. 문서 파일 해시와 저장된 `documents_sha256`이 다르거나 해시가 없으면 질의 전에 중단하며, build를 직접 실행해야 합니다. 자동 재빌드는 하지 않습니다.
 
 ## 기록 위치와 내용
 

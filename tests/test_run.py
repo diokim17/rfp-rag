@@ -15,6 +15,7 @@ from unittest.mock import patch
 import run
 from observability import Trace
 from parsing import write_json
+from test_pipeline import FakeClient
 
 
 class IndexFreshnessTests(unittest.TestCase):
@@ -106,6 +107,65 @@ class IndexFreshnessTests(unittest.TestCase):
                     self.pipeline()
                 builder.assert_called_once()
                 self.assertEqual(retrieve.call_count, int(command == "all"))
+
+    def test_real_build_then_ask_uses_saved_documents_hash(self):
+        self.args.command = "build"
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "fake",
+                                     "OPENAI_GENERATION_MODEL": "gpt-5-mini",
+                                     "RFP_CHUNKING_STRATEGY": "fixed",
+                                     "RFP_EMBEDDING_CONTEXT": "none"}), \
+                patch("run.OpenAI", return_value=FakeClient()), redirect_stdout(io.StringIO()):
+            self.pipeline()
+            _, chunks, config = run.load_index(self.args.index_dir)
+            self.assertEqual(config["documents_sha256"], self.digest)
+            self.assertEqual(chunks[0]["text"], self.documents[0]["text"])
+            self.args.command = "ask"
+            self.pipeline()
+        result = run.read_json(self.args.results_dir / "ask_tester-0001_test.json")
+        self.assertEqual(result["settings"]["documents_sha256"], self.digest)
+        self.assertEqual(result["sources"][0]["doc_id"], "a")
+
+    def test_real_all_uses_newly_parsed_bytes_and_preserves_trace_privacy(self):
+        from test_observability import FakeLangfuse
+
+        self.args.command = "all"
+        documents = [{"doc_id": "new", "text": "예산 PRIVATE_NEW_BODY", "metadata": {
+            "filename": "PRIVATE_NEW_FILE.hwp"}}]
+
+        def parse(raw_dir, processed_dir, limit):
+            write_json(processed_dir / "documents.json", documents)
+            write_json(processed_dir / "parsing_errors.json", [])
+            return documents
+
+        logger = FakeLangfuse()
+        trace = Trace({}, logger)
+        experiment = {"experiment_id": "tester-0001", "documents_sha256": self.digest}
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "fake",
+                                     "OPENAI_GENERATION_MODEL": "gpt-5-mini",
+                                     "RFP_CHUNKING_STRATEGY": "fixed",
+                                     "RFP_EMBEDDING_CONTEXT": "none"}), \
+                patch("run.OpenAI", return_value=FakeClient()), \
+                patch("run.parse_documents", side_effect=parse), \
+                redirect_stdout(io.StringIO()), trace.run("offline-test"):
+            run.run_pipeline(self.args, self.parser, {}, experiment, trace, "test")
+        digest = run.file_hash(self.args.processed_dir / "documents.json")
+        self.assertNotEqual(digest, self.digest)
+        config = run.load_index(self.args.index_dir)[2]
+        self.assertEqual(config["documents_sha256"], digest)
+        result = run.read_json(self.args.results_dir / "all_tester-0001_test.json")
+        self.assertEqual(result["settings"]["documents_sha256"], digest)
+        self.assertEqual(result["experiment"]["documents_sha256"], digest)
+        self.assertEqual(result["sources"][0]["doc_id"], "new")
+        records = json.dumps(logger.records)
+        self.assertIn(digest, records)
+        for private in ("PRIVATE_NEW_BODY", "PRIVATE_NEW_FILE", self.args.question):
+            self.assertNotIn(private, records)
+
+    def test_same_documents_with_changed_json_bytes_require_rebuild(self):
+        path = self.args.processed_dir / "documents.json"
+        path.write_bytes(path.read_bytes() + b"\n")
+        self.assertEqual(run.read_json(path), self.documents)
+        self.assert_rejected("생성 당시와 다릅니다")
 
     def test_all_stops_before_retrieval_if_builder_does_not_save_hash(self):
         self.args.command = "all"

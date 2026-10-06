@@ -114,7 +114,7 @@ Answer = {
 | `parse_documents` | `(raw_dir, output_dir, limit=None)` | Document 목록 및 documents/errors JSON 저장 |
 | `chunk_documents` | `(documents, chunk_size=1000, chunk_overlap=150)` | Chunk 목록 |
 | `embed_texts` | `(texts, client, model)` | 입력 순서와 같은 정규화된 float32 벡터 |
-| `build_index` | `(documents, client, index_dir="indexes", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150)` | config dict 및 인덱스 파일 저장 |
+| `build_index` | `(documents, client, index_dir="indexes", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150, documents_sha256=None)` | config dict 및 인덱스 파일 저장 |
 | `load_index` | `(index_dir="indexes")` | `(index, chunks, config)` 튜플 |
 | `retrieve` | `(question, client, index, chunks, config, top_k=5, filters=None)` | Hit 목록 |
 | `generate_answer` | `(question, hits, client, model="gpt-5-mini")` | Answer dict |
@@ -132,7 +132,7 @@ Answer = {
 ### 인덱스·검색 규칙
 
 - `feature/index-check` 연동 변경: `run.py`의 ask/evaluate는 현재 `--processed-dir/documents.json` 파일 바이트의 SHA-256과 `config.json`의 `documents_sha256`을 비교합니다. 누락·불일치 시 질의 전에 중단하며 자동 재빌드하지 않습니다. build/all은 문서를 읽은 동일한 바이트에서 해시를 계산해 `build_index(..., documents_sha256=해시)`로 전달하고, 저장된 config를 검사합니다.
-- **embedding 담당 구현 대기:** 기존 위치 인자를 유지하면서 `build_index`에 선택적 키워드 인자 `documents_sha256=None`을 추가하고, 전달된 해시를 반환 config와 저장 config에 그대로 기록해야 합니다. run.py만 반영한 상태에서는 build/all이 새 인자를 받을 수 없어 실패합니다. embedding 변경과 함께 통합해야 하며, 기존 인덱스는 재빌드가 필요합니다. 현재 문서의 해시만 기존 config에 덧붙여 검사를 우회하지 않습니다.
+- `build_index`는 기존 인자 뒤에 `documents_sha256=None`을 추가하며, 받은 값을 재계산·정규화하지 않고 반환 config와 저장 config에 그대로 기록합니다. 생략한 기존 호출은 계속 동작하며 JSON에는 `null`이 저장됩니다. `load_index`는 해시 없는 구형 config도 읽지만 CLI의 ask/evaluate는 유효한 해시가 있어야 실행됩니다. 해시가 없거나 현재 문서와 다른 인덱스는 같은 `--processed-dir`로 명시적으로 build해야 합니다. 현재 문서의 해시만 기존 config에 덧붙여 검사를 우회하지 않습니다.
 - 현재 저장 세트는 `index.faiss`, `chunks.json`, `config.json`입니다. FAISS 벡터 i번과 chunks i번이 같은 청크여야 합니다.
 - config 필수 키는 `embedding_model`, `dimension`, `chunk_count`, `chunk_size`, `chunk_overlap`입니다. 로드할 때 벡터 수·청크 수·차원을 검증합니다.
 - 현재는 L2 정규화 벡터 + `IndexFlatIP`로 코사인 유사도를 구합니다. 질문은 `.env`의 새 모델이 아니라 **저장된 config의 임베딩 모델**로 임베딩합니다. 같은 차원이라도 서로 다른 모델의 벡터를 섞으면 안 됩니다.

@@ -251,7 +251,8 @@ def embed_texts(texts, client, model):
 
 @observed("build-index")
 def build_index(documents, client, index_dir="indexes", model="text-embedding-3-small",
-                chunk_size=1000, chunk_overlap=150):
+                chunk_size=1000, chunk_overlap=150, documents_sha256=None):
+    """호출자가 계산한 documents.json 해시를 재계산·변환 없이 config에 저장합니다."""
     strategy = _chunking_strategy()
     context = _embedding_context()
     chunks = chunk_documents(documents, chunk_size, chunk_overlap)
@@ -273,7 +274,8 @@ def build_index(documents, client, index_dir="indexes", model="text-embedding-3-
     config = {"embedding_model": model, "dimension": index.d, "chunk_count": len(chunks),
               "chunk_size": chunk_size, "chunk_overlap": chunk_overlap,
               "chunking_strategy": strategy, "chunking_version": 1,
-              "embedding_context": context, "embedding_context_version": 1}
+              "embedding_context": context, "embedding_context_version": 1,
+              "documents_sha256": documents_sha256}
     write_json(path / "config.json", config)
     return config
 

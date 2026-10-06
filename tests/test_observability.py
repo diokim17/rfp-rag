@@ -110,10 +110,8 @@ class ObservabilityTests(unittest.TestCase):
             documents = [{"doc_id": "a", "text": "예산 PRIVATE_DOCUMENT", "metadata": {
                 "filename": "private.hwp"}}]
             run.write_json(root / "data/processed/documents.json", documents)
-            config = build_index(documents, client, root / "index")
-            # 새 저장 계약을 갖춘 인덱스 fixture. 실제 저장 기능은 embedding 담당 변경입니다.
-            config["documents_sha256"] = run.file_hash(root / "data/processed/documents.json")
-            run.write_json(root / "index/config.json", config)
+            build_index(documents, client, root / "index",
+                        documents_sha256=run.file_hash(root / "data/processed/documents.json"))
             eval_file = root / "eval.json"
             eval_file.write_text(json.dumps([{"question": "예산 PRIVATE_QUESTION",
                                               "expected_doc_ids": ["a"],
@@ -129,6 +127,8 @@ class ObservabilityTests(unittest.TestCase):
             self.assertEqual(result["summary"]["recall_at_k"], 1)
             self.assertEqual(result["experiment"]["experiment_id"], "tester-0001")
             self.assertIsNotNone(result["experiment"]["index_sha256"])
+            self.assertEqual(result["settings"]["documents_sha256"],
+                             run.file_hash(root / "data/processed/documents.json"))
             self.assertIsNone(result["experiment"]["trace_id"])
             report = next((root / "reports").glob("*.md")).read_text()
             self.assertNotIn("PRIVATE_QUESTION", report)
