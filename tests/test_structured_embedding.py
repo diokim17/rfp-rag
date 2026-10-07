@@ -20,6 +20,7 @@ from retrieval import retrieve
 from test_embedding import document, response, response_client
 from test_observability import FakeLangfuse
 from test_pipeline import FakeClient
+from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 
 
 def table(body="| 항목 | 내용 |\n| 예산 | 100원 |\n", tag="T1"):

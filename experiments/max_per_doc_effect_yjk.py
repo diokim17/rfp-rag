@@ -83,7 +83,8 @@ def run(args):
             name, groups = label(cap, mode, candidates), defaultdict(list)
             for number, case in enumerate(cases):
                 hits = retrieve(case["question"], client, index, chunks, config, args.top_k, case.get("filters"),
-                                rerank=mode, candidates=candidates, max_per_doc=cap)
+                                rerank=mode, candidates=candidates, hybrid=False,  # 검색 기본값이 바뀌어도 이 실험의 조건(하이브리드·상한 꺼짐)을 유지
+                                max_per_doc="none" if cap is None else cap)
                 row = measure(case, hits, args.top_k)
                 groups["ALL"].append(row)
                 groups[case["group"]].append(row)

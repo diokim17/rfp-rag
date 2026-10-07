@@ -16,6 +16,7 @@ import run
 from observability import Trace
 from parsing import write_json
 from test_pipeline import FakeClient
+from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 
 
 class IndexFreshnessTests(unittest.TestCase):

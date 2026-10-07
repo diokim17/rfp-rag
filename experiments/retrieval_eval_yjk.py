@@ -116,12 +116,14 @@ def run(index_dir, eval_file, results_dir, reports_dir, label, top_k):
     for start in range(0, len(questions), 64):  # 캐시 채우기: 측정 시간에서 API 지연을 분리
         embed_texts(questions[start:start + 64], client, config["embedding_model"])
     client.save()
-    retrieve(cases[0]["question"], client, index, chunks, config, top_k, cases[0].get("filters"))  # 모델 로드 등 준비
+    # 검색 기본값이 바뀌어도 이 실험은 예전 기본값(코사인 검색, 리랭킹은 RETRIEVAL_RERANK로만 켬)을 유지
+    base = {"rerank": os.getenv("RETRIEVAL_RERANK") or "none", "hybrid": False, "max_per_doc": "none"}
+    retrieve(cases[0]["question"], client, index, chunks, config, top_k, cases[0].get("filters"), **base)  # 모델 로드 등 준비
 
     groups, records = defaultdict(list), []
     for case in cases:
         start = time.perf_counter()
-        hits = retrieve(case["question"], client, index, chunks, config, top_k, case.get("filters"))
+        hits = retrieve(case["question"], client, index, chunks, config, top_k, case.get("filters"), **base)
         seconds = time.perf_counter() - start
         expected = set(case["expected_doc_ids"])
         docs = [hit["doc_id"] for hit in hits]

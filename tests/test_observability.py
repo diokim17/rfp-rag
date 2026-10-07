@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from experiment_reports import save_report
 from observability import Trace, model_call, observed
+from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 
 
 class FakeObservation:
@@ -126,6 +127,9 @@ class ObservabilityTests(unittest.TestCase):
             result = json.loads(next((root / "results").glob("evaluate_*.json")).read_text())
             self.assertEqual(result["summary"]["recall_at_k"], 1)
             self.assertEqual(result["experiment"]["experiment_id"], "tester-0001")
+            # 생략한 검색 옵션도 실제 적용값으로 기록 (이 모듈은 검색 기본값을 baseline으로 고정)
+            self.assertEqual(result["settings"]["retrieval"]["rerank"], "none")
+            self.assertIsNone(result["settings"]["max_per_doc"])
             self.assertIsNotNone(result["experiment"]["index_sha256"])
             self.assertEqual(result["settings"]["documents_sha256"],
                              run.file_hash(root / "data/processed/documents.json"))

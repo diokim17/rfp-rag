@@ -14,6 +14,7 @@ from parsing import _number_tables, _render_table, _sections, read_json, section
 from retrieval import retrieve
 from test_observability import FakeLangfuse
 from test_pipeline import FakeClient
+from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 
 
 class SectionMetadataTests(unittest.TestCase):

@@ -83,7 +83,7 @@ VS Code에서 본인 계정으로 서버에 접속하고 본인의 프로젝트 
 | 박단비 / 생성 | `generation.py` | 프롬프트, 근거 사용, 답변 품질 | Answer, sources와 인용 번호 |
 | 김시현 / 평가 | `evaluation.py` | 정답셋, 평가 지표, 비교 보고서 | evaluate 반환 구조, 정답 문서 ID |
 
-OCR, 리랭킹, 대화 기억, 시나리오 A는 현재 구현되지 않았습니다. 추가할 때도 기존 baseline 실행 경로를 유지합니다. 담당 파일 외 수정이 필요하면 PR에 이유와 영향을 적고 관련 담당자와 함께 검토합니다. 함수 내부 보조 함수나 선택 옵션을 추가할 수 있지만 기존 호출이 그대로 동작해야 합니다.
+OCR, 대화 기억, 시나리오 A는 현재 구현되지 않았습니다. 검색 기본값은 하이브리드 + cross-encoder 리랭킹 + 문서당 상한 2이며, 예전 baseline(코사인 검색만)은 `RETRIEVAL_RERANK=none`, `RETRIEVAL_HYBRID=off`, `RETRIEVAL_MAX_PER_DOC=none`으로 실행합니다(README 참고). 담당 파일 외 수정이 필요하면 PR에 이유와 영향을 적고 관련 담당자와 함께 검토합니다. 함수 내부 보조 함수나 선택 옵션을 추가할 수 있지만 기존 호출이 그대로 동작해야 합니다.
 
 ## 3. 반드시 유지할 입출력 계약
 
@@ -143,7 +143,7 @@ Answer = {
 - 현재 저장 세트는 `index.faiss`, `chunks.json`, `config.json`입니다. FAISS 벡터 i번과 chunks i번이 같은 청크여야 합니다.
 - config 필수 키는 `embedding_model`, `dimension`, `chunk_count`, `chunk_size`, `chunk_overlap`입니다. 로드할 때 벡터 수·청크 수·차원을 검증합니다.
 - 현재는 L2 정규화 벡터 + `IndexFlatIP`로 코사인 유사도를 구합니다. 질문은 `.env`의 새 모델이 아니라 **저장된 config의 임베딩 모델**로 임베딩합니다. 같은 차원이라도 서로 다른 모델의 벡터를 섞으면 안 됩니다.
-- `retrieve`는 관련도가 높은 순서로 최대 `top_k`개를 반환합니다. `score`는 Python float이며 현재는 코사인 유사도입니다. 리랭킹 점수로 의미를 바꾸려면 소비 코드·평가와 협의하고 새 필드 또는 점수 종류 기록을 고려합니다.
+- `retrieve`는 관련도가 높은 순서로 최대 `top_k`개를 반환합니다. 기본값은 문서당 2개 상한이 있어 `top_k`보다 적게 반환할 수 있습니다. `score`는 Python float이며 리랭킹 후에도 항상 코사인 유사도입니다. 리랭킹 점수는 `rerank_score`, RRF 점수는 `rrf_score`로 따로 추가됩니다. `run.py` 결과의 `settings.retrieval`에 실제 적용된 검색 옵션이 기록됩니다.
 - 필터는 metadata의 NFC 정규화 문자열 정확 일치입니다. 조건을 만족하는 결과가 없으면 `[]`입니다. 리랭킹을 넣어도 필터 밖의 문서를 다시 포함하지 않습니다.
 
 ### 생성·평가 규칙

@@ -34,9 +34,9 @@ TOP_K = 50
 HYBRID = {"hybrid": True, "hybrid_vector_k": 100, "hybrid_bm25_k": 100}
 # 하이브리드 후보(벡터 100 + BM25 100, RRF)는 yjk-0014와 같고, cross-encoder는 그중 상위 50개만 재정렬
 SETTINGS = {
-    "hybrid": {"rerank": "none", "candidates": 100, **HYBRID},
+    "hybrid": {"rerank": "none", "candidates": 100, "max_per_doc": "none", **HYBRID},
     "hybrid-cap2": {"rerank": "none", "candidates": 100, "max_per_doc": 2, **HYBRID},
-    "hybrid-ce-c50": {"rerank": "cross-encoder", "candidates": 50, **HYBRID},
+    "hybrid-ce-c50": {"rerank": "cross-encoder", "candidates": 50, "max_per_doc": "none", **HYBRID},
     "hybrid-ce-c50-cap2": {"rerank": "cross-encoder", "candidates": 50, "max_per_doc": 2, **HYBRID},
 }
 SEPARATE_TYPE = "기관명-필터표기"

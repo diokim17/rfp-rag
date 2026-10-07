@@ -214,7 +214,16 @@ python -m unittest discover -s tests -v
 
 프로젝트 제공 API는 답변 모델 `gpt-5-mini`, `gpt-5-nano`와 임베딩 모델 `text-embedding-3-small`을 허용합니다. 기본 답변 모델은 `gpt-5-mini`이며 추론 강도는 `low`, 추론을 포함한 출력 한도는 2,000토큰입니다. 팀별 총 사용 한도는 $20이며, 팀 채널의 `!usage`로 사용량을 확인합니다(1분에 1회). 코드가 팀의 누적 사용액을 추적하거나 $20에서 자동 중단하는 것은 아닙니다.
 
-문자 기준 1,000자 청킹/150자 중복, 벡터 검색, 단일 질문 답변으로 연결을 확인하는 baseline입니다. OCR, HWPX, 표 구조 보존, 리랭킹, 대화 기억, 자동 정답 생성, 시나리오 A는 아직 구현하지 않았습니다. 암호화·손상 파일과 스캔 PDF 등은 오류 기록을 확인하세요.
+검색 기본값은 하이브리드(벡터 상위 100 + BM25 상위 100, RRF) → 상위 50개 cross-encoder(`BAAI/bge-reranker-v2-m3`, 로컬 실행) 리랭킹 → 문서당 청크 2개 상한입니다. 팀 공통 평가셋(`eval_team_v1`, 43문항)에서 가장 좋았던 조합입니다(`results/reports/team_eval_yjk_yjk-0017.md`). cross-encoder에는 `torch`, `transformers`가 필요하며 `requirements.txt`에는 넣지 않았습니다. 설치하지 않으면 경고와 함께 lexical 리랭킹으로 대체됩니다. 처음 실행할 때 모델(약 2GB)을 내려받고, GPU가 없으면 질문당 수 초 이상 걸릴 수 있습니다. 환경 변수로 바꾸거나 끌 수 있습니다.
+
+| 환경 변수 | 기본값 | 예전 baseline(코사인 검색만) |
+| --- | --- | --- |
+| `RETRIEVAL_RERANK` | `cross-encoder` | `none` |
+| `RETRIEVAL_HYBRID` | `on` | `off` |
+| `RETRIEVAL_MAX_PER_DOC` (`--max-per-doc`가 우선) | `2` | `none` |
+| `RETRIEVAL_CANDIDATES` / `RETRIEVAL_HYBRID_VECTOR_K` / `RETRIEVAL_HYBRID_BM25_K` | `50` / `100` / `100` | 해당 없음 |
+
+OCR, HWPX, 대화 기억, 자동 정답 생성, 시나리오 A는 아직 구현하지 않았습니다. 암호화·손상 파일과 스캔 PDF 등은 오류 기록을 확인하세요.
 
 API 호출 형식은 [OpenAI 임베딩 문서](https://developers.openai.com/api/docs/guides/embeddings)와 [OpenAI API Quickstart](https://developers.openai.com/api/docs/quickstart)를 따릅니다.
 

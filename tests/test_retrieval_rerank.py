@@ -1,4 +1,7 @@
-"""외부 API·모델 다운로드 없이 리랭킹의 기본값, 필터 유지, 점수 계약과 모듈 연결을 검증합니다."""
+"""외부 API·모델 다운로드 없이 리랭킹의 baseline 동작, 필터 유지, 점수 계약과 모듈 연결을 검증합니다.
+
+검색 기본값은 baseline으로 고정해 검증하며, 새 기본값(하이브리드 + cross-encoder + 상한 2)은 test_retrieval_defaults.py에서 봅니다.
+"""
 
 import json
 import math
@@ -15,6 +18,7 @@ from generation import generate_answer
 from observability import Trace
 import retrieval
 from retrieval import retrieve
+from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 from test_observability import FakeLangfuse
 
 

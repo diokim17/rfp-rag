@@ -21,7 +21,7 @@ from experiment_reports import file_hash, save_report
 from generation import generate_answer
 from observability import Trace, code_version, observed
 from parsing import parse_documents, read_json, write_json
-from retrieval import retrieve
+from retrieval import retrieval_options, retrieve
 
 ROOT = Path(__file__).resolve().parent
 
@@ -66,7 +66,7 @@ def main():
     parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
     parser.add_argument("--limit", type=int, help="전처리할 CSV 앞쪽 N행 (생략: 전체)")
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--max-per-doc", type=int, help="문서당 최대 청크 수 (생략: 제한 없음)")
+    parser.add_argument("--max-per-doc", type=int, help="문서당 최대 청크 수 (생략: RETRIEVAL_MAX_PER_DOC 또는 2, 끄려면 환경 변수를 none으로)")
     parser.add_argument("--chunk-size", type=int, default=1000)
     parser.add_argument("--chunk-overlap", type=int, default=150)
     parser.add_argument("--filter", action="append", default=[], metavar="KEY=VALUE")
@@ -181,7 +181,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
     with trace.span("index-settings", metadata={**config, "generation_model": generation_model,
                                                "top_k": args.top_k}):
         pass
-    # CLI 밖에서 args를 직접 만들어 넘길 때(테스트 등) 항목이 없어도 기존처럼 상한 없이 동작합니다.
+    # CLI 밖에서 args를 직접 만들어 넘길 때(테스트 등) 항목이 없으면 retrieve의 기본 상한을 따릅니다.
     max_per_doc = getattr(args, "max_per_doc", None)
 
     @observed("question-answer")
@@ -216,7 +216,10 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
             print(f"[{source['citation']}] {source['metadata']['filename']} "
                   f"(doc_id={source['doc_id']}, score={source['score']:.3f})")
     result["settings"] = {**config, "generation_model": generation_model,
-                          "top_k": args.top_k, "max_per_doc": max_per_doc, "filters": filters}
+                          "top_k": args.top_k, "filters": filters}
+    # 생략한 옵션도 실제로 적용된 값(환경 변수·기본값 반영)으로 남깁니다.
+    result["settings"]["retrieval"] = retrieval_options(max_per_doc=max_per_doc)
+    result["settings"]["max_per_doc"] = result["settings"]["retrieval"]["max_per_doc"]
     result["experiment"] = {**experiment, "trace_id": trace.trace_id}
     result["token_usage"] = trace.usage
     if args.command == "evaluate":
