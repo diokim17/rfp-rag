@@ -167,6 +167,7 @@ def parse_hwp(path: str) -> str:
 
 SPACED = re.compile(r"(?:[가-힣] ){2,}[가-힣]")  # '사 업 명'처럼 자간을 띄운 제목·셀
 PDF_PAGE_NO = re.compile(r"[-–—]\s*\d{1,3}\s*[-–—]|\d{1,3}(?:\s*/\s*\d{1,3})?")
+CARD_START = {"요구사항분류", "요구사항번호", "요구사항고유번호"}  # 요구사항 정의서 카드 첫 칸
 PDF_FRAME_HEAD = re.compile(r"페\s*이\s*지\s*:\s*\d+\s*/\s*\d+")  # 쪽 테두리 표 머리말('페 이 지 : 4/19')
 
 
@@ -198,7 +199,9 @@ def _merge_pages(pages):
             shared = {x for x in a[0] if x} & {x for x in b[0] if x}
             # 첫 행이 같으면 헤더 반복, 하나도 안 겹치면 헤더 없이 이어짐. 일부만 같으면 별개 표(요구사항 카드 등)
             # ponytail: 열 수가 같고 헤더가 안 겹치는 별개 표도 이어 붙음. 오탐이 보이면 쪽 위치 조건 추가
-            if len(a[0]) == len(b[0]) and (b[0] == a[0] or not shared):
+            # 단, 요구사항 카드 시작 행이면 앞 카드의 이어짐(첫 행이 빈칸)이어도 새 표
+            start = re.sub(r"\s", "", next((x for x in b[0] if x), ""))
+            if len(a[0]) == len(b[0]) and (b[0] == a[0] or not shared and start not in CARD_START):
                 a += b[1:] if b[0] == a[0] else b
                 page = page[1:]
         out += page

@@ -101,6 +101,13 @@ class MergePagesTest(unittest.TestCase):
             "본문", [["구분", "내용"], ["가", "1"], ["나", "2"], ["다", "3"]],
             [["ID", "SFR-001"]], [["ID", "SFR-002"]]])
 
+    def test_new_card_not_joined_to_previous_continuation(self):
+        pages = [
+            [[["", None, ""], ["", "", "앞 카드 이어짐"]]],
+            [[["요구사항 분류", None, "기능 요구사항"], ["요구사항 고유번호", None, "SFR-010"]]],
+        ]
+        self.assertEqual(len(_merge_pages(pages)), 2)
+
 class SectionsTest(unittest.TestCase):
     def test_heading_path_skips_toc_lists_and_tables(self):
         text = "\n".join([
