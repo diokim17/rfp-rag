@@ -166,6 +166,19 @@ python run.py ask --question "사업 범위는 무엇인가요?" --filter "발�
 
 데이터·청킹·임베딩 모델을 바꿨다면 `parse`/`build`를 다시 실행하세요. 인덱스 생성 중에는 같은 폴더로 질의하지 마세요. 실험별 보관은 `--processed-dir`, `--index-dir`, `--results-dir`로 경로를 분리할 수 있습니다.
 
+### 공통 평가 인덱스 재현
+
+코드 기본 청킹은 `fixed`입니다. 공통 평가에서 사용한 인덱스를 다시 만들 때는 평가에 사용한 `documents.json`을 그대로 두고, 청킹 전략과 임베딩 문맥 설정을 명시해 별도 인덱스 경로에 빌드하세요. 현재 공통 비교 설정은 `structured`, `RFP_EMBEDDING_CONTEXT=none`, 청크 크기 1,000자, 중복 150자, `text-embedding-3-small`입니다.
+
+```bash
+RFP_CHUNKING_STRATEGY=structured RFP_EMBEDDING_CONTEXT=none \
+  python run.py build \
+  --processed-dir data/processed \
+  --index-dir indexes/eval-structured
+```
+
+질의·평가에도 동일한 `--processed-dir`와 `--index-dir`를 지정합니다. 청킹 전략이나 버전, 모델, 문서 내용이 달라지면 다른 인덱스이므로 `index.faiss`, `chunks.json`, `config.json` 세 파일을 한 번의 빌드 결과로 함께 사용하세요. `config.json`의 `chunking_strategy`, `chunking_version`, `chunk_count`, `embedding_model`, `documents_sha256`를 재현 기준으로 확인합니다. 청크 수는 청킹 코드 버전과 입력 문서에 따라 달라질 수 있어 고정 숫자를 재현 조건으로 삼지 않습니다. 인덱스 빌드는 전체 청크 임베딩에 API를 호출하므로 비용이 발생합니다.
+
 ### 모듈 간 입출력 약속
 
 모든 데이터는 기본 `dict`/`list`이며 저장 형식은 JSON입니다. 팀원들은 아래 키를 유지하면서 내부 구현을 개선합니다.
