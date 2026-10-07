@@ -72,6 +72,9 @@ class CleanTextTest(unittest.TestCase):
         self.assertEqual(_clean_text(raw),
                          "합계 | 77 |\n다음\n현상태사용[ ]\n☑적용) 보고서\n• GPA 분석\n• 주소 | FAX 02-6312")
 
+    def test_blank_page_marker_removed(self):
+        self.assertEqual(_clean_text("시스템 현황\n- 본 페이지  -\nⅢ 사업추진 계획"), "시스템 현황\nⅢ 사업추진 계획")
+
     def test_supplementary_pua_removed(self):
         self.assertEqual(_clean_text(chr(0xF02EF) + "업무 " + chr(0xF0832) * 3), "업무")
 
@@ -130,6 +133,36 @@ class SectionsTest(unittest.TestCase):
         self.assertEqual(section_of(doc, 0), "")
         self.assertEqual(section_of(doc, text.index("나. 사업기간")), "Ⅰ. 사업개요 > 1. 사업 개요 > 가. 추진 배경")
 
+    def test_letter_spaced_heading_joined_in_path(self):
+        text = "Ⅰ. 제 안 안 내\n1. 사 업 개 요\n가. 총 괄 표 (20점 만점)\n2. 사업 범위"
+        self.assertEqual([p for _, p in _sections(text)], [
+            "Ⅰ. 제안안내", "Ⅰ. 제안안내 > 1. 사업개요", "Ⅰ. 제안안내 > 1. 사업개요 > 가. 총괄표 (20점 만점)",
+            "Ⅰ. 제안안내 > 2. 사업 범위"])
+
+    def test_roman_numeral_on_own_line_joined_with_title(self):
+        text = "Ⅰ\n사업개요\n1. 사업 목적\nⅡ\n사업 추진 방안"
+        self.assertEqual([p for _, p in _sections(text)], [
+            "Ⅰ 사업개요", "Ⅰ 사업개요 > 1. 사업 목적", "Ⅱ 사업 추진 방안"])
+
+    def test_appendix_heading_starts_new_path(self):
+        text = "Ⅴ 제안 안내\n1. 비밀 유지\n[붙임4] 소프트웨어 개발사업의 적정 사업기간 종합 산정서\n1. 일반현황\n【별지 제6호 서식】"
+        self.assertEqual([p for _, p in _sections(text)], [
+            "Ⅴ 제안 안내", "Ⅴ 제안 안내 > 1. 비밀 유지", "[붙임4] 소프트웨어 개발사업의 적정 사업기간 종합 산정서",
+            "[붙임4] 소프트웨어 개발사업의 적정 사업기간 종합 산정서 > 1. 일반현황", "【별지 제6호 서식】"])
+
+    def test_appendix_list_and_reference_ignored(self):
+        text = ("[붙임 1] 입찰참가신청서\n[붙임 2] 제안회사 일반\n[붙임 3] 용역실적\n1 사업개요\n"
+                "(첨부1 적정 사업기간 산정서 참조)\n【서식 제2호】서 약 서")
+        self.assertEqual([p for _, p in _sections(text)], ["1 사업개요", "【서식 제2호】서약서"])
+
+    def test_body_numbering_resumes_after_inline_form(self):
+        text = ("Ⅴ 각종 기준\n1. 평가 기준\n2. 배점\n[양식 3]\n1. 성명\n3. 전문가파견 가이드라인\n"
+                "【붙임 1】조항에 따름\n4. 기타\n[붙임3] 영향평가 검토결과서\n[붙임4] 적정 사업기간 산정서")
+        self.assertEqual([p for _, p in _sections(text)], [
+            "Ⅴ 각종 기준", "Ⅴ 각종 기준 > 1. 평가 기준", "Ⅴ 각종 기준 > 2. 배점", "[양식 3]", "[양식 3] > 1. 성명",
+            "Ⅴ 각종 기준 > 3. 전문가파견 가이드라인", "Ⅴ 각종 기준 > 4. 기타",
+            "[붙임3] 영향평가 검토결과서", "[붙임4] 적정 사업기간 산정서"])
+
 
 class FieldsTest(unittest.TestCase):
     def test_won_units(self):
@@ -154,6 +187,12 @@ class FieldsTest(unittest.TestCase):
         self.assertEqual(_fields(text), {
             "원문 사업 예산": "220,000천원(VAT 포함)", "원문 사업 기간": "계약일로부터 3개월",
             "원문 계약 방법": "제한경쟁입찰(협상에 의한 계약)", "원문 사업 금액": "220000000"})
+
+    def test_value_cut_before_next_inline_item(self):
+        text = "○ 사업기간 : 계약일로부터 5개월 이내 ○ 용역금액 : 입찰공고문 참조 ○ 계약방법 : 제한경쟁입찰 * 국가계약법 제7조"
+        out = _fields(text)
+        self.assertEqual(out["원문 사업 기간"], "계약일로부터 5개월 이내")
+        self.assertEqual(out["원문 계약 방법"], "제한경쟁입찰")
 
     def test_value_on_next_bullet_line_and_new_labels(self):
         text = "1.4 사업기간\n- 착수일로부터 ∼ 2024. 10. 31.\nㅇ 낙찰방식 : 협상에 의한 계약"

@@ -166,6 +166,7 @@ def parse_hwp(path: str) -> str:
 
 
 SPACED = re.compile(r"(?:[가-힣] ){2,}[가-힣]")  # '사 업 명'처럼 자간을 띄운 제목·셀
+SPACED_RUN = re.compile(r"(?<![가-힣])(?:[가-힣] ){2,}[가-힣](?![가-힣])")  # 문장 안의 같은 구간
 PDF_PAGE_NO = re.compile(r"[-–—]\s*\d{1,3}\s*[-–—]|\d{1,3}(?:\s*/\s*\d{1,3})?")
 CARD_START = {"요구사항분류", "요구사항번호", "요구사항고유번호"}  # 요구사항 정의서 카드 첫 칸
 PDF_FRAME_HEAD = re.compile(r"페\s*이\s*지\s*:\s*\d+\s*/\s*\d+")  # 쪽 테두리 표 머리말('페 이 지 : 4/19')
@@ -246,6 +247,7 @@ def _clean_text(text: str) -> str:
     text = re.sub(r"[ \t\u3000]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\(?이 ?하 ?여 ?백\)?\n?", "", text)  # 서식 끝 표시
+    text = re.sub(r"^- ?본 ?페이지 *-\n?", "", text, flags=re.M)  # 빈 페이지 표시
     text = re.sub(r"\[\n+\]", "[ ]", text)  # PDF에서 줄이 갈린 체크박스
     text = re.sub(r"□\n+√", "☑", text)
     text = re.sub(r"Ÿ\s*", "• ", text)  # PDF 깨진 글머리표(Wingdings)
@@ -301,13 +303,36 @@ HEADINGS = (  # (단계, 정규식): 장 Ⅰ / 제1장 → 절 1. → 1.1 → 1.
     (4, re.compile(rf"([{KOR}])\.\s*[가-힣][^:：]*")),
 )
 DEPTH = 5
+# 부록·서식 제목('[붙임4] …', '별첨 3 …', '【별지 제6호 서식】'): 앞 섹션 경로를 끊고 새로 시작
+APPENDIX = re.compile(r"[\[<【(]?\s*(?:붙\s?임|별\s?첨|별\s?지|첨\s?부|서\s?식|양\s?식)\s*(?:제\s*)?\d+\s*호?\s*[\]>】)]?\.?(?:\s*\S.*)?")
 
 
 def _sections(text: str) -> list:
     """[[시작 위치, "Ⅳ 제안요청 내용 > 2. 상세 요구사항"], ...]. 30자 이하·번호가 1 또는 직전+1인 줄만 제목으로 봄."""
-    out, path, last = [], [None] * DEPTH, [0] * DEPTH
-    for m in re.finditer(r"^.+$", text, re.M):
-        line = m[0].strip()
+    out, path, last, body = [], [None] * DEPTH, [0] * DEPTH, None  # body: 부록 직전 본문 (path, last)
+    lines = [(m.start(), m[0].strip()) for m in re.finditer(r"^.+$", text, re.M) if m[0].strip()]
+    for i in range(len(lines) - 1, 0, -1):  # 'Ⅰ' 다음 줄 '사업개요' → 'Ⅰ 사업개요' (장 번호만 따로 떨어진 줄)
+        if re.fullmatch(rf"[{ROMAN}]\.?", lines[i - 1][1]) and re.match(r"[가-힣]", lines[i][1]):
+            lines[i - 1:i + 1] = [(lines[i - 1][0], f"{lines[i - 1][1]} {lines[i][1]}")]
+    # 부록 언급 문장(참조·쉼표 목록·'제출'·'따름'·마침표로 끝남)은 제목이 아님
+    appendix = [len(l) <= 60 and bool(APPENDIX.fullmatch(l))
+                and not re.search(r"\s\d+$|참\s?[조고]|,|(?:제출|따름|끝|\.)$", l) for _, l in lines]
+    run = [0] * len(lines)  # 부록 제목이 연달아 나오는 길이 (3줄 이상이면 목차 속 붙임 목록)
+    for i in range(len(lines)):
+        if appendix[i] and not (i and appendix[i - 1]):
+            k = i
+            while k < len(lines) and appendix[k]:
+                k += 1
+            run[i:k] = [k - i] * (k - i)
+    for i, (start, line) in enumerate(lines):
+        if appendix[i]:
+            if run[i] >= 3:
+                continue
+            body = body or (path[:], last[:])
+            path = [SPACED_RUN.sub(lambda s: s[0].replace(" ", ""), line)] + [None] * (DEPTH - 1)
+            last[1:] = [0] * (DEPTH - 1)  # 장 번호는 유지, 부록 안 번호는 1부터
+            out.append([start, path[0]])
+            continue
         if len(line) > 30 or line[:1] in "|<" or re.search(r"\s\d+$", line):  # 긴 문장·표·목차(쪽번호) 제외
             continue
         for level, pattern in HEADINGS:
@@ -315,12 +340,17 @@ def _sections(text: str) -> list:
             if not h:
                 continue
             n = int(h[1]) if h[1].isdigit() else (ROMAN if level == 0 else KOR).find(h[1]) + 1
+            if body and level and n == body[1][level] + 1 and n not in (1, last[level] + 1):
+                path, last, body = *body, None  # 본문 중간에 낀 서식 뒤로 본문 번호가 이어짐 → 본문 경로로 복귀
+            elif level == 0:
+                body = None  # 새 장이 시작되면 이전 본문 상태는 필요 없음
             if n in (1, last[level] + 1) or (level == 0 and n > last[level]):  # 장 번호는 빠진 장이 있어도 허용
                 if n == 1 and last[level]:  # 상위 제목 없이 번호가 다시 시작 → 놓친 상위 제목, 틀린 경로보다 빈 경로
                     path[:level] = [None] * level
                 last[level:] = [n] + [0] * (DEPTH - 1 - level)
-                path[level:] = [line] + [None] * (DEPTH - 1 - level)
-                out.append([m.start(), " > ".join(p for p in path if p)])
+                title = SPACED_RUN.sub(lambda s: s[0].replace(" ", ""), line)  # '1. 사 업 개 요' → '1. 사업개요'
+                path[level:] = [title] + [None] * (DEPTH - 1 - level)
+                out.append([start, " > ".join(p for p in path if p)])
                 break
     return out
 
@@ -366,7 +396,7 @@ FIELDS = {  # metadata 키: (라벨 묶음들, 값 확인). 앞 묶음(구체적
 def _fields(text: str) -> dict:
     """원문에서 예산·기간·계약 방법 추출. CSV 값 검수용 (CSV 사업 금액은 대부분 VAT 포함 금액).
     라벨 뒤 ':' / ')' / 표 칸 '|' 다음 값 중 확인을 통과한 첫 번째. 없으면 다음 줄 글머리('- ', 'ㅇ ') 뒤 값."""
-    values = lambda labels, sep: (m[1].strip()[:100]
+    values = lambda labels, sep: (re.split(r"\s+(?:[○❍□■◦●]|※|\*)\s*", m[1].strip())[0][:100]  # 다음 항목 앞에서 자름
                                   for m in re.finditer(rf"(?<![가-힣])(?:{labels}){sep}\s*([^|\n]+)", text))
     seps = (r"\s*[:：)|]", r"[ \t]*\n[-–ㅇ○□•]")
     out = {key: next((v for labels in groups for sep in seps for v in values(labels, sep) if ok(v)), "")
