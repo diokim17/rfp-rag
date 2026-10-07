@@ -213,15 +213,43 @@ class IndexContractTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
-    def test_public_signatures_are_unchanged(self):
+    def test_public_signatures_match_contract(self):
         expected = {
             chunk_documents: "(documents, chunk_size=1000, chunk_overlap=150)",
             embed_texts: "(texts, client, model)",
-            build_index: "(documents, client, index_dir='indexes', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150)",
+            build_index: "(documents, client, index_dir='indexes', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
             load_index: "(index_dir='indexes')",
         }
         for fn, signature in expected.items():
             self.assertEqual(str(inspect.signature(fn)), signature)
+
+    def test_documents_hash_is_saved_and_returned_without_conversion(self):
+        for digest in ("ab" * 32, "  CALLER-SUPPLIED-VALUE  ", "", None):
+            with self.subTest(digest=digest), tempfile.TemporaryDirectory() as directory:
+                config = build_index([document("예산")], FakeClient(), directory,
+                                     documents_sha256=digest)
+                self.assertEqual(config["documents_sha256"], digest)
+                self.assertEqual(read_json(Path(directory) / "config.json"), config)
+                self.assertEqual(load_index(directory)[2], config)
+
+    def test_old_positional_arguments_store_default_null_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = build_index([document("예산")], FakeClient(), directory, "test-model", 20, 3)
+            self.assertEqual(config["embedding_model"], "test-model")
+            self.assertEqual((config["chunk_size"], config["chunk_overlap"]), (20, 3))
+            self.assertIsNone(config["documents_sha256"])
+            self.assertEqual(read_json(Path(directory) / "config.json"), config)
+
+    def test_appended_positional_hash_preserves_chunks_and_vectors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            docs = [document("예산")]
+            build_index(docs, FakeClient(), directory, "test-model", 20, 3)
+            before = {name: (Path(directory) / name).read_bytes()
+                      for name in ("index.faiss", "chunks.json")}
+            config = build_index(docs, FakeClient(), directory, "test-model", 20, 3, "cd" * 32)
+            self.assertEqual(config["documents_sha256"], "cd" * 32)
+            self.assertEqual(load_index(directory)[2], config)
+            self.assertEqual({name: (Path(directory) / name).read_bytes() for name in before}, before)
 
     def test_multiple_batches_keep_global_vector_chunk_order_and_trace_privacy(self):
         client = response_client(None)
@@ -298,6 +326,7 @@ class IndexContractTests(unittest.TestCase):
                     if legacy:
                         config.pop("chunking_strategy")
                         config.pop("chunking_version")
+                        config.pop("documents_sha256")
                         write_json(Path(directory) / "config.json", config)
                     index, chunks, loaded = load_index(directory)
                     self.assertEqual(loaded, config)

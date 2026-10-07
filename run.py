@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -30,6 +31,33 @@ DEFAULT_LIMIT = 3
 DEFAULT_QUESTION = "한영대학교 교육환경 구축 사업의 주요 요구사항은 무엇인가요?"
 
 
+def check_index_documents(args, parser):
+    """저장된 인덱스가 현재 전처리 문서로 생성됐는지 API 호출 전에 검사합니다."""
+    documents_path = args.processed_dir / "documents.json"
+    config_path = args.index_dir / "config.json"
+    rebuild = shlex.join([sys.executable, str(ROOT / "run.py"), "build",
+                          "--processed-dir", str(args.processed_dir),
+                          "--index-dir", str(args.index_dir)])
+    if args.owner:
+        rebuild += " --owner " + shlex.quote(args.owner)
+    try:
+        current_hash = file_hash(documents_path)
+        config = read_json(config_path)
+    except (OSError, ValueError) as exc:
+        parser.error(f"인덱스 검증 파일을 읽을 수 없습니다: {exc}\n"
+                     f"문서와 경로를 확인한 뒤 build를 실행하세요:\n{rebuild}")
+    if current_hash is None:
+        parser.error(f"전처리 문서가 없습니다: {documents_path}\n"
+                     "인덱스와 짝이 맞는 --processed-dir를 지정하거나 parse 후 build를 실행하세요.")
+    stored_hash = config.get("documents_sha256") if isinstance(config, dict) else None
+    if not isinstance(stored_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", stored_hash):
+        parser.error("인덱스에 유효한 documents_sha256이 없습니다. "
+                     "해시 저장을 지원하는 embedding.py 반영 후 build를 실행하세요:\n" + rebuild)
+    if stored_hash != current_hash:
+        parser.error("전처리 문서가 인덱스 생성 당시와 다릅니다. "
+                     "--processed-dir와 --index-dir를 확인한 뒤 build를 실행하세요:\n" + rebuild)
+
+
 def main():
     parser = argparse.ArgumentParser(description="시나리오 B: 최소 RFP RAG 파이프라인")
     parser.add_argument("command", choices=["parse", "build", "ask", "all", "evaluate"])
@@ -38,6 +66,7 @@ def main():
     parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
     parser.add_argument("--limit", type=int, help="전처리할 CSV 앞쪽 N행 (생략: 전체)")
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--max-per-doc", type=int, help="문서당 최대 청크 수 (생략: 제한 없음)")
     parser.add_argument("--chunk-size", type=int, default=1000)
     parser.add_argument("--chunk-overlap", type=int, default=150)
     parser.add_argument("--filter", action="append", default=[], metavar="KEY=VALUE")
@@ -66,6 +95,8 @@ def main():
         parser.error("evaluate에는 --eval-file이 필요합니다.")
     if args.top_k < 1 or (args.limit is not None and args.limit < 1):
         parser.error("top-k, limit은 1 이상이어야 합니다.")
+    if args.max_per_doc is not None and args.max_per_doc < 1:
+        parser.error("max-per-doc은 1 이상이어야 합니다.")
     if not 0 <= args.chunk_overlap < args.chunk_size:
         parser.error("0 <= chunk-overlap < chunk-size 조건이 필요합니다.")
     filters = {}
@@ -112,7 +143,11 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                         metadata={"documents_sha256": experiment["documents_sha256"]}):
             pass
         if args.command == "parse":
+            print("파싱 결과를 검색에 반영하려면 같은 --processed-dir로 build를 실행하세요.")
             return
+
+    if args.command in {"ask", "evaluate"}:
+        check_index_documents(args, parser)
 
     if not os.getenv("OPENAI_API_KEY"):
         parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
@@ -122,10 +157,17 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         parser.error("허용된 답변 모델은 gpt-5-mini, gpt-5-nano입니다. "
                      ".env의 OPENAI_GENERATION_MODEL을 수정하거나 삭제하세요.")
     if args.command in {"build", "all"}:
-        documents = read_json(args.processed_dir / "documents.json")
+        # 역직렬화와 해시에 동일한 바이트를 사용해 실제 빌드 입력을 식별합니다.
+        documents_bytes = (args.processed_dir / "documents.json").read_bytes()
+        documents = json.loads(documents_bytes.decode("utf-8"))
+        documents_sha256 = hashlib.sha256(documents_bytes).hexdigest()
+        experiment["documents_sha256"] = documents_sha256
         config = build_index(documents, client, args.index_dir,
                              os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
-                             args.chunk_size, args.chunk_overlap)
+                             args.chunk_size, args.chunk_overlap,
+                             documents_sha256=documents_sha256)
+        # build/all 모두 저장된 config를 검증하며, all도 검증 후에만 질의합니다.
+        check_index_documents(args, parser)
         print(f"인덱스 생성: {config['chunk_count']}개 청크")
         for key, filename in (("index_sha256", "index.faiss"), ("chunks_sha256", "chunks.json"),
                               ("index_config_sha256", "config.json")):
@@ -139,6 +181,8 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
     with trace.span("index-settings", metadata={**config, "generation_model": generation_model,
                                                "top_k": args.top_k}):
         pass
+    # CLI 밖에서 args를 직접 만들어 넘길 때(테스트 등) 항목이 없어도 기존처럼 상한 없이 동작합니다.
+    max_per_doc = getattr(args, "max_per_doc", None)
 
     @observed("question-answer")
     def answer(question, case_filters=None):
@@ -147,7 +191,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                 "filter_keys": sorted({**filters, **(case_filters or {})})}):
             pass
         hits = retrieve(question, client, index, chunks, config, args.top_k,
-                        {**filters, **(case_filters or {})})
+                        {**filters, **(case_filters or {})}, max_per_doc=max_per_doc)
         try:
             return generate_answer(question, hits, client, generation_model)
         except RateLimitError as exc:
@@ -172,7 +216,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
             print(f"[{source['citation']}] {source['metadata']['filename']} "
                   f"(doc_id={source['doc_id']}, score={source['score']:.3f})")
     result["settings"] = {**config, "generation_model": generation_model,
-                          "top_k": args.top_k, "filters": filters}
+                          "top_k": args.top_k, "max_per_doc": max_per_doc, "filters": filters}
     result["experiment"] = {**experiment, "trace_id": trace.trace_id}
     result["token_usage"] = trace.usage
     if args.command == "evaluate":
