@@ -43,6 +43,8 @@ NAME_GROUPS = {"A_full_name": "사업명 있음", "E_filter_named": "사업명 �
 TEMPLATE = re.compile(r"다음 내용의 사업에서|이 기관이 발주한 사업들의|관련|사업의")
 JOSA = re.compile(r"(에서|으로|에게|까지|부터|이며|이다|의|은|는|이|가|을|를|에|로|과|와|도|만)$")
 CAUSES = ("정확한 용어가 달라서", "표현이 달라서", "유사한 다른 사업에 밀려서", "청크에 내용이 없어서", "질문이 일반적이라 구분 불가")
+# 검색 기본값이 바뀌어도 이 진단의 조건(하이브리드·상한 꺼짐)을 유지
+BASE = {"hybrid": False, "max_per_doc": "none"}
 
 
 def question_content(question):
@@ -138,7 +140,7 @@ def main():
         gold = set(case["expected_doc_ids"])
         filters = case.get("filters") or {}
         hits = retrieve(case["question"], client, index, chunks, config, args.top_k, filters,
-                        rerank=args.rerank, candidates=args.candidates)
+                        rerank=args.rerank, candidates=args.candidates, **BASE)
         found = gold & {hit["doc_id"] for hit in hits}
         if found == gold:
             continue
@@ -154,7 +156,7 @@ def main():
         for candidates in (50, 100, 200):
             for top_k in (args.top_k, 10):
                 more = retrieve(case["question"], client, index, chunks, config, top_k, filters,
-                                rerank=args.rerank, candidates=candidates)
+                                rerank=args.rerank, candidates=candidates, **BASE)
                 recovered[f"c{candidates}@{top_k}"] = len(gold & {hit["doc_id"] for hit in more}) / len(gold)
         for doc_id in sorted(gold - found):
             rank = first_rank.get(doc_id)

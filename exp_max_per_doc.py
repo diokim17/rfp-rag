@@ -101,7 +101,9 @@ def main():
     results = {}
     for limit in [None, *args.max_per_doc]:
         def search(question, filters, limit=limit):
-            extra = {} if limit is None else {"max_per_doc": limit}
+            # 검색 기본값이 바뀌어도 기준선은 코사인 검색만(리랭킹은 RETRIEVAL_RERANK로만 켬)
+            extra = {"rerank": os.getenv("RETRIEVAL_RERANK") or "none", "hybrid": False,
+                     "max_per_doc": "none" if limit is None else limit}
             return retrieve(question, client, index, chunks, config, args.top_k, filters, **extra)
 
         name = "기준선" if limit is None else f"문서당 최대 {limit}개"

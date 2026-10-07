@@ -1,10 +1,15 @@
-"""김연주: 질문 → 코사인 유사도 검색 → (선택) 리랭킹. 기본값은 리랭킹 없는 baseline입니다."""
+"""김연주: 질문 → 하이브리드 검색(벡터 + BM25, RRF) → cross-encoder 리랭킹 → 문서당 청크 상한.
+
+기본값은 팀 공통 평가셋(eval_team_v1) 측정(yjk-0017)에서 가장 좋았던 조합이며, 인자나 환경 변수로 끌 수 있습니다.
+"""
 
 from collections import Counter
+import importlib.util
 import math
 import os
 import re
 import unicodedata
+import warnings
 
 import numpy as np
 
@@ -14,7 +19,14 @@ from observability import observed, record_retrieval
 RERANK_MODES = ("none", "lexical", "cross-encoder")
 # 청크 본문에는 사업명이 거의 없으므로 리랭킹 입력 앞에 붙여 어느 사업의 청크인지 구분합니다.
 RERANK_FIELDS = ("사업명", "발주 기관")
+# 기본값: 하이브리드(벡터 100 + BM25 100) → RRF 상위 50개를 cross-encoder로 재정렬 → 문서당 2개.
+DEFAULT_RERANK, DEFAULT_HYBRID, DEFAULT_CANDIDATES, DEFAULT_HYBRID_K, DEFAULT_MAX_PER_DOC = "cross-encoder", True, 50, 100, 2
 _cross_encoders = {}
+
+
+def _cross_encoder_available():
+    """torch·transformers를 불러오지 않고 설치 여부만 확인합니다."""
+    return all(importlib.util.find_spec(name) is not None for name in ("torch", "transformers"))
 
 
 def _bigrams(text):
@@ -105,32 +117,53 @@ def _count(value, env, default, name):
     return number
 
 
+def _max_per_doc(value):
+    """None이면 환경 변수 RETRIEVAL_MAX_PER_DOC, 없으면 기본값. none·off는 상한 없음(None)."""
+    raw = os.getenv("RETRIEVAL_MAX_PER_DOC") if value is None else value
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return DEFAULT_MAX_PER_DOC
+    if isinstance(raw, str) and raw.strip().lower() in ("none", "off"):
+        return None
+    if isinstance(raw, bool) or int(raw) < 1:
+        raise ValueError("문서당 최대 청크 수는 1 이상이어야 합니다 (끄려면 none).")
+    return int(raw)
+
+
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
                       hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None):
-    """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(새 기능은 모두 꺼짐).
+    """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
     candidates·벡터/BM25 후보 수·RRF 상수는 그 값을 쓰는 기능이 켜졌을 때만 채웁니다.
+    리랭킹 방식을 지정하지 않았는데 torch·transformers가 없으면 cross-encoder 대신 lexical을 쓰고 경고합니다.
     """
-    mode = (os.getenv("RETRIEVAL_RERANK", "") if rerank is None else rerank).strip().lower() or "none"
+    mode = (os.getenv("RETRIEVAL_RERANK", "") if rerank is None else rerank).strip().lower()
+    if not mode:
+        mode = DEFAULT_RERANK
+        if mode == "cross-encoder" and not _cross_encoder_available():
+            warnings.warn("torch·transformers가 없어 기본 리랭킹을 cross-encoder 대신 lexical로 실행합니다.",
+                          RuntimeWarning, stacklevel=2)
+            mode = "lexical"
     if mode not in RERANK_MODES:
         raise ValueError(f"지원하는 리랭킹 방식: {', '.join(RERANK_MODES)}")
-    if max_per_doc is not None and max_per_doc < 1:
-        raise ValueError("문서당 최대 청크 수는 1 이상이어야 합니다.")
-    use_hybrid = _flag(hybrid, "RETRIEVAL_HYBRID")
+    max_per_doc = _max_per_doc(max_per_doc)
+    use_hybrid = (_flag(hybrid, "RETRIEVAL_HYBRID") if hybrid is not None or os.getenv("RETRIEVAL_HYBRID", "").strip()
+                  else DEFAULT_HYBRID)
     rewrite_mode = (os.getenv("RETRIEVAL_REWRITE", "") if rewrite is None else rewrite).strip().lower() or "off"
     if rewrite_mode not in REWRITE_MODES:
         raise ValueError(f"지원하는 질문 재작성 방식: {', '.join(REWRITE_MODES)}")
     fused = use_hybrid or rewrite_mode == "both"
     if mode != "none" or fused:
-        candidates = _count(candidates, "RETRIEVAL_CANDIDATES", 50, "리랭킹 후보 수")
+        candidates = _count(candidates, "RETRIEVAL_CANDIDATES", DEFAULT_CANDIDATES, "리랭킹 후보 수")
     else:
         candidates = None
     return {
         "rerank": mode, "candidates": candidates, "max_per_doc": max_per_doc,
         "hybrid": use_hybrid,
-        "hybrid_vector_k": _count(hybrid_vector_k, "RETRIEVAL_HYBRID_VECTOR_K", candidates, "벡터 후보 수") if fused else None,
-        "hybrid_bm25_k": _count(hybrid_bm25_k, "RETRIEVAL_HYBRID_BM25_K", candidates, "BM25 후보 수") if use_hybrid else None,
+        "hybrid_vector_k": _count(hybrid_vector_k, "RETRIEVAL_HYBRID_VECTOR_K",
+                                  DEFAULT_HYBRID_K if use_hybrid else candidates, "벡터 후보 수") if fused else None,
+        "hybrid_bm25_k": _count(hybrid_bm25_k, "RETRIEVAL_HYBRID_BM25_K", DEFAULT_HYBRID_K, "BM25 후보 수")
+        if use_hybrid else None,
         "rrf_k": _count(rrf_k, "RETRIEVAL_RRF_K", 60, "RRF 상수") if fused else None,
         "rewrite": rewrite_mode,
         "rewrite_model": (rewrite_model or os.getenv("RETRIEVAL_REWRITE_MODEL") or "gpt-5-mini")
@@ -202,14 +235,17 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
              rewrite=None, rewrite_model=None, rewrite_cache=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
 
-    rerank: none(기본)·lexical·cross-encoder. 생략하면 환경 변수 RETRIEVAL_RERANK를 사용합니다.
-    리랭킹은 필터를 통과한 코사인 상위 candidates개(기본 RETRIEVAL_CANDIDATES 또는 50)만 재정렬하여
+    기본값은 하이브리드 + cross-encoder + 문서당 상한 2입니다 (retrieval_options 참고).
+    예전 baseline(코사인 검색만)은 rerank="none", hybrid=False, max_per_doc="none"으로 얻습니다.
+
+    rerank: none·lexical·cross-encoder(기본). 생략하면 환경 변수 RETRIEVAL_RERANK, 그것도 없으면 기본값을 씁니다.
+      기본값인데 torch·transformers가 없으면 lexical로 대체합니다. cross-encoder는 로컬 모델이라 본문을 외부로 보내지 않습니다.
+    리랭킹은 필터를 통과한 후보 상위 candidates개(기본 RETRIEVAL_CANDIDATES 또는 50)만 재정렬하여
     top_k개를 반환하고 rerank_score(float)를 추가합니다. score는 항상 코사인 유사도입니다.
-    max_per_doc: 한 문서(doc_id)에서 반환할 최대 청크 수. 생략하면 제한하지 않습니다.
+    max_per_doc: 한 문서(doc_id)에서 반환할 최대 청크 수(기본 2, 환경 변수 RETRIEVAL_MAX_PER_DOC). none이면 제한 없음.
     리랭킹과 함께 쓰면 재정렬된 후보에 적용하므로 후보가 소수 문서에 몰리면 top_k보다 적게 반환할 수 있습니다.
 
-    아래 옵션은 모두 기본 꺼짐이며, 꺼져 있으면 위의 기존 동작과 결과가 같습니다 (retrieval_options 참고).
-    hybrid: 켜면 벡터 상위 hybrid_vector_k개와 BM25 상위 hybrid_bm25_k개(기본 둘 다 candidates)를
+    hybrid: 켜면(기본) 벡터 상위 hybrid_vector_k개와 BM25 상위 hybrid_bm25_k개(기본 둘 다 100)를
       RRF(상수 rrf_k, 기본 60)로 합쳐 후보를 만들고, 그 후보에 rerank를 적용합니다.
       합친 후보에는 rrf_score(float)가 추가되고 score는 여전히 질문과의 코사인 유사도입니다.
       환경 변수: RETRIEVAL_HYBRID, RETRIEVAL_HYBRID_VECTOR_K, RETRIEVAL_HYBRID_BM25_K, RETRIEVAL_RRF_K.
@@ -223,7 +259,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
                                 rewrite=rewrite, rewrite_model=rewrite_model)
-    mode, candidates = options["rerank"], options["candidates"]
+    mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
     eligible = {i for i, chunk in enumerate(chunks) if all(
