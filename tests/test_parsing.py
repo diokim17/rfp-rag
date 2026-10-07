@@ -72,6 +72,9 @@ class CleanTextTest(unittest.TestCase):
         self.assertEqual(_clean_text(raw),
                          "합계 | 77 |\n다음\n현상태사용[ ]\n☑적용) 보고서\n• GPA 분석\n• 주소 | FAX 02-6312")
 
+    def test_supplementary_pua_removed(self):
+        self.assertEqual(_clean_text(chr(0xF02EF) + "업무 " + chr(0xF0832) * 3), "업무")
+
     def test_spaced_label_before_colon_joined_but_form_run_kept(self):
         self.assertEqual(_clean_text("○ 사 업 비: 금150,000,000원\n○ 기 간 : 180일\n년 월 일 주 소 :"),
                          "○ 사업비: 금150,000,000원\n○ 기간 : 180일\n년 월 일 주 소 :")
@@ -101,6 +104,13 @@ class MergePagesTest(unittest.TestCase):
             "본문", [["구분", "내용"], ["가", "1"], ["나", "2"], ["다", "3"]],
             [["ID", "SFR-001"]], [["ID", "SFR-002"]]])
 
+    def test_new_card_not_joined_to_previous_continuation(self):
+        pages = [
+            [[["", None, ""], ["", "", "앞 카드 이어짐"]]],
+            [[["요구사항 분류", None, "기능 요구사항"], ["요구사항 고유번호", None, "SFR-010"]]],
+        ]
+        self.assertEqual(len(_merge_pages(pages)), 2)
+
 class SectionsTest(unittest.TestCase):
     def test_heading_path_skips_toc_lists_and_tables(self):
         text = "\n".join([
@@ -128,6 +138,9 @@ class FieldsTest(unittest.TestCase):
         self.assertEqual(_won("196백만원"), 196_000_000)
         self.assertEqual(_won("1억 5천만 원"), 150_000_000)
         self.assertIsNone(_won("추후 공지"))
+        self.assertEqual(_won("일금 육천만원정(￦ 60,000,000 ; 부가세 포함)"), 60_000_000)
+        self.assertEqual(_won("50,000,000(금 오천만원/VAT포함)"), 50_000_000)
+        self.assertIsNone(_won("2024. 10. 31."))  # 쉼표 없는 숫자는 금액 아님
 
     def test_first_valid_value_per_field(self):
         text = "\n".join([
@@ -141,6 +154,12 @@ class FieldsTest(unittest.TestCase):
         self.assertEqual(_fields(text), {
             "원문 사업 예산": "220,000천원(VAT 포함)", "원문 사업 기간": "계약일로부터 3개월",
             "원문 계약 방법": "제한경쟁입찰(협상에 의한 계약)", "원문 사업 금액": "220000000"})
+
+    def test_value_on_next_bullet_line_and_new_labels(self):
+        text = "1.4 사업기간\n- 착수일로부터 ∼ 2024. 10. 31.\nㅇ 낙찰방식 : 협상에 의한 계약"
+        out = _fields(text)
+        self.assertEqual(out["원문 사업 기간"], "착수일로부터 ∼ 2024. 10. 31.")
+        self.assertEqual(out["원문 계약 방법"], "협상에 의한 계약")
 
 
 class DropTocTest(unittest.TestCase):

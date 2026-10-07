@@ -167,6 +167,8 @@ def parse_hwp(path: str) -> str:
 
 SPACED = re.compile(r"(?:[가-힣] ){2,}[가-힣]")  # '사 업 명'처럼 자간을 띄운 제목·셀
 PDF_PAGE_NO = re.compile(r"[-–—]\s*\d{1,3}\s*[-–—]|\d{1,3}(?:\s*/\s*\d{1,3})?")
+CARD_START = {"요구사항분류", "요구사항번호", "요구사항고유번호"}  # 요구사항 정의서 카드 첫 칸
+PDF_FRAME_HEAD = re.compile(r"페\s*이\s*지\s*:\s*\d+\s*/\s*\d+")  # 쪽 테두리 표 머리말('페 이 지 : 4/19')
 
 
 def _join_spaced(s: str) -> str:
@@ -197,7 +199,9 @@ def _merge_pages(pages):
             shared = {x for x in a[0] if x} & {x for x in b[0] if x}
             # 첫 행이 같으면 헤더 반복, 하나도 안 겹치면 헤더 없이 이어짐. 일부만 같으면 별개 표(요구사항 카드 등)
             # ponytail: 열 수가 같고 헤더가 안 겹치는 별개 표도 이어 붙음. 오탐이 보이면 쪽 위치 조건 추가
-            if len(a[0]) == len(b[0]) and (b[0] == a[0] or not shared):
+            # 단, 요구사항 카드 시작 행이면 앞 카드의 이어짐(첫 행이 빈칸)이어도 새 표
+            start = re.sub(r"\s", "", next((x for x in b[0] if x), ""))
+            if len(a[0]) == len(b[0]) and (b[0] == a[0] or not shared and start not in CARD_START):
                 a += b[1:] if b[0] == a[0] else b
                 page = page[1:]
         out += page
@@ -209,13 +213,20 @@ def parse_pdf(path) -> str:
     pages = []
     with pymupdf.open(path) as doc:
         for page in doc:
-            tables = page.find_tables().tables
-            boxes = [pymupdf.Rect(t.bbox) for t in tables]
-            items = [(t.bbox[0], t.bbox[2], t.bbox[1], t.extract()) for t in tables]  # (x0, x1, y0, 글|표)
+            tables, heads = [], []
+            for t in page.find_tables().tables:
+                rows = t.extract()
+                # 본문 전체를 감싼 쪽 테두리 표: 표로 보지 않고 머리말 행만 버림 (안쪽 글은 일반 블록으로)
+                if rows and PDF_FRAME_HEAD.search(" ".join(c or "" for c in rows[0])):
+                    heads.append(pymupdf.Rect(t.rows[0].bbox))
+                else:
+                    tables.append((t, rows))
+            boxes = [pymupdf.Rect(t.bbox) for t, _ in tables]
+            items = [(t.bbox[0], t.bbox[2], t.bbox[1], rows) for t, rows in tables]  # (x0, x1, y0, 글|표)
             for x0, y0, x1, y1, text, _, kind in page.get_text("blocks"):
                 center = pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2)
                 if kind == 0 and text.strip() and not PDF_PAGE_NO.fullmatch(text.strip()) \
-                        and not any(center in box for box in boxes):  # 쪽번호·표 안 글(중복) 제외
+                        and not any(center in box for box in boxes + heads):  # 쪽번호·표 안 글(중복)·테두리 머리말 제외
                     items.append((x0, x1, y0, text))
             pages.append([it[3] for it in sorted(items, key=_reading_order(items, page.rect.width)) if it[3]])
     parts = []
@@ -230,7 +241,7 @@ def parse_pdf(path) -> str:
 
 def _clean_text(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ue000-\uf8ff]", "", text)  # 제어문자 + PUA(깨진 기호)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ue000-\uf8ff\U000f0000-\U0010ffff]", "", text)  # 제어문자 + PUA(깨진 기호)
     text = re.sub(r"[·.…ㆍ‥․]{5,}", " ", text)  # 목차 점선
     text = re.sub(r"[ \t\u3000]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
@@ -325,10 +336,13 @@ WON_UNIT = {"억": 10**8, "천만": 10**7, "백만": 10**6, "만": 10**4, "천":
 
 
 def _won(s: str):
-    """'130,000,000원', '40,000천원', '196백만원', '1억 5천만 원' → 원 단위 int. 금액이 없으면 None."""
-    m = re.search(r"(\d[\d,]*(?:\.\d+)?)(억|천만|백만|만|천)?(?:(\d[\d,]*)(천만|백만|만))?원", s.replace(" ", ""))
+    """'130,000,000원', '40,000천원', '196백만원', '1억 5천만 원' → 원 단위 int. 금액이 없으면 None.
+    '원'이 없어도 '￦ 60,000,000', '50,000,000(VAT포함)'처럼 ￦ 뒤 숫자나 쉼표로 묶인 백만 이상 숫자는 원으로 봄."""
+    s = s.replace(" ", "")
+    m = re.search(r"(\d[\d,]*(?:\.\d+)?)(억|천만|백만|만|천)?(?:(\d[\d,]*)(천만|백만|만))?원", s)
     if not m:
-        return None
+        m = re.search(r"[￦₩](\d[\d,]*)|(?<![\d,.])(\d{1,3}(?:,\d{3}){2,})(?![\d,])", s)
+        return int((m[1] or m[2]).replace(",", "")) if m else None
     value = float(m[1].replace(",", "")) * WON_UNIT.get(m[2], 1)
     if m[3]:
         value += float(m[3].replace(",", "")) * WON_UNIT[m[4]]
@@ -341,19 +355,21 @@ FIELDS = {  # metadata 키: (라벨 묶음들, 값 확인). 앞 묶음(구체적
                           "기초금액", "추정가격", "예산소요액", "사업규모", "과업예산", "용역예산", "용역금액",
                           "용역비용", "설계금액", "집행한도액"), _labels("예산액", "예산")),
                  lambda v: _won(v) and not re.search("미만|이상|초과", v)),
-    "원문 사업 기간": ((_labels("사업수행기간", "사업기간", "계약기간", "용역기간", "과업기간", "구축기간"), _labels("기간")),
+    "원문 사업 기간": ((_labels("사업수행기간", "과업수행기간", "사업기간", "계약기간", "용역기간", "과업기간", "구축기간"), _labels("기간")),
                  lambda v: re.search(r"\d+\s*(?:일|개월|년|월)|\d{2,4}\s*[.\-]\s*\d|계약일|착수일|체결일", v)),
-    "원문 계약 방법": ((_labels("입찰및계약방법", "낙찰자결정방법", "계약방법", "계약방식", "입찰방식", "입찰방법"),),
+    "원문 계약 방법": ((_labels("입찰및계약방법", "낙찰자결정방법", "계약방법", "계약방식", "입찰방식", "입찰방법",
+                          "낙찰방식", "사업추진방식"),),
                  lambda v: re.search("경쟁|협상|수의|입찰", v)),
 }
 
 
 def _fields(text: str) -> dict:
     """원문에서 예산·기간·계약 방법 추출. CSV 값 검수용 (CSV 사업 금액은 대부분 VAT 포함 금액).
-    라벨 뒤 ':' / ')' / 표 칸 '|' 다음 값 중 확인을 통과한 첫 번째."""
-    values = lambda labels: (m[1].strip()[:100]
-                             for m in re.finditer(rf"(?<![가-힣])(?:{labels})\s*[:：)|]\s*([^|\n]+)", text))
-    out = {key: next((v for labels in groups for v in values(labels) if ok(v)), "")
+    라벨 뒤 ':' / ')' / 표 칸 '|' 다음 값 중 확인을 통과한 첫 번째. 없으면 다음 줄 글머리('- ', 'ㅇ ') 뒤 값."""
+    values = lambda labels, sep: (m[1].strip()[:100]
+                                  for m in re.finditer(rf"(?<![가-힣])(?:{labels}){sep}\s*([^|\n]+)", text))
+    seps = (r"\s*[:：)|]", r"[ \t]*\n[-–ㅇ○□•]")
+    out = {key: next((v for labels in groups for sep in seps for v in values(labels, sep) if ok(v)), "")
            for key, (groups, ok) in FIELDS.items()}
     out["원문 사업 금액"] = str(_won(out["원문 사업 예산"]) or "")
     return out
