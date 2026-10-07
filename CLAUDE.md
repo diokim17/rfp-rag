@@ -53,7 +53,7 @@ parsing.py  ->  embedding.py  ->  retrieval.py  ->  generation.py  ->  evaluatio
 | `run.py` | 김도영 (integration) | argparse CLI, experiment ID, tracing, result JSON |
 | `parsing.py` | 나상훈 | HWP5 binary records via `olefile` + PDF via `pymupdf`; tables rebuilt as markdown; text cleanup; CSV join. Also home of `read_json` / `write_json`, used everywhere |
 | `embedding.py` | 유찬혁 | character chunking (`fixed` or `boundary`), OpenAI embeddings, FAISS `IndexFlatIP` over L2-normalized vectors |
-| `retrieval.py` | 김연주 | cosine search, exact-match metadata filters, optional rerank (`lexical` char-bigram BM25, or local `cross-encoder`), per-document chunk cap |
+| `retrieval.py` | 김연주 | cosine search, metadata filters (exact match, falling back to a unique normalized-containment match), optional rerank (`lexical` char-bigram BM25, or local `cross-encoder`), per-document chunk cap |
 | `generation.py` | 박단비 | OpenAI Responses API call with numbered citations |
 | `evaluation.py` | 김시현 | doc-level Recall@k, keyword coverage, latency |
 | `observability.py` | shared | optional Langfuse tracing: `Trace`, `@observed`, `model_call`, `record_retrieval` |

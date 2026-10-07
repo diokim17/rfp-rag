@@ -157,7 +157,7 @@ python run.py ask --question "주요 요구사항을 알려주세요." --top-k 5
 python run.py ask --question "사업 범위는 무엇인가요?" --filter "발주 기관=한영대학"
 ```
 
-`parse`는 API나 `.env` 없이 실행됩니다. `build`는 저장된 모든 전처리 문서를 사용합니다. `ask`는 원문을 재임베딩하지 않고 저장된 인덱스와 동일한 모델로 질문만 임베딩합니다. 필터는 CSV 메타데이터의 정확 일치이며 여러 번 지정할 수 있습니다.
+`parse`는 API나 `.env` 없이 실행됩니다. `build`는 저장된 모든 전처리 문서를 사용합니다. `ask`는 원문을 재임베딩하지 않고 저장된 인덱스와 동일한 모델로 질문만 임베딩합니다. 필터는 CSV 메타데이터의 정확 일치이며(일치하는 값이 없으면 표기 차이를 무시하고 하나뿐인 값을 찾습니다) 여러 번 지정할 수 있습니다.
 
 - `data/processed/documents.json`: 추출 본문과 메타데이터
 - `data/processed/parsing_errors.json`: 파일별 누락·추출 오류 (성공한 문서로 계속 진행)

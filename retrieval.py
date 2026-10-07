@@ -219,6 +219,29 @@ def _bm25_ranking(question, chunks, eligible, limit):
     return [int(i) for i in found[np.argsort(-scores[found], kind="stable")][:limit]]
 
 
+def _filter_key(value):
+    """필터 비교용 표기: NFC, '서울특별시'→'서울시', 글자·숫자만 남기고 소문자."""
+    text = unicodedata.normalize("NFC", str(value)).replace("서울특별시", "서울시")
+    return "".join(ch for ch in text if ch.isalnum()).casefold()
+
+
+def _resolve_filters(filters, chunks):
+    """정확히 일치하는 메타데이터 값이 없는 필터 값만 정규화 포함 관계로 찾아 바꿉니다.
+
+    예: '한국철도공사' → '한국철도공사 (용역)', '서울시여성가족재단' → '서울특별시 여성가족재단'.
+    후보가 하나일 때만 바꾸고, 없거나 여럿이면 원래 값을 그대로 둡니다(결과 0건).
+    """
+    resolved = {}
+    for key, value in (filters or {}).items():
+        known = {unicodedata.normalize("NFC", str(chunk["metadata"][key]))
+                 for chunk in chunks if key in chunk["metadata"]}
+        wanted = _filter_key(value)
+        matches = {v for v in known if wanted and wanted in _filter_key(v)}
+        exact = unicodedata.normalize("NFC", str(value)) in known
+        resolved[key] = matches.pop() if not exact and len(matches) == 1 else value
+    return resolved
+
+
 def _rrf(rankings, constant):
     """Reciprocal Rank Fusion: 점수 = Σ 1/(constant + 순위). 동점은 먼저 나온 목록의 순서를 따릅니다."""
     fused = {}
@@ -234,6 +257,8 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
              rewrite=None, rewrite_model=None, rewrite_cache=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
+    정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
+    메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
 
     기본값은 하이브리드 + cross-encoder + 문서당 상한 2입니다 (retrieval_options 참고).
     예전 baseline(코사인 검색만)은 rerank="none", hybrid=False, max_per_doc="none"으로 얻습니다.
@@ -262,6 +287,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
+    filters = _resolve_filters(filters, chunks)
     eligible = {i for i, chunk in enumerate(chunks) if all(
         key in chunk["metadata"] and normalize(chunk["metadata"][key]) == normalize(value)
         for key, value in (filters or {}).items()

@@ -4,7 +4,7 @@
   python experiments/eval_v2_yjk.py ... --settings hybrid-ce-c50-cap2 prefix-ce-c50-cap2 --allow-api
 
 지표·집계는 team_eval_yjk.py와 같습니다(doc_recall@5, 정답 문서/정답 청크 첫 순위, 상위 50개 안에서만).
-retrieval.py를 바꾸지 않고 실험 안에서만 적용하는 변형 두 가지:
+실험 안에서 적용하는 변형 두 가지(fuzzy는 이후 retrieval._resolve_filters로 기본 동작에 반영되어 결과가 같습니다):
 - prefix: BM25 색인 텍스트 앞에 사업명·발주 기관을 붙입니다. 반환 청크 본문과 채점은 원문 그대로입니다.
 - fuzzy: 필터 값을 공백·기호를 지우고 '서울특별시→서울시'로 맞춘 뒤 메타데이터 값에 포함되는지로 찾아
   하나로 정해지면 그 값으로 바꿔 exact-match 필터에 넘깁니다(예: '한국철도공사' → '한국철도공사 (용역)').
