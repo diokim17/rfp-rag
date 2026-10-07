@@ -241,7 +241,7 @@ def parse_pdf(path) -> str:
 
 def _clean_text(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
-    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ue000-\uf8ff]", "", text)  # 제어문자 + PUA(깨진 기호)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ue000-\uf8ff\U000f0000-\U0010ffff]", "", text)  # 제어문자 + PUA(깨진 기호)
     text = re.sub(r"[·.…ㆍ‥․]{5,}", " ", text)  # 목차 점선
     text = re.sub(r"[ \t\u3000]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)

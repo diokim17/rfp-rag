@@ -72,6 +72,9 @@ class CleanTextTest(unittest.TestCase):
         self.assertEqual(_clean_text(raw),
                          "합계 | 77 |\n다음\n현상태사용[ ]\n☑적용) 보고서\n• GPA 분석\n• 주소 | FAX 02-6312")
 
+    def test_supplementary_pua_removed(self):
+        self.assertEqual(_clean_text(chr(0xF02EF) + "업무 " + chr(0xF0832) * 3), "업무")
+
     def test_spaced_label_before_colon_joined_but_form_run_kept(self):
         self.assertEqual(_clean_text("○ 사 업 비: 금150,000,000원\n○ 기 간 : 180일\n년 월 일 주 소 :"),
                          "○ 사업비: 금150,000,000원\n○ 기간 : 180일\n년 월 일 주 소 :")
