@@ -128,6 +128,9 @@ class FieldsTest(unittest.TestCase):
         self.assertEqual(_won("196백만원"), 196_000_000)
         self.assertEqual(_won("1억 5천만 원"), 150_000_000)
         self.assertIsNone(_won("추후 공지"))
+        self.assertEqual(_won("일금 육천만원정(￦ 60,000,000 ; 부가세 포함)"), 60_000_000)
+        self.assertEqual(_won("50,000,000(금 오천만원/VAT포함)"), 50_000_000)
+        self.assertIsNone(_won("2024. 10. 31."))  # 쉼표 없는 숫자는 금액 아님
 
     def test_first_valid_value_per_field(self):
         text = "\n".join([
@@ -141,6 +144,12 @@ class FieldsTest(unittest.TestCase):
         self.assertEqual(_fields(text), {
             "원문 사업 예산": "220,000천원(VAT 포함)", "원문 사업 기간": "계약일로부터 3개월",
             "원문 계약 방법": "제한경쟁입찰(협상에 의한 계약)", "원문 사업 금액": "220000000"})
+
+    def test_value_on_next_bullet_line_and_new_labels(self):
+        text = "1.4 사업기간\n- 착수일로부터 ∼ 2024. 10. 31.\nㅇ 낙찰방식 : 협상에 의한 계약"
+        out = _fields(text)
+        self.assertEqual(out["원문 사업 기간"], "착수일로부터 ∼ 2024. 10. 31.")
+        self.assertEqual(out["원문 계약 방법"], "협상에 의한 계약")
 
 
 class DropTocTest(unittest.TestCase):
