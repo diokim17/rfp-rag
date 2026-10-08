@@ -42,23 +42,23 @@
 
 ## 개발 환경 및 기술 스택
 
-두 시나리오 모두 GCP Linux 서버에서 개발·실행합니다. 모델과 Vector DB는 선정 후 업데이트하고, 주요 라이브러리는 프로젝트 종료 시 정리할 예정입니다.
+두 시나리오 모두 GCP Linux 서버에서 개발·실행합니다. A는 서버에 저장한 모델을 직접 실행하고, B는 OpenAI API를 호출합니다. 공통 검색 인덱스는 FAISS를 사용합니다. A 모델과 추론 패키지 버전은 담당자 선정 후 업데이트합니다.
 
 | 구분 | 시나리오 A: GCP 모델 직접 실행 | 시나리오 B: OpenAI API 기반 |
 | --- | --- | --- |
 | 개발 언어 및 버전 | Python 3.12.3 | Python 3.12.3 |
 | 실행 환경 | GCP 서버 / Linux | GCP 서버 / Linux |
 | 문서 파싱 | 작성 예정 | 작성 예정 |
-| 임베딩 모델 | 미정 | 미정 |
-| Vector DB | 미정 | 미정 |
-| LLM | 미정 (GCP에서 직접 실행) | 미정 (OpenAI API 사용) |
+| 임베딩 모델 | 담당자 선정·구현 예정 | `text-embedding-3-small` (기본, 환경 변수로 변경) |
+| Vector DB | FAISS | FAISS |
+| LLM | 담당자 선정·구현 예정 (GCP 직접 실행) | `gpt-5-mini` (기본) / `gpt-5-nano` |
 | 주요 라이브러리 | 프로젝트 종료 후 작성 | 프로젝트 종료 후 작성 |
 
 ## 프로젝트
 
 ### 프로젝트 구조
 
-`dev-a`는 시나리오 A의 통합 개발 브랜치입니다. 기존 B 파이프라인과 입출력 형식을 유지하며, `.env`의 `RFP_SCENARIO`에 따라 사용할 모델 구현을 연결합니다. A/B 연결 코드는 구현되어 있고, 실제 A 생성·임베딩 모듈은 각 담당자가 구현해야 합니다.
+`dev`는 시나리오 A/B를 함께 개발하는 통합 브랜치입니다. 기존 파이프라인과 입출력 형식을 유지하며, `.env`의 `RFP_SCENARIO`에 따라 사용할 모델 구현을 연결합니다. B의 OpenAI 호출과 A/B 연결 코드는 구현되어 있고, 실제 A 생성·임베딩 모듈은 각 담당자가 구현해야 합니다.
 
 ```text
 rfp-rag/
@@ -96,7 +96,19 @@ rfp-rag/
 └── embedding/<임베딩 모델 폴더>/
 ```
 
-### 시나리오 A 담당 파일과 연결 방식
+### 브랜치 운영
+
+A/B 모두 최신 `dev`에서 개인 기능 브랜치를 만들고, PR 대상도 `dev`로 지정합니다. 각자의 기능 브랜치에서 작업·테스트한 뒤 리뷰를 거쳐 통합하며, 최종 검증된 `dev`를 `main`에 반영합니다. 기존 B 기능 브랜치는 그대로 사용하되 최신 `dev`를 반영하고 PR 대상을 확인하세요.
+
+```text
+feature/a-generation ─┐
+feature/a-embedding  ──┤
+기타 A/B 기능 브랜치 ───┴─→ dev ─→ main
+```
+
+기존 `dev-a`의 통합 준비 코드는 `dev`에 반영했습니다. 앞으로 시나리오별 통합 브랜치를 추가하지 않고 `dev`를 기준으로 개발합니다.
+
+### A/B 담당 파일과 연결 방식
 
 | 담당자 | 주요 파일 | 맡을 작업 |
 | --- | --- | --- |
@@ -160,14 +172,47 @@ RFP_EMBEDDING_CONTEXT=section python run.py build \
 
 ## 실행 방법
 
-환경 구성이 완료되면 아래 항목을 작성할 예정입니다.
+프로젝트 폴더에서 가상환경을 활성화하고 필요한 패키지를 준비한 뒤 실행합니다. 자세한 서버 준비·공통 입출력 규칙은 [팀 개발 가이드](docs/TEAM_DEVELOPMENT_GUIDE.md)를 참고하세요. 실제 A 추론 패키지는 담당 모델에 맞춰 별도로 준비해야 합니다.
 
-1. 실행 환경 및 의존성 설치
-2. 환경 변수 설정
-3. 데이터 준비 및 전처리
-4. 임베딩 및 인덱스 생성
-5. 질의응답 시스템 실행
-6. 성능 평가 실행
+```bash
+source .venv/bin/activate
+```
+
+`.env.example`을 참고해 자신의 `.env`를 설정하세요. 이미 작성한 `.env`는 덮어쓰지 않습니다. `EXPERIMENT_OWNER`에는 담당자 고유 영문 이니셜을 지정합니다.
+
+### 시나리오 B: OpenAI API
+
+```dotenv
+RFP_SCENARIO=B
+OPENAI_API_KEY=본인_API_키
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_GENERATION_MODEL=gpt-5-mini
+EXPERIMENT_OWNER=본인_이니셜
+```
+
+```bash
+python run.py check-config
+python run.py parse
+python run.py build
+python run.py ask --question "질문 내용"
+python run.py evaluate --eval-file data/eval.json
+```
+
+`data/eval.json`은 팀에서 준비한 평가셋이 있어야 합니다. 다른 파일을 사용할 때는 해당 경로를 지정하세요. `all --question "질문 내용"`은 파싱·인덱스 구축·질의를 연속 실행하며, B에서는 임베딩·생성 API 비용이 발생합니다.
+
+### 시나리오 A: 서버 모델 직접 실행
+
+공용 모델 폴더, 생성·임베딩 담당 모듈, 추론 패키지를 먼저 준비하고 위의 A 환경 변수 예시를 적용합니다. 이후 B와 같은 명령을 사용하며, 기본 인덱스·결과는 A 경로로 저장됩니다. 실제 모델·모듈 준비 전에는 안내 후 종료합니다.
+
+인자 없이 `python run.py`를 실행하면 선택한 시나리오의 기본 인덱스 존재 여부에 따라 `ask` 또는 `all`을 선택합니다. 질문은 `run.py`의 `DEFAULT_QUESTION`, 기본 처리 문서 수는 `DEFAULT_LIMIT`을 사용합니다. 실행당 질문은 `--question`, 평가 질문 목록은 `--eval-file`로 지정합니다.
+
+### 오프라인 검증
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+가짜 모델·API로 설정, 인덱스 구축·검색·생성·평가 연결과 오류 처리를 검증합니다. 실제 모델 품질·GPU 메모리·OpenAI API 접속 성공은 별도 실행으로 확인해야 합니다.
 
 ## 결과물
 
