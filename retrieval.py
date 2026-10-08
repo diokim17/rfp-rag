@@ -23,6 +23,8 @@ RERANK_FIELDS = ("사업명", "발주 기관")
 DEFAULT_RERANK, DEFAULT_HYBRID, DEFAULT_CANDIDATES, DEFAULT_HYBRID_K, DEFAULT_MAX_PER_DOC = "cross-encoder", True, 50, 100, 2
 # 하이브리드의 BM25 색인에도 사업명·발주 기관을 본문 앞에 붙입니다(eval_v2 yjk-0010: 50위 밖 정답 청크 10→1건).
 DEFAULT_BM25_PREFIX = True
+# 재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문 BM25 상위 청크를 더합니다(기본 0 = 끔).
+DEFAULT_EXPAND, EXPAND_DOCS = 0, 2
 _cross_encoders = {}
 
 
@@ -138,9 +140,19 @@ def _max_per_doc(value):
     return int(raw)
 
 
+def _expand_count(value):
+    """None이면 환경 변수 RETRIEVAL_EXPAND, 없으면 기본값. 0 이상의 정수(0 = 끔)."""
+    raw = os.getenv("RETRIEVAL_EXPAND") if value is None else value
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return DEFAULT_EXPAND
+    if isinstance(raw, bool) or int(raw) < 0:
+        raise ValueError("재정렬 후보 확장 수는 0 이상이어야 합니다 (끄려면 0).")
+    return int(raw)
+
+
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
                       hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None,
-                      within_doc=None):
+                      within_doc=None, expand=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -185,6 +197,7 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         "rewrite_model": (rewrite_model or os.getenv("RETRIEVAL_REWRITE_MODEL") or "gpt-5-mini")
         if rewrite_mode != "off" else None,
         "within_doc": within_mode,
+        "expand": _expand_count(expand) if mode != "none" else None,
     }
 
 
@@ -275,7 +288,8 @@ def _rrf(rankings, constant):
 @observed("retrieve")
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
-             rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None):
+             rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None,
+             expand=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -303,13 +317,17 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     within_doc: off(기본)·residual·residual+full. 위 과정이 끝난 뒤 문서가 차지한 자리 수·순서는 그대로 두고,
       각 자리의 청크만 그 문서의 전체 청크에서 다시 고릅니다(_reselect_within_docs). 환경 변수 RETRIEVAL_WITHIN_DOC.
       켜면 임베딩 API를 한 번 더 호출합니다(원래 질문과 문서별 남은 질문을 한 번에).
+    expand: 재정렬 후보 확장(기본 0 = 끔, 환경 변수 RETRIEVAL_EXPAND). 재정렬할 때만 쓰며, 후보에 처음 나온
+      문서 2개에서 남은 질문(_residual_question)의 문서 안 BM25 상위 expand개 청크를 후보에 더해 재정렬기가
+      순서를 정하게 합니다. 사업명이 질문 대부분을 차지해 정답 청크가 후보에 못 드는 경우(발표 시간 등)를 위한 것.
+      더한 청크는 expanded=True를 갖고 rrf_score는 없습니다. API 호출은 늘지 않습니다.
     """
     if not question.strip() or top_k < 1:
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
                                 rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix,
-                                within_doc=within_doc)
+                                within_doc=within_doc, expand=expand)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -341,6 +359,8 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
             if len(hits) == pool:
                 break
     if mode != "none":
+        hits = _expand_candidates(question, hits, chunks, eligible, options["expand"],
+                                  lambda number: float(index.reconstruct(number) @ vector[0]))
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
         ranked, hits = observed(f"rerank-{mode}")(_rerank)(question, hits, mode), []
         per_doc.clear()
@@ -382,6 +402,31 @@ def _residual_question(question, metadata):
         if not grams or sum(gram in project for gram in grams) / len(grams) < .5:
             kept.append(word)
     return " ".join(kept) or question
+
+
+def _expand_candidates(question, hits, chunks, eligible, count, score_of):
+    """재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문의 문서 안 BM25 상위 count개를 더합니다.
+
+    이미 후보인 청크는 건너뛰고 문서마다 최대 count개를 뒤에 붙입니다. 순서는 이어지는 재정렬이 정합니다.
+    score_of(청크 번호)는 질문과의 코사인을 돌려줍니다.
+    """
+    if not count or not hits:
+        return hits
+    members = _members(chunks)
+    seen = {hit["chunk_id"] for hit in hits}
+    extra = []
+    for doc_id in list(dict.fromkeys(hit["doc_id"] for hit in hits))[:EXPAND_DOCS]:
+        ids = [number for number in members.get(doc_id, []) if number in eligible]
+        rest = _residual_question(question, chunks[ids[0]]["metadata"])
+        added = 0
+        for number in _bm25_ranking(rest, chunks, set(ids), len(ids)):
+            if added == count:
+                break
+            if chunks[number]["chunk_id"] not in seen:
+                seen.add(chunks[number]["chunk_id"])
+                extra.append({**chunks[number], "score": score_of(number), "expanded": True})
+                added += 1
+    return hits + extra
 
 
 def _reselect_within_docs(question, hits, client, index, chunks, config, eligible, mode):
@@ -455,6 +500,7 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
             if len(hits) == pool:
                 break
     if mode != "none":
+        hits = _expand_candidates(question, hits, chunks, eligible, options["expand"], lambda number: cosine[number])
         ranked, hits = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode), []
         per_doc.clear()
         for hit in ranked:

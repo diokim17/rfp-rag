@@ -50,6 +50,9 @@ SETTINGS = {**BASE, **{f"{name}+fuzzy": options for name, options in BASE.items(
 # '+wd'는 문서 안 재선택(residual+full), '+wdr'은 남은 질문만(residual) — retrieve의 within_doc
 SETTINGS.update({f"{name}{suffix}": {**options, "within_doc": mode} for name, options in BASE.items()
                  for suffix, mode in (("+wd", "residual+full"), ("+wdr", "residual"))})
+# '+x5'·'+x10'·'+x20'은 재정렬 후보 확장(retrieve의 expand) — 재정렬하는 설정에만
+SETTINGS.update({f"{name}+x{count}": {**options, "expand": count} for name, options in BASE.items()
+                 if options["rerank"] != "none" for count in (5, 10, 20)})
 
 
 def nfc(value):
