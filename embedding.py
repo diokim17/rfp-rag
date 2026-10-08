@@ -34,10 +34,21 @@ def _chunking_strategy():
     return strategy
 
 
+def _chunking_version(strategy=None):
+    """structured 변형은 인덱스별로 고정하고, 그 외 전략은 v1을 유지."""
+    strategy = strategy or _chunking_strategy()
+    if strategy != "structured":
+        return 1
+    value = os.getenv("RFP_STRUCTURED_CHUNKING_VERSION", "3")
+    if value not in {"2", "3"}:
+        raise ValueError("RFP_STRUCTURED_CHUNKING_VERSION은 2 또는 3이어야 합니다.")
+    return int(value)
+
+
 def _embedding_context():
     context = os.getenv("RFP_EMBEDDING_CONTEXT", "none")
-    if context not in {"none", "project", "project_blend"}:
-        raise ValueError("RFP_EMBEDDING_CONTEXT는 none, project 또는 project_blend여야 합니다.")
+    if context not in {"none", "project", "project_blend", "table", "section"}:
+        raise ValueError("RFP_EMBEDDING_CONTEXT는 none, project, project_blend, table 또는 section이어야 합니다.")
     return context
 
 
@@ -51,6 +62,24 @@ def _embedding_input(chunk, context):
                 value = " ".join(unicodedata.normalize("NFC", value).split())
                 if value:
                     lines.append(f"{key}: {value}")
+    elif context == "section":
+        section = chunk["metadata"].get("section_path")
+        if isinstance(section, str) and section.strip():
+            lines.append(f"절: {' '.join(unicodedata.normalize('NFC', section).split())}")
+    elif context == "table" and chunk["metadata"].get("tables"):
+        section = chunk["metadata"].get("section_path")
+        if isinstance(section, str) and section.strip():
+            lines.append(f"절: {' '.join(unicodedata.normalize('NFC', section).split())}")
+        body = unicodedata.normalize("NFC", chunk["text"]).replace("\r\n", "\n").replace("\r", "\n")
+        headers = []
+        for table in chunk["metadata"]["tables"]:
+            header = table.get("header_text") if isinstance(table, dict) else None
+            if not isinstance(header, str):
+                continue
+            header = "\n".join(line.rstrip() for line in unicodedata.normalize("NFC", header).splitlines()).strip()
+            if header and header not in body and header not in headers:
+                headers.append(header)
+        lines.extend(f"표 헤더:\n{header}" for header in headers)
     return "\n".join(lines) + "\n\n" + chunk["text"] if lines else chunk["text"]
 
 
@@ -179,11 +208,12 @@ def _structure(document, chunk_size, table_spans=None):
             merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
         else:
             merged.append((start, end))
-    return sections, merged, [a for a, _ in merged]
+    short_tables = {a: b for a, b in tables if b - a <= chunk_size}
+    return sections, merged, [a for a, _ in merged], short_tables
 
 
-def _structured_end(text, start, size, overlap, structure):
-    sections, spans, starts = structure
+def _structured_end(text, start, size, overlap, structure, version=3):
+    sections, spans, starts, short_tables = structure
     limit = min(start + size, len(text))
     if limit == len(text):
         return limit
@@ -199,11 +229,23 @@ def _structured_end(text, start, size, overlap, structure):
     span = _containing_span(end, spans, starts)
     if span:
         left, right = span
+        if version == 2:
+            if right <= limit:
+                return right
+            if left > start:
+                return left
+            return limit  # 행/제목 자체가 너무 길 때는 크기 제한을 지킵니다.
         if right <= limit:
-            return right
-        if left > start:
-            return left
-        return limit  # 행/제목 자체가 너무 길 때는 크기 제한을 지킵니다.
+            end = right
+        elif left > start:
+            end = left
+        else:
+            end = limit  # 행/제목 자체가 너무 길 때는 크기 제한을 지킵니다.
+    # 문단 경계가 표 직전이면, 크기 안에 들어오는 표를 앞 문맥과 함께 담습니다.
+    # 실제 섹션 경계 선택과 큰 표/행 보호 규칙은 유지합니다.
+    table_end = short_tables.get(end)
+    if version == 3 and not use_section and table_end is not None and table_end <= limit:
+        end = table_end
     return end
 
 
@@ -229,6 +271,7 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
     if not 0 <= chunk_overlap < chunk_size:
         raise ValueError("0 <= chunk_overlap < chunk_size 조건이 필요합니다.")
     strategy = _chunking_strategy()
+    version = _chunking_version(strategy)
     chunks = []
     for document in documents:
         text = document["text"]
@@ -244,11 +287,11 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
             if strategy == "boundary" and end < len(text):
                 end = _boundary_end(text, start, end, chunk_size, chunk_overlap)
             elif strategy == "structured":
-                end = _structured_end(text, start, chunk_size, chunk_overlap, structure)
+                end = _structured_end(text, start, chunk_size, chunk_overlap, structure, version)
                 if end <= previous_end:
                     # 표 앞에 남은 overlap 때문에 같은 내용만 반복하지 않습니다.
                     start = previous_end
-                    end = _structured_end(text, start, chunk_size, chunk_overlap, structure)
+                    end = _structured_end(text, start, chunk_size, chunk_overlap, structure, version)
             if text[start:end].strip():
                 chunks.append({
                     "chunk_id": f"{document['doc_id']}:{number}",
@@ -302,6 +345,7 @@ def build_index(documents, client, index_dir="indexes", model="text-embedding-3-
                 chunk_size=1000, chunk_overlap=150, documents_sha256=None):
     """호출자가 계산한 documents.json 해시를 재계산·변환 없이 config에 저장합니다."""
     strategy = _chunking_strategy()
+    version = _chunking_version(strategy)
     context = _embedding_context()
     chunks = chunk_documents(documents, chunk_size, chunk_overlap)
     if not chunks:
@@ -321,8 +365,8 @@ def build_index(documents, client, index_dir="indexes", model="text-embedding-3-
     write_json(path / "chunks.json", chunks)
     config = {"embedding_model": model, "dimension": index.d, "chunk_count": len(chunks),
               "chunk_size": chunk_size, "chunk_overlap": chunk_overlap,
-              "chunking_strategy": strategy, "chunking_version": 2 if strategy == "structured" else 1,
-              "embedding_context": context, "embedding_context_version": 1,
+              "chunking_strategy": strategy, "chunking_version": version,
+              "embedding_context": context, "embedding_context_version": 2 if context == "table" else 1,
               "chunk_metadata_version": 1,
               "documents_sha256": documents_sha256}
     write_json(path / "config.json", config)
