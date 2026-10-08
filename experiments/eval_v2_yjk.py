@@ -47,6 +47,9 @@ for prefix in ("", "prefix-"):
                                                          "max_per_doc": 2, **HYBRID}
 # 이름에 'fuzzy'가 붙으면 필터 값 정규화를 함께 씁니다.
 SETTINGS = {**BASE, **{f"{name}+fuzzy": options for name, options in BASE.items()}}
+# '+wd'는 문서 안 재선택(residual+full), '+wdr'은 남은 질문만(residual) — retrieve의 within_doc
+SETTINGS.update({f"{name}{suffix}": {**options, "within_doc": mode} for name, options in BASE.items()
+                 for suffix, mode in (("+wd", "residual+full"), ("+wdr", "residual"))})
 
 
 def nfc(value):

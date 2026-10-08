@@ -100,8 +100,10 @@ def _rerank(question, hits, mode):
 
 
 REWRITE_MODES = ("off", "only", "both")
+WITHIN_DOC_MODES = ("off", "residual", "residual+full")
 _OFF, _ON = {"", "0", "false", "off", "no", "none"}, {"1", "true", "on", "yes"}
 _bm25_indexes = {}
+_doc_members = {}
 
 
 def _flag(value, env):
@@ -137,7 +139,8 @@ def _max_per_doc(value):
 
 
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
-                      hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None):
+                      hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None,
+                      within_doc=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -159,6 +162,9 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
     rewrite_mode = (os.getenv("RETRIEVAL_REWRITE", "") if rewrite is None else rewrite).strip().lower() or "off"
     if rewrite_mode not in REWRITE_MODES:
         raise ValueError(f"지원하는 질문 재작성 방식: {', '.join(REWRITE_MODES)}")
+    within_mode = (os.getenv("RETRIEVAL_WITHIN_DOC", "") if within_doc is None else within_doc).strip().lower() or "off"
+    if within_mode not in WITHIN_DOC_MODES:
+        raise ValueError(f"지원하는 문서 안 재선택 방식: {', '.join(WITHIN_DOC_MODES)}")
     fused = use_hybrid or rewrite_mode == "both"
     if mode != "none" or fused:
         candidates = _count(candidates, "RETRIEVAL_CANDIDATES", DEFAULT_CANDIDATES, "리랭킹 후보 수")
@@ -178,6 +184,7 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         "rewrite": rewrite_mode,
         "rewrite_model": (rewrite_model or os.getenv("RETRIEVAL_REWRITE_MODEL") or "gpt-5-mini")
         if rewrite_mode != "off" else None,
+        "within_doc": within_mode,
     }
 
 
@@ -268,7 +275,7 @@ def _rrf(rankings, constant):
 @observed("retrieve")
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
-             rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None):
+             rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -293,12 +300,16 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
       RRF로 합칩니다. 재작성은 query_rewrite.rewrite_question이 하며 실패하거나 비면 원문으로 돌아갑니다.
       rewrite_cache(파일 경로)를 주면 같은 질문은 다시 호출하지 않습니다. 환경 변수: RETRIEVAL_REWRITE,
       RETRIEVAL_REWRITE_MODEL(기본 gpt-5-mini). 리랭킹에는 검색에 쓴 질문들을 이어 붙인 문장을 씁니다.
+    within_doc: off(기본)·residual·residual+full. 위 과정이 끝난 뒤 문서가 차지한 자리 수·순서는 그대로 두고,
+      각 자리의 청크만 그 문서의 전체 청크에서 다시 고릅니다(_reselect_within_docs). 환경 변수 RETRIEVAL_WITHIN_DOC.
+      켜면 임베딩 API를 한 번 더 호출합니다(원래 질문과 문서별 남은 질문을 한 번에).
     """
     if not question.strip() or top_k < 1:
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
-                                rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix)
+                                rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix,
+                                within_doc=within_doc)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -312,8 +323,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
         return []
     if options["hybrid"] or options["rewrite"] != "off":
         hits = _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligible, options, rewrite_cache)
-        record_retrieval(hits)
-        return hits
+        return _finish(question, hits, client, index, chunks, config, eligible, options)
     vector = embed_texts([question], client, config["embedding_model"])
     if vector.shape[1] != index.d:
         raise ValueError("질문 임베딩 차원이 인덱스와 다릅니다.")
@@ -339,8 +349,78 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
                 per_doc[hit["doc_id"]] += 1
                 hits.append(hit)
         hits = hits[:top_k]
+    return _finish(question, hits, client, index, chunks, config, eligible, options)
+
+
+def _finish(question, hits, client, index, chunks, config, eligible, options):
+    """두 검색 경로의 공통 마무리: 문서 안 재선택(켰을 때)과 결과 기록."""
+    if options["within_doc"] != "off" and hits:
+        hits = observed("within-doc")(_reselect_within_docs)(question, hits, client, index, chunks, config,
+                                                             eligible, options["within_doc"])
     record_retrieval(hits)
     return hits
+
+
+def _members(chunks):
+    """doc_id별 청크 번호. 같은 chunks 목록에는 다시 만들지 않습니다."""
+    cached = _doc_members.get(id(chunks))
+    if cached is None or cached[0] is not chunks:
+        groups = {}
+        for number, chunk in enumerate(chunks):
+            groups.setdefault(chunk["doc_id"], []).append(number)
+        _doc_members.clear()
+        _doc_members[id(chunks)] = cached = (chunks, groups)
+    return cached[1]
+
+
+def _residual_question(question, metadata):
+    """질문에서 그 문서의 사업명·발주 기관과 글자 2-gram이 절반 이상 겹치는 단어를 뺀 '남은 질문'. 다 빠지면 원래 질문."""
+    project = set(_bigrams(" ".join(str(metadata.get(key, "")) for key in RERANK_FIELDS)))
+    kept = []
+    for word in unicodedata.normalize("NFC", question).split():
+        grams = _bigrams(word)
+        if not grams or sum(gram in project for gram in grams) / len(grams) < .5:
+            kept.append(word)
+    return " ".join(kept) or question
+
+
+def _reselect_within_docs(question, hits, client, index, chunks, config, eligible, mode):
+    """같은 문서 안에서 청크 다시 고르기 (eval_v2 yjk-0013).
+
+    문서별로 남은 질문의 BM25(문서 안, 접두 없음)와 벡터 코사인 순위를 RRF(60)로 합치고, residual+full이면
+    원래 질문의 두 순위도 더합니다. 문서가 차지한 자리마다 그 순서대로 청크를 넣으며 within_doc_rank(1부터)를 붙입니다.
+    같은 청크가 다시 뽑히면 원래 Hit(rerank_score·rrf_score 포함)을 그대로 쓰고, 새 청크는 score(질문과의 코사인)만 가집니다.
+    """
+    members = _members(chunks)
+    residuals = {}
+    for hit in hits:
+        residuals.setdefault(hit["doc_id"], _residual_question(question, hit["metadata"]))
+    texts = list(dict.fromkeys([question, *residuals.values()]))
+    vectors = dict(zip(texts, embed_texts(texts, client, config["embedding_model"])))
+    if vectors[question].shape[0] != index.d:
+        raise ValueError("질문 임베딩 차원이 인덱스와 다릅니다.")
+    original = {hit["chunk_id"]: hit for hit in hits}
+    queues, reselected = {}, []
+    for hit in hits:
+        doc_id = hit["doc_id"]
+        if doc_id not in queues:
+            ids = [number for number in members.get(doc_id, []) if number in eligible]
+            stored = np.vstack([index.reconstruct(number) for number in ids])
+            cosine = stored @ vectors[question]
+            rest = residuals[doc_id]
+            rankings = [_bm25_ranking(rest, chunks, set(ids), len(ids)),
+                        [ids[j] for j in np.argsort(-(stored @ vectors[rest]), kind="stable")]]
+            if mode == "residual+full":
+                rankings += [_bm25_ranking(question, chunks, set(ids), len(ids)),
+                             [ids[j] for j in np.argsort(-cosine, kind="stable")]]
+            scores = dict(zip(ids, cosine.tolist()))
+            queues[doc_id] = iter([(rank, number, scores[number])
+                                   for rank, (number, _) in enumerate(_rrf(rankings, 60), 1)])
+        rank, number, score = next(queues[doc_id])
+        chunk = chunks[number]
+        base = original.get(chunk["chunk_id"]) or {**chunk, "score": float(score)}
+        reselected.append({**base, "within_doc_rank": rank})
+    return reselected
 
 
 def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligible, options, rewrite_cache):
