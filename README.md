@@ -86,6 +86,20 @@ rfp-rag/
 
 시나리오 A/B의 LLM 호출은 `generation.py`에서 선택하고, 청킹·임베딩 비교 실험은 `embedding.py`에서 진행합니다. 청킹 방식이나 임베딩 모델을 변경하면 인덱스를 다시 생성하며, 문서와 검색 질문에는 동일한 임베딩 모델을 사용합니다.
 
+### 팀 실험 옵션
+
+`RFP_CHUNKING_STRATEGY`는 `fixed`(기본), `boundary`, `structured`를 선택합니다. structured의 기본 버전은 기존과 같은 v2이며, v3는 `RFP_STRUCTURED_CHUNKING_VERSION=3`으로 명시할 때 선택합니다. `RFP_EMBEDDING_CONTEXT`는 `none`(기본), `project`, `project_blend`, `table`, `section`을 선택합니다. 조건마다 별도 `--index-dir`로 빌드하고 질의·평가에도 같은 경로를 사용하세요. 선택한 청킹 전략과 버전은 인덱스 `config.json`에서 확인할 수 있습니다.
+
+```bash
+RFP_CHUNKING_STRATEGY=structured RFP_STRUCTURED_CHUNKING_VERSION=2 \
+RFP_EMBEDDING_CONTEXT=section python run.py build \
+  --processed-dir data/processed --index-dir indexes/structured-v2-section
+```
+
+청킹·임베딩 설정을 바꾸면 전체 청크 임베딩 API 호출로 인덱스를 다시 만들어야 하므로 비용이 발생합니다. `run.py`의 기본 실행 설정은 변경하지 않습니다.
+
+이미 생성된 인덱스는 설정 환경변수를 바꿔도 변하지 않습니다. 그 인덱스를 그대로 쓸 때는 동일한 `--index-dir`로 `ask`/`evaluate`를 실행하고, 새 옵션을 적용할 때만 별도 경로로 `build`한 뒤 해당 경로를 질의·평가에 사용하세요.
+
 ### 성능 평가
 
 | 실험 | 주요 설정 | 평가 지표 및 결과 | 응답 시간 | 비용 |

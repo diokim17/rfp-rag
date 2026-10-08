@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from embedding import build_index, chunk_documents, load_index
+from embedding import _embedding_input, build_index, chunk_documents, load_index
 from evaluation import evaluate
 from generation import generate_answer
 from observability import Trace
@@ -28,7 +28,8 @@ def table(body="| 항목 | 내용 |\n| 예산 | 100원 |\n", tag="T1"):
 
 class StructuredTests(unittest.TestCase):
     def setUp(self):
-        env = patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "structured"})
+        env = patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "structured",
+                                     "RFP_STRUCTURED_CHUNKING_VERSION": "3"})
         env.start()
         self.addCleanup(env.stop)
 
@@ -82,6 +83,63 @@ class StructuredTests(unittest.TestCase):
             self.assertIn(c["metadata"]["start_char"], boundaries)
             self.assertIn(c["metadata"]["end_char"], boundaries)
 
+    def test_fitting_table_stays_with_preface_at_paragraph_boundary(self):
+        for newline in ("\n", "\r\n"):
+            prefix = "예시 사업🙂e\u0301 " + "설명" * 80 + newline * 2
+            t = table().replace("\n", newline)
+            text = prefix + t + newline + "후속 설명" * 100
+            for spare in (0, 10):
+                size = len(prefix + t) + spare
+                for overlap in (0, 15, size - 1):
+                    with self.subTest(newline=repr(newline), spare=spare, overlap=overlap):
+                        chunks = self.assert_contract(document(text), size, overlap)
+                        self.assertIn(prefix + t, chunks[0]["text"])
+                        if overlap < len(prefix):
+                            self.assertEqual(chunks[0]["metadata"]["end_char"], len(prefix + t))
+                        self.assertEqual(chunks[0]["metadata"]["tables"][0]["table_id"], "T1")
+
+    def test_table_one_character_over_limit_still_moves_whole(self):
+        prefix = "설명" * 80 + "\n\n"
+        t = table()
+        chunks = self.assert_contract(document(prefix + t + "\n" + "뒤" * 300),
+                                      len(prefix + t) - 1, 15)
+        self.assertEqual(chunks[0]["text"], prefix)
+        self.assertTrue(any(t in c["text"] for c in chunks[1:]))
+
+    def test_fitting_table_does_not_override_actual_section_boundary(self):
+        prefix = "앞 문맥" * 40 + "\n\n"
+        section = "Ⅱ 새 제목\n새 본문\n\n"
+        t = table()
+        doc = {**document(prefix + section + t + "\n" + "뒤" * 300),
+               "sections": [[len(prefix), "Ⅱ 새 제목"]]}
+        chunks = self.assert_contract(doc, len(prefix + section + t), 15)
+        self.assertEqual(chunks[0]["text"], prefix)
+        self.assertTrue(any(t in c["text"] for c in chunks[1:]))
+
+    def test_adjacent_tables_and_invalid_markers_do_not_expand_past_limit(self):
+        prefix = "설명" * 80 + "\n\n"
+        first, second = table(), table(tag="T2")
+        size = len(prefix + first)
+        chunks = self.assert_contract(document(prefix + first + second + "뒤" * 300), size, 15)
+        self.assertEqual(chunks[0]["text"], prefix + first)
+        self.assertTrue(any(second in c["text"] for c in chunks[1:]))
+        for invalid in (first.replace("/table:T1", "/table:T2"),
+                        "<!-- table:T2 -->" + first + "<!-- /table:T2 -->"):
+            chunks = self.assert_contract(document(prefix + invalid + "뒤" * 300),
+                                          len(prefix + invalid), 15)
+            self.assertEqual(chunks[0]["text"], prefix)
+            self.assertFalse(chunks[0]["metadata"]["tables"])
+
+    def test_preface_table_change_is_structured_only(self):
+        prefix = "설명" * 80 + "\n\n"
+        text = prefix + table() + "\n" + "뒤" * 300
+        size = len(prefix + table()) + 10
+        for mode, expected in (("fixed", size), ("boundary", len(prefix)),
+                               ("structured", len(prefix + table()))):
+            with self.subTest(mode=mode), patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": mode}):
+                self.assertEqual(chunk_documents([document(text)], size, 15)[0]["metadata"]["end_char"],
+                                 expected)
+
     def test_oversized_row_tiny_chunks_unicode_and_whitespace_terminate(self):
         texts = [table("| " + "한글🙂e\u0301" * 80 + " |\n"), "", " \t\r\n" * 30,
                  "가" * 83, "앞\r\n\n다음. 끝! " * 10]
@@ -134,13 +192,50 @@ class StructuredTests(unittest.TestCase):
                     self.assertTrue(any(table() in c["text"] for c in chunks))
 
     def test_structured_revision_is_saved_without_changing_other_strategy_versions(self):
-        for strategy, version in (("fixed", 1), ("boundary", 1), ("structured", 2)):
+        for strategy, version in (("fixed", 1), ("boundary", 1), ("structured", 3)):
             with self.subTest(strategy=strategy), tempfile.TemporaryDirectory() as directory, \
                     patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": strategy,
                                             "RFP_EMBEDDING_CONTEXT": "none"}):
                 config = build_index([document("예산 100원")], FakeClient(), directory)
                 self.assertEqual(config["chunking_version"], version)
                 self.assertEqual(load_index(directory)[2], config)
+
+    def test_structured_default_remains_v2(self):
+        with patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "structured"}), \
+                tempfile.TemporaryDirectory() as directory:
+            os.environ.pop("RFP_STRUCTURED_CHUNKING_VERSION", None)
+            config = build_index([document("예산 100원")], FakeClient(), directory)
+            self.assertEqual(config["chunking_version"], 2)
+            self.assertEqual(load_index(directory)[2], config)
+
+    def test_structured_v2_and_v3_are_selectable_and_keep_chunk_contract(self):
+        prefix = "가" * 70 + "\n\n"
+        text = prefix + table() + "\n" + "후속 설명 " * 30
+        doc = document(text)
+        results = {}
+        for version in ("2", "3"):
+            with self.subTest(version=version), patch.dict(os.environ, {
+                    "RFP_CHUNKING_STRATEGY": "structured",
+                    "RFP_STRUCTURED_CHUNKING_VERSION": version}):
+                results[version] = self.assert_contract(doc, 140, 10)
+                with tempfile.TemporaryDirectory() as directory:
+                    config = build_index([doc], FakeClient(), directory)
+                    self.assertEqual(config["chunking_version"], int(version))
+                    self.assertEqual(load_index(directory)[1], chunk_documents([doc], 1000, 150))
+        self.assertNotIn(table(), results["2"][0]["text"])
+        self.assertIn(table(), results["3"][0]["text"])
+
+    def test_invalid_structured_version_fails_before_embedding_or_writes(self):
+        for value in ("", "1", "4", "v3"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "structured",
+                                            "RFP_STRUCTURED_CHUNKING_VERSION": value}):
+                client = response_client(None)
+                target = Path(directory) / "index"
+                with self.assertRaisesRegex(ValueError, "RFP_STRUCTURED_CHUNKING_VERSION"):
+                    build_index([document("본문")], client, target)
+                client.embeddings.create.assert_not_called()
+                self.assertFalse(target.exists())
 
     def test_adjacent_titles_and_title_before_table(self):
         text = "Ⅰ 제목\n1. 소제목\n본문입니다\n" + table() + "\n후속" * 20
@@ -400,6 +495,56 @@ class BlendedProjectTests(unittest.TestCase):
             self.assertEqual(result["summary"]["keyword_coverage"], 1.)
             self.assertEqual(answer["sources"][0]["text"], doc["text"])
             self.assertEqual(json.loads(json.dumps(answer)), answer)
+
+
+class TableEmbeddingContextTests(unittest.TestCase):
+    def setUp(self):
+        env = patch.dict(os.environ, {"RFP_EMBEDDING_CONTEXT": "table",
+                                     "RFP_CHUNKING_STRATEGY": "structured"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_table_context_adds_section_and_only_missing_headers_without_changing_chunks(self):
+        text = ("Ⅰ 예산 편성\n\n" + table(
+            "| 구분 | 예산액 |\n|---|---|\n" + "".join(f"| 세부 항목 {i} | {i}원 |\n" for i in range(20))))
+        doc = {**document(text), "sections": [[0, "Ⅰ 예산 편성"]]}
+        client = response_client(None)
+
+        def create(model, input):
+            result = response([[i + 1., 1.] for i in range(len(input))])
+            result.data.reverse()
+            return result
+
+        client.embeddings.create.side_effect = create
+        with tempfile.TemporaryDirectory() as directory:
+            config = build_index([doc], client, directory, chunk_size=100, chunk_overlap=15)
+            index, chunks, saved = load_index(directory)
+            self.assertEqual(config, saved)
+            self.assertEqual(saved["embedding_context"], "table")
+            self.assertEqual(saved["embedding_context_version"], 2)
+            self.assertEqual([chunk["text"] for chunk in chunks],
+                             [text[c["metadata"]["start_char"]:c["metadata"]["end_char"]] for c in chunks])
+            np.testing.assert_allclose(np.linalg.norm(index.reconstruct_n(0, len(chunks)), axis=1), 1., atol=1e-6)
+
+        inputs = [value for call in client.embeddings.create.call_args_list for value in call.kwargs["input"]]
+        self.assertEqual(len(inputs), len(chunks))
+        self.assertTrue(any("절: Ⅰ 예산 편성" in value for value in inputs))
+        continuation = next(c for c in chunks if c["metadata"]["tables"]
+                            and c["metadata"]["tables"][0]["header_text"]
+                            and c["metadata"]["tables"][0]["header_text"] not in c["text"])
+        contextual = inputs[chunks.index(continuation)]
+        self.assertIn("표 헤더:\n" + continuation["metadata"]["tables"][0]["header_text"], contextual)
+        self.assertTrue(contextual.endswith("\n\n" + continuation["text"]))
+        self.assertNotIn("표 헤더:", inputs[0])
+        self.assertEqual(_embedding_input({"text": "일반 본문", "metadata": {}}, "table"), "일반 본문")
+
+    def test_table_context_handles_crlf_and_legacy_metadata_safely(self):
+        header = "| 구분 | 금액 |\r\n|---|---|"
+        chunk = {"text": "| 세부 | 100원 |", "metadata": {"section_path": " Ⅰ   예산 ",
+                  "tables": [{"header_text": header}, {"header_text": header}, {}]}}
+        actual = _embedding_input(chunk, "table")
+        self.assertEqual(actual, "절: Ⅰ 예산\n표 헤더:\n" + header.replace("\r\n", "\n")
+                         + "\n\n" + chunk["text"])
 
 
 if __name__ == "__main__":
