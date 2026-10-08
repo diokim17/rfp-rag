@@ -20,15 +20,12 @@ if [ ! -f "$INDEX/config.json" ]; then
     "$PY" run.py build --processed-dir data/processed --index-dir "$INDEX"
 fi
 
-SETTINGS=""
+# k(top_k)는 팀 기준 5로 고정. 필터 표기 보정은 retrieve 기본 동작이라 +fuzzy는 붙이지 않습니다.
+# 주 비교: 하이브리드 + cross-encoder + 상한 2 vs 하이브리드 + lexical + 상한 2 (후보 50, BM25 접두 켬/끔)
+SETTINGS="hybrid-cap2 prefix-hybrid-cap2"
 for prefix in "" "prefix-"; do
-  for c in 50 100; do
-    for cap in "" "-cap2"; do
-      SETTINGS="$SETTINGS ${prefix}hybrid-ce-c${c}${cap}+fuzzy"
-    done
-  done
+  SETTINGS="$SETTINGS ${prefix}hybrid-ce-c50-cap2 ${prefix}hybrid-lex-c50-cap2 ${prefix}hybrid-ce-c50"
 done
-"$PY" -u experiments/eval_v2_yjk.py --eval-file data/eval_v2.json --index-dir "$INDEX" \
-  --settings hybrid+fuzzy hybrid-cap2+fuzzy prefix-hybrid+fuzzy prefix-hybrid-cap2+fuzzy $SETTINGS \
-  --fresh-query-embeddings
+"$PY" -u experiments/eval_v2_yjk.py --eval-file data/eval_v2.json --index-dir "$INDEX" --top-k 5 \
+  --settings $SETTINGS --fresh-query-embeddings
 ls -t results/reports/eval_v2_yjk_*.md | head -1

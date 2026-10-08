@@ -3,7 +3,7 @@
   python experiments/eval_v2_yjk.py --eval-file data/eval_v2.json --index-dir indexes/eval-v2-structured-yjk
   python experiments/eval_v2_yjk.py ... --settings hybrid-ce-c50-cap2 prefix-ce-c50-cap2 --allow-api
 
-지표·집계는 team_eval_yjk.py와 같습니다(doc_recall@5, 정답 문서/정답 청크 첫 순위, 상위 50개 안에서만).
+지표·집계는 team_eval_yjk.py와 같습니다(doc_recall@5, 정답 문서/정답 청크 첫 순위). 순위는 --top-k(기본 5) 안에서만 셉니다.
 비교하는 변형 두 가지(둘 다 이후 retrieval.py 기본 동작으로 반영):
 - prefix: BM25 색인 텍스트 앞에 사업명·발주 기관을 붙입니다(retrieve의 bm25_prefix). 접두 없는 설정은
   bm25_prefix=False를 명시합니다. 반환 청크 본문과 채점은 원문 그대로입니다.
@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from parsing import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
-from team_eval_yjk import TOP_K, file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
+from team_eval_yjk import file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
 
 BASE = {"vector": {"rerank": "none", "hybrid": False, "max_per_doc": "none"}}
 for prefix in ("", "prefix-"):
@@ -40,6 +40,11 @@ for prefix in ("", "prefix-"):
                                                    "max_per_doc": "none", **HYBRID}
         BASE[f"{prefix}hybrid-ce-c{candidates}-cap2"] = {"rerank": "cross-encoder", "candidates": candidates,
                                                         "max_per_doc": 2, **HYBRID}
+        # lexical: 후보 안 글자 2-gram BM25(사업명·발주 기관 접두)와 코사인을 표준점수로 더해 재정렬(CPU)
+        BASE[f"{prefix}hybrid-lex-c{candidates}"] = {"rerank": "lexical", "candidates": candidates,
+                                                    "max_per_doc": "none", **HYBRID}
+        BASE[f"{prefix}hybrid-lex-c{candidates}-cap2"] = {"rerank": "lexical", "candidates": candidates,
+                                                         "max_per_doc": 2, **HYBRID}
 # 이름에 'fuzzy'가 붙으면 필터 값 정규화를 함께 씁니다.
 SETTINGS = {**BASE, **{f"{name}+fuzzy": options for name, options in BASE.items()}}
 
@@ -86,6 +91,7 @@ def main():
     parser.add_argument("--index-dir", type=Path, required=True)
     parser.add_argument("--settings", nargs="+", choices=list(SETTINGS), default=list(SETTINGS))
     parser.add_argument("--cache-file", type=Path, default=ROOT / "results/cache/query_embeddings.json")
+    parser.add_argument("--top-k", type=int, default=5, help="반환 청크 수이자 지표를 세는 순위 범위(팀 기준 5로 고정)")
     parser.add_argument("--ce-cache-file", type=Path, default=ROOT / "results/cache/cross_encoder_scores.json")
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문 임베딩 API 호출을 허용")
     parser.add_argument("--fresh-query-embeddings", action="store_true",
@@ -140,7 +146,7 @@ def main():
         for case in cases:
             filters = resolve_filters(case.get("filters"), chunks) if name.endswith("+fuzzy") else case.get("filters")
             start = time.perf_counter()
-            hits = retrieval.retrieve(case["question"], client, index, chunks, config, TOP_K, filters,
+            hits = retrieval.retrieve(case["question"], client, index, chunks, config, args.top_k, filters,
                                       **SETTINGS[name])
             times.append((time.perf_counter() - start) * 1000)
             rows.append({"id": case["id"], **score_case(case, hits), "hits": [hit["chunk_id"] for hit in hits]})
@@ -162,13 +168,14 @@ def main():
             "evaluation_sha256": file_hash(args.eval_file), "cases": len(cases), "index_dir": relative(args.index_dir),
             "chunks_sha256": file_hash(Path(args.index_dir) / "chunks.json"), "chunk_count": len(chunks),
             "chunking_strategy": config.get("chunking_strategy"),
-            "embedding_context": config.get("embedding_context"), "embedding_model": model, "top_k": TOP_K,
+            "embedding_context": config.get("embedding_context"), "embedding_model": model, "top_k": args.top_k,
             "cross_encoder_model": os.getenv("RETRIEVAL_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
             "cross_encoder_load_ms": round(ce_load_ms), "embedding_api_calls": client.api_calls,
             "fresh_query_embeddings": args.fresh_query_embeddings, "rerank_device": rerank_device}
     write_json(Path(args.results_dir) / f"eval_v2_{experiment_id}_{stamp}.json", {"meta": meta, "results": dict(results)})
     lines = report_lines(meta, cases, results)
     lines[0] = "# eval_v2 검색 지표: 하이브리드·리랭킹·BM25 메타 접두·필터 정규화"
+    lines = [line.replace("상위 50개 안에서만", f"상위 {args.top_k}개 안에서만") for line in lines]
     report_path = Path(args.reports_dir) / f"eval_v2_yjk_{experiment_id}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(lines), encoding="utf-8")
