@@ -58,33 +58,76 @@
 
 ### 프로젝트 구조
 
-역할별로 하나의 Python 파일을 담당하고, `run.py`에서 전체 흐름을 연결합니다. 아래는 개발 예정 파일과 폴더를 포함한 구성입니다.
+`dev-a`는 시나리오 A의 통합 개발 브랜치입니다. 기존 B 파이프라인과 입출력 형식을 유지하며, `.env`의 `RFP_SCENARIO`에 따라 사용할 모델 구현을 연결합니다. A/B 연결 코드는 구현되어 있고, 실제 A 생성·임베딩 모듈은 각 담당자가 구현해야 합니다.
 
 ```text
 rfp-rag/
-├── data/                        # 데이터 저장 (데이터 파일은 Git 제외)
+├── data/
 │   ├── raw/                     # 원본 RFP 문서(HWP·PDF) 및 메타데이터
-│   │   └── .gitkeep             # 빈 폴더 구조 유지용
-│   └── processed/               # 텍스트 추출·정제 및 메타데이터 결합 결과
-│       └── .gitkeep             # 빈 폴더 구조 유지용
-├── indexes/                     # 청킹·임베딩으로 생성한 검색 인덱스 (Git 제외 예정)
-├── results/                     # 모델별 평가 결과 및 A/B 비교 실험 기록
-├── run.py                       # 김도영: 전체 파이프라인 연결 및 질의응답 실행
+│   └── processed/               # 파싱·전처리 결과 (A/B 공유 가능)
+├── indexes/                     # B 기본 인덱스
+│   └── scenario-a/              # A 기본 인덱스
+├── results/                     # B 기본 실행 결과
+│   ├── reports/                 # B 평가 요약
+│   └── scenario-a/              # A 기본 실행 결과
+│       └── reports/             # A 평가 요약
+├── run.py                       # 김도영: 설정·A/B 선택·경로·전체 실행 흐름
+├── scenario_a.py                # 김도영: A 담당 모듈 로딩·호출 연결·모델 객체 재사용
 ├── parsing.py                   # 나상훈: HWP·PDF 추출, 정제, 메타데이터 결합
-├── embedding.py                 # 유찬혁: 청킹, 임베딩 생성, 벡터 DB 구축
-├── retrieval.py                 # 김연주: 검색, 메타데이터 필터링, 리랭킹
-├── generation.py                # 박단비: 프롬프트 구성, OpenAI·GCP 모델 호출
-├── evaluation.py                # 김시현: 평가 데이터 구성 및 성능 평가
-├── .env                         # API 키 등 환경 변수 (Git 제외)
-├── .env.example                 # 실제 키가 없는 환경 변수 설정 예시
-├── .gitignore                   # 데이터·환경 변수 등 Git 제외 규칙
-├── requirements.txt             # 팀 공통 패키지 및 버전 목록
-└── README.md                    # 프로젝트 소개 및 실행 안내
+├── embedding.py                 # 유찬혁: 공통 청킹·벡터 검증/정규화·FAISS 구축, B 임베딩 호출
+├── scenario_a_embedding.py      # 유찬혁: A 임베딩 모델 로딩·추론 (구현 예정)
+├── retrieval.py                 # 김연주: 벡터·하이브리드 검색, 필터링, 리랭킹
+├── query_rewrite.py             # 김연주: 질문 재작성 (현재 OpenAI 의존)
+├── generation.py                # 박단비: B 프롬프트·생성, A 생성 호출 전달
+├── scenario_a_generation.py     # 박단비: A 생성 모델 로딩·프롬프트·추론 (구현 예정)
+├── evaluation.py                # 김시현: 평가 데이터 검증 및 검색·답변·지연 평가
+├── tests/                       # 오프라인 설정·연결·오류 처리·B 회귀 테스트
+├── .env                         # 시나리오·모델 폴더 이름·API 키 등 (Git 제외)
+├── .env.example                 # 환경 변수 설정 예시
+├── requirements.txt             # 팀 공통 패키지 목록
+└── README.md
 ```
 
-각 파일의 공통 입력·출력 형식을 먼저 정한 뒤, 해당 형식을 유지하면서 내부 구현을 실험합니다. 파일 간 연결과 통합은 `run.py`에서 관리합니다.
+`scenario_a_embedding.py`와 `scenario_a_generation.py`는 연결 코드에서 사용하는 모듈 이름이며, 아직 저장소에 없는 구현 예정 파일입니다. 모델 파일은 저장소 밖의 공용 경로에 저장합니다.
 
-시나리오 A/B의 LLM 호출은 `generation.py`에서 선택하고, 청킹·임베딩 비교 실험은 `embedding.py`에서 진행합니다. 청킹 방식이나 임베딩 모델을 변경하면 인덱스를 다시 생성하며, 문서와 검색 질문에는 동일한 임베딩 모델을 사용합니다.
+```text
+/home/spai1313/models/
+├── generate/<생성 모델 폴더>/
+└── embedding/<임베딩 모델 폴더>/
+```
+
+### 시나리오 A 담당 파일과 연결 방식
+
+| 담당자 | 주요 파일 | 맡을 작업 |
+| --- | --- | --- |
+| 김도영 | `run.py`, `scenario_a.py`, `.env.example` | 설정·경로·A/B 연결, 실행 환경 조율, 통합 검증 |
+| 박단비 | `scenario_a_generation.py`, `generation.py` | A 생성 모델 선정·다운로드·로딩·프롬프트·답변 생성, 기존 답변 형식 유지 |
+| 유찬혁 | `scenario_a_embedding.py`, `embedding.py` | A 임베딩 모델 선정·다운로드·로딩·텍스트 벡터화, 청킹·인덱스 구축 |
+| 김연주 | `retrieval.py`, `query_rewrite.py` | 검색·하이브리드·리랭킹 연결, A 질문 재작성 의존성 정리 |
+| 김시현 | `evaluation.py`, 평가 데이터·실험 코드 | 동일 평가셋을 이용한 A/B 품질·지연 비교 |
+| 나상훈 | `parsing.py` | A/B에서 공유할 문서 추출·정제·메타데이터 유지 |
+
+각 A 담당 모듈은 아래 접점으로 연결합니다. 모델 다운로드는 별도로 준비하고, `load_model`은 전달된 로컬 모델 경로를 로딩해 실행 중 재사용할 객체를 반환합니다.
+
+| 담당 모듈 | 로딩 접점 | 반환 객체의 메서드 | 추론 반환값 |
+| --- | --- | --- | --- |
+| `scenario_a_embedding.py` | `load_model(model_path: Path)` | `embed_texts(texts)` | 입력 순서의 2차원 숫자 벡터. 공통 `embedding.py`에서 float32 변환·검증·L2 정규화 |
+| `scenario_a_generation.py` | `load_model(model_path: Path)` | `generate_answer(question, hits, model)` | 기존 답변 dict: `question`, `answer`, `sources`, `model`, `status` 등 |
+
+생성 결과의 `sources`는 기존처럼 검색 근거와 `citation` 번호를 포함해야 합니다. 모델별 입력 접두어·토크나이저·길이 제한·장치 배치는 담당 모듈에서 처리합니다. 문서와 검색 질문에는 동일한 임베딩 모델을 사용합니다.
+
+```dotenv
+RFP_SCENARIO=A
+A_GENERATION_MODEL=생성-모델-폴더명
+A_EMBEDDING_MODEL=임베딩-모델-폴더명
+RETRIEVAL_REWRITE=off
+```
+
+모델 설정값은 Hugging Face 저장소 ID가 아니라 공용 경로 아래의 단일 하위 폴더 이름입니다. `run.py`가 고정 기본 경로와 합쳐 담당 모듈에 전달합니다. `python run.py check-config`로 설정만 확인할 수 있으며, 기존 프로세스 환경 변수가 `.env`보다 우선합니다. B는 `RFP_SCENARIO=B`로 선택하고, 미설정 시에도 B를 사용합니다.
+
+A의 기본 인덱스·결과 경로는 위 구조처럼 B와 분리됩니다. 명시한 `--index-dir`, `--results-dir`, `--reports-dir`는 우선 적용됩니다. 임베딩 모델이나 청킹을 바꾸면 인덱스를 다시 구축하고, 생성 모델만 바꾸면 기존 인덱스를 재사용할 수 있습니다.
+
+현재 A에서는 OpenAI 기반 질문 재작성을 꺼야 하며, 켜져 있으면 안내 후 종료합니다. 모델 폴더·담당 모듈이 없거나 로딩이 미구현이면 B로 대체하지 않고 오류를 안내합니다. 오프라인 연결 검증은 완료했으며, 실제 A 모델과 GPU 메모리 통합 검증은 담당 모듈 구현 후 진행합니다.
 
 ### 팀 실험 옵션
 
@@ -96,7 +139,7 @@ RFP_EMBEDDING_CONTEXT=section python run.py build \
   --processed-dir data/processed --index-dir indexes/structured-v2-section
 ```
 
-청킹·임베딩 설정을 바꾸면 전체 청크 임베딩 API 호출로 인덱스를 다시 만들어야 하므로 비용이 발생합니다. `run.py`의 기본 실행 설정은 변경하지 않습니다.
+청킹·임베딩 설정을 바꾸면 전체 청크의 인덱스를 다시 만들어야 합니다. B에서는 임베딩 API 비용이 발생하며, A에서는 서버 추론 자원을 사용합니다. `run.py`의 기본 실행 설정은 변경하지 않습니다.
 
 이미 생성된 인덱스는 설정 환경변수를 바꿔도 변하지 않습니다. 그 인덱스를 그대로 쓸 때는 동일한 `--index-dir`로 `ask`/`evaluate`를 실행하고, 새 옵션을 적용할 때만 별도 경로로 `build`한 뒤 해당 경로를 질의·평가에 사용하세요.
 
