@@ -39,7 +39,7 @@ def _chunking_version(strategy=None):
     strategy = strategy or _chunking_strategy()
     if strategy != "structured":
         return 1
-    value = os.getenv("RFP_STRUCTURED_CHUNKING_VERSION", "3")
+    value = os.getenv("RFP_STRUCTURED_CHUNKING_VERSION", "2")
     if value not in {"2", "3"}:
         raise ValueError("RFP_STRUCTURED_CHUNKING_VERSION은 2 또는 3이어야 합니다.")
     return int(value)

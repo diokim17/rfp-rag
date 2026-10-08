@@ -127,9 +127,10 @@ Answer = {
 - `doc_id`는 NFC 정규화 파일명의 SHA-256 앞 16자리입니다. 같은 파일명은 같은 ID를 유지하며 내용 변경을 ID로 감지하지 못합니다. 파일명이나 ID 규칙을 바꾸면 평가 정답도 영향을 받습니다.
 - `metadata`는 CSV 열 이름과 문자열 값을 유지합니다. `텍스트` 열은 제외하고 실제 원본에서 본문을 추출합니다. `filename`, `source`를 유지해야 출처 출력이 동작합니다.
 - `chunk_id`는 현재 `doc_id:순번`입니다. 청크마다 고유해야 하며 원문 문서의 `doc_id`를 유지합니다. 문자 위치를 토큰 위치로 바꾸거나 가짜 위치를 넣지 않습니다. 원문에 대응하지 않는 청킹 전략은 위치 규약부터 협의합니다.
-- 청킹 실험은 `RFP_CHUNKING_STRATEGY=fixed|boundary|structured`로 고릅니다. structured의 v2/v3는 `RFP_STRUCTURED_CHUNKING_VERSION=2|3`으로 지정하며 기본은 3입니다. fixed와 boundary는 버전 1을 유지합니다.
+- 청킹 실험은 `RFP_CHUNKING_STRATEGY=fixed|boundary|structured`로 고릅니다. structured의 기본 버전은 기존 v2이며 v3는 `RFP_STRUCTURED_CHUNKING_VERSION=3`으로 명시할 때 사용합니다. fixed와 boundary는 버전 1을 유지합니다.
 - 임베딩 입력 문맥은 `RFP_EMBEDDING_CONTEXT=none|project|project_blend|table|section`으로 선택하며 기본은 `none`입니다. `project`는 사업 문맥을 붙이고 `project_blend`는 본문/문맥 벡터를 80:20으로 결합합니다. `table`과 `section`은 표 헤더·절 경로를 문서 임베딩 입력에만 추가합니다.
 - 선택 설정마다 별도 인덱스를 빌드하고 같은 `--index-dir`를 질의·평가에 사용합니다. `config.json`의 청킹 전략·버전과 임베딩 문맥이 조건 재현 기준입니다. 옵션은 `run.py` 기본값과 Document → Chunk → Hit → Answer 계약을 변경하지 않습니다.
+- 환경변수 변경은 이미 빌드된 인덱스를 바꾸지 않습니다. 기존 인덱스를 재사용하면 build하지 말고, 다른 옵션을 적용하려면 별도 경로로 새로 build합니다.
 - `limit`은 성공 문서 수가 아니라 CSV 앞쪽 N행입니다. 개별 실패는 `parsing_errors.json`에 남기며, 성공 문서가 하나도 없으면 실패합니다.
 
 ### 인덱스·검색 규칙

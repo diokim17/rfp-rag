@@ -28,7 +28,8 @@ def table(body="| 항목 | 내용 |\n| 예산 | 100원 |\n", tag="T1"):
 
 class StructuredTests(unittest.TestCase):
     def setUp(self):
-        env = patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "structured"})
+        env = patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "structured",
+                                     "RFP_STRUCTURED_CHUNKING_VERSION": "3"})
         env.start()
         self.addCleanup(env.stop)
 
@@ -198,6 +199,14 @@ class StructuredTests(unittest.TestCase):
                 config = build_index([document("예산 100원")], FakeClient(), directory)
                 self.assertEqual(config["chunking_version"], version)
                 self.assertEqual(load_index(directory)[2], config)
+
+    def test_structured_default_remains_v2(self):
+        with patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "structured"}), \
+                tempfile.TemporaryDirectory() as directory:
+            os.environ.pop("RFP_STRUCTURED_CHUNKING_VERSION", None)
+            config = build_index([document("예산 100원")], FakeClient(), directory)
+            self.assertEqual(config["chunking_version"], 2)
+            self.assertEqual(load_index(directory)[2], config)
 
     def test_structured_v2_and_v3_are_selectable_and_keep_chunk_contract(self):
         prefix = "가" * 70 + "\n\n"
