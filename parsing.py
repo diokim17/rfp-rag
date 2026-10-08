@@ -20,7 +20,8 @@ from observability import observed
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 운영체제와 무관하게 LF로 저장해 documents_sha256 등 해시가 Windows·macOS·Linux에서 같게 나오게 합니다.
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
 
 
 def read_json(path):

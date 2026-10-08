@@ -17,7 +17,7 @@ from openai import OpenAI, RateLimitError
 from embedding import build_index, load_index
 from evaluation import evaluate
 from experiment_ids import next_experiment_id, owner_initials
-from experiment_reports import file_hash, save_report
+from experiment_reports import file_hash, save_report, text_file_hash, text_hash
 from generation import generate_answer
 from observability import Trace, code_version, observed
 from parsing import parse_documents, read_json, write_json
@@ -41,7 +41,9 @@ def check_index_documents(args, parser):
     if args.owner:
         rebuild += " --owner " + shlex.quote(args.owner)
     try:
-        current_hash = file_hash(documents_path)
+        current_hash = text_file_hash(documents_path)
+        # 예전 빌드는 줄바꿈을 그대로 둔 바이트 해시를 저장했으므로(Windows는 CRLF) 그 값도 같은 문서로 인정합니다.
+        legacy_hash = file_hash(documents_path)
         config = read_json(config_path)
     except (OSError, ValueError) as exc:
         parser.error(f"인덱스 검증 파일을 읽을 수 없습니다: {exc}\n"
@@ -53,7 +55,7 @@ def check_index_documents(args, parser):
     if not isinstance(stored_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", stored_hash):
         parser.error("인덱스에 유효한 documents_sha256이 없습니다. "
                      "해시 저장을 지원하는 embedding.py 반영 후 build를 실행하세요:\n" + rebuild)
-    if stored_hash != current_hash:
+    if stored_hash not in {current_hash, legacy_hash}:
         parser.error("전처리 문서가 인덱스 생성 당시와 다릅니다. "
                      "--processed-dir와 --index-dir를 확인한 뒤 build를 실행하세요:\n" + rebuild)
 
@@ -118,11 +120,11 @@ def main():
         "experiment_id": experiment_id,
         "owner": owner,
         **code_version(ROOT),
-        "evaluation_sha256": file_hash(args.eval_file) if args.eval_file else None,
-        "documents_sha256": file_hash(args.processed_dir / "documents.json"),
+        "evaluation_sha256": text_file_hash(args.eval_file) if args.eval_file else None,
+        "documents_sha256": text_file_hash(args.processed_dir / "documents.json"),
         "index_sha256": file_hash(args.index_dir / "index.faiss"),
-        "chunks_sha256": file_hash(args.index_dir / "chunks.json"),
-        "index_config_sha256": file_hash(args.index_dir / "config.json"),
+        "chunks_sha256": text_file_hash(args.index_dir / "chunks.json"),
+        "index_config_sha256": text_file_hash(args.index_dir / "config.json"),
         "filters_sha256": hashlib.sha256(
             json.dumps(filters, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
     }
@@ -138,7 +140,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         documents = parse_documents(args.raw_dir, args.processed_dir, args.limit)
         errors = read_json(args.processed_dir / "parsing_errors.json")
         print(f"전처리: 성공 {len(documents)}건, 실패 {len(errors)}건")
-        experiment["documents_sha256"] = file_hash(args.processed_dir / "documents.json")
+        experiment["documents_sha256"] = text_file_hash(args.processed_dir / "documents.json")
         with trace.span("parsing-summary", output={"documents": len(documents), "errors": len(errors)},
                         metadata={"documents_sha256": experiment["documents_sha256"]}):
             pass
@@ -160,7 +162,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         # 역직렬화와 해시에 동일한 바이트를 사용해 실제 빌드 입력을 식별합니다.
         documents_bytes = (args.processed_dir / "documents.json").read_bytes()
         documents = json.loads(documents_bytes.decode("utf-8"))
-        documents_sha256 = hashlib.sha256(documents_bytes).hexdigest()
+        documents_sha256 = text_hash(documents_bytes)  # 줄바꿈을 LF로 맞춘 해시(운영체제 무관)
         experiment["documents_sha256"] = documents_sha256
         config = build_index(documents, client, args.index_dir,
                              os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
@@ -169,9 +171,10 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         # build/all 모두 저장된 config를 검증하며, all도 검증 후에만 질의합니다.
         check_index_documents(args, parser)
         print(f"인덱스 생성: {config['chunk_count']}개 청크")
-        for key, filename in (("index_sha256", "index.faiss"), ("chunks_sha256", "chunks.json"),
-                              ("index_config_sha256", "config.json")):
-            experiment[key] = file_hash(args.index_dir / filename)
+        for key, filename, digest in (("index_sha256", "index.faiss", file_hash),
+                                      ("chunks_sha256", "chunks.json", text_file_hash),
+                                      ("index_config_sha256", "config.json", text_file_hash)):
+            experiment[key] = digest(args.index_dir / filename)
         with trace.span("build-settings", metadata={**config, **experiment}):
             pass
         if args.command == "build":

@@ -9,6 +9,20 @@ def file_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 
 
+def text_hash(data):
+    """텍스트(JSON) 바이트의 해시. 줄바꿈(CRLF·CR)을 LF로 맞춰 Windows·macOS·Linux에서 같은 값을 냅니다.
+
+    json.dumps는 문자열 안의 줄바꿈을 \\n으로 이스케이프하므로 파일의 실제 줄바꿈은 들여쓰기뿐이라 내용이 섞이지 않습니다.
+    """
+    return hashlib.sha256(data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")).hexdigest()
+
+
+def text_file_hash(path):
+    """JSON 같은 텍스트 파일용 file_hash. index.faiss 같은 바이너리에는 file_hash를 씁니다."""
+    path = Path(path)
+    return text_hash(path.read_bytes()) if path.is_file() else None
+
+
 def save_report(directory, timestamp, summary, settings, experiment, usage):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)

@@ -93,12 +93,14 @@ def bm25_rows(cases):
 
 
 def file_hash(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    """평가셋·chunks.json 같은 JSON 파일 해시(줄바꿈을 LF로 맞춰 운영체제와 무관)."""
+    from experiment_reports import text_file_hash
+    return text_file_hash(path)
 
 
 def relative(path):
     path = Path(path).resolve()
-    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else path.name
+    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else path.name
 
 
 def fmt_rank(rank):
