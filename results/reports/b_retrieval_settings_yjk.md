@@ -14,6 +14,7 @@ B 시나리오 검색은 **하이브리드(벡터 + BM25) + BM25 사업명 접�
 | 문서당 최대 청크 | 2 (재정렬 뒤 적용) | `RETRIEVAL_MAX_PER_DOC` (`none`이면 해제) |
 | 필터 | 정확 일치, 일치 값이 없으면 표기 차이(공백·기호, 서울특별시/서울시)를 무시한 유일 값 | 기본 동작 |
 | 문서 안 재선택 | 끔 | `RETRIEVAL_WITHIN_DOC=residual+full` |
+| 질문 재작성 | 끔 (gpt-5-mini로 재작성하면 정답 청크 지표가 떨어지고 질문당 1~2초 늘어남, yjk-0026·0027) | `RETRIEVAL_REWRITE=both`·`only` |
 | 실행 환경 | GPU 필요(L4에서 측정). torch·transformers는 requirements에 없음 | GPU가 없으면 lexical로 대체되고 성능이 크게 떨어짐(아래 표) |
 
 ## 성능표: eval_v2 본 집계 62문항, k=5, 후보 50 (yjk-0021·yjk-0025, GPU L4)
@@ -60,6 +61,24 @@ eval_v2는 설정을 고르는 데 쓴 평가셋이라, 그 정답 문서를 뺀
 - 후보 확장 5·10·20개의 결과가 같아 가장 적은 5개를 기본으로 정했습니다. eval_v2에서는 x01이 되살아나고(5위 밖 → 1위), 목록형 g02만 doc_recall@5 0.75 → 0.50(상위 문서 청크가 더해져 다른 정답 문서 하나가 5위 밖으로 밀림).
 - lexical 재정렬에는 효과가 거의 없습니다(로컬 yjk-0501·0502): 확장으로 정답 청크가 후보에 들어가도 lexical은 6~14위까지만 올립니다.
 
+## 질문 재작성 비교 (yjk-0026 새 질문 19개, yjk-0027 eval_v2 65문항, GPU L4, k=5)
+
+확정 설정(`default`, retrieve 기본값 그대로)에 gpt-5-mini 질문 재작성(`query_rewrite.py`, reasoning minimal)을 더해 비교했습니다. 재작성 호출 84건은 모두 성공(원문 폴백 0)했습니다.
+
+| 설정 | 새 질문 정답청크 5위 내 (1위) | eval_v2 정답청크 5위 내 (1위) | eval_v2 문서 MRR | eval_v2 doc_recall@5 | 질문당 retrieve() |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **재작성 없음 (확정)** | **0.947 (0.947)** | **0.984 (0.823)** | 0.981 | 0.963 | 0.1~0.4초 |
+| 재작성 + 원래 질문 RRF (`both`) | 0.842 (0.789) | 0.839 (0.613) | 0.989 | 0.978 | 약 2.1초(재작성 API 포함) |
+| 재작성만 (`only`) | 0.842 (0.842) | 0.887 (0.694) | 1.000 | 0.962 | 약 0.9초(재작성은 캐시) |
+
+- 재작성은 문서 찾기를 조금 돕지만(문서 MRR 0.981 → 0.989~1.000), 정답 청크 지표를 크게 떨어뜨려 끔으로 둡니다.
+- 추정 원인: 재작성문이 사업 유형·발주 기관 같은 사업 단위 단어를 보강해, 발표 시간처럼 문서 안 특정 항목을 묻는 의도가 cross-encoder 입력에서 묽어집니다(재작성 사용 시 cross-encoder 입력은 원문과 재작성문을 이어 붙인 문장이거나 재작성문).
+- 비용: 질문마다 gpt-5-mini 호출 1회가 늘고 응답이 1~2초 느려집니다.
+
+## 기본값 회귀 점검
+
+`default`(retrieve 기본값 그대로, dev 65cb96f와 같은 검색 코드)가 앞선 측정과 같은 값을 냈습니다: 새 질문 정답청크 5위 내 0.947(yjk-0024의 확장 5와 동일), eval_v2 0.984·doc_recall@5 0.963·문서 MRR 0.981(yjk-0025의 확장 5와 동일). A 인덱스 연동 뒤 같은 명령(`SETTINGS=default`)으로 다시 비교합니다.
+
 ## 응답 시간
 
 - cross-encoder 모델 로드 26초(서버 시작 시 한 번).
@@ -81,4 +100,6 @@ eval_v2는 설정을 고르는 데 쓴 평가셋이라, 그 정답 문서를 뺀
 | `results/reports/eval_v2_yjk_yjk-0022.md` | 새 질문 19문항, cross-encoder ± 문서 안 재선택 (서버 GPU) |
 | `results/reports/eval_v2_yjk_yjk-0024.md`, `-0025.md` | cross-encoder + 후보 확장 5·10·20, 새 질문·eval_v2 (서버 GPU) |
 | `results/reports/eval_v2_yjk_yjk-0501.md`, `-0502.md` | lexical + 후보 확장 (로컬 CPU) |
+| `results/reports/eval_v2_yjk_yjk-0026.md`, `-0027.md` | 기본값 ± 질문 재작성, 새 질문·eval_v2 (서버 GPU, 회귀 기준선) |
+| `results/reports/eval_v2_yjk_yjk-0503.md` | lexical + 확장 ± 질문 재작성 (로컬 CPU) |
 | `results/reports/eval_v2_yjk_yjk-0017-local.md` | 새 질문 19문항, 재정렬 없음·lexical ± 문서 안 재선택 (로컬 CPU, 서버 yjk-0017과 다른 실험) |
