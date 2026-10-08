@@ -3,6 +3,10 @@
 .env.*
 !.env.example
 
+# Markdown은 README와 아래의 공유용 보고서만 허용
+*.[mM][dD]
+![rR][eE][aA][dD][mM][eE].[mM][dD]
+
 # Project data (keep only directory placeholders)
 /data/*
 !/data/raw/
@@ -22,7 +26,7 @@
 # 원문·민감정보를 제거한 평가 요약만 reports/에 선별하여 공유
 !/results/reports/
 /results/reports/*
-!/results/reports/*.md
+!/results/reports/*.[mM][dD]
 !/results/reports/*.csv
 
 # Local Python environment
