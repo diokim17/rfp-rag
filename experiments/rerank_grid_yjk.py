@@ -127,7 +127,7 @@ def run_grid(cases, client, index, chunks, config, modes=MODES, candidates_list=
     for mode, candidates, top_k in settings:
         def search(question, filters, mode=mode, candidates=candidates, top_k=top_k):
             return retrieve(question, client, index, chunks, config, top_k, filters,
-                            rerank=mode, candidates=candidates)
+                            rerank=mode, candidates=candidates, hybrid=False, max_per_doc="none")  # 검색 기본값이 바뀌어도 이 실험의 조건(하이브리드·상한 꺼짐)을 유지
 
         result, rows = run_setting(cases, search, top_k)
         row = {"rerank": mode, "candidates": candidates, "top_k": top_k, **result}

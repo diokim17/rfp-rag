@@ -138,6 +138,9 @@ def prefill_rewrites(cases, client, config, model, cache_path):
 def run_setting(name, options, cases, client, index, chunks, config, rewrite_cache):
     from retrieval import retrieval_options, retrieve
 
+    # 검색 기본값이 바뀌어도 설정에 적지 않은 하이브리드·문서당 상한은 꺼진 상태로 비교합니다.
+    options = {"hybrid": False, "max_per_doc": "none", **options}
+
     rows, times = [], []
     for case in cases:
         start = time.perf_counter()
