@@ -21,6 +21,8 @@ RERANK_MODES = ("none", "lexical", "cross-encoder")
 RERANK_FIELDS = ("사업명", "발주 기관")
 # 기본값: 하이브리드(벡터 100 + BM25 100) → RRF 상위 50개를 cross-encoder로 재정렬 → 문서당 2개.
 DEFAULT_RERANK, DEFAULT_HYBRID, DEFAULT_CANDIDATES, DEFAULT_HYBRID_K, DEFAULT_MAX_PER_DOC = "cross-encoder", True, 50, 100, 2
+# 하이브리드의 BM25 색인에도 사업명·발주 기관을 본문 앞에 붙입니다(eval_v2 yjk-0010: 50위 밖 정답 청크 10→1건).
+DEFAULT_BM25_PREFIX = True
 _cross_encoders = {}
 
 
@@ -75,9 +77,14 @@ def _cross_encoder_scores(question, passages, model_name):
     return scores
 
 
+def _with_project(chunk):
+    """본문 앞에 사업명·발주 기관을 붙인 텍스트. 리랭킹 입력과 BM25 접두 색인에 씁니다."""
+    return " ".join(str(chunk["metadata"][key]) for key in RERANK_FIELDS if chunk["metadata"].get(key)) \
+        + "\n" + chunk["text"]
+
+
 def _rerank(question, hits, mode):
-    passages = [" ".join(str(hit["metadata"][key]) for key in RERANK_FIELDS if hit["metadata"].get(key))
-                + "\n" + hit["text"] for hit in hits]
+    passages = [_with_project(hit) for hit in hits]
     if mode == "lexical":
         # 척도가 다른 두 점수를 후보 집합 내 표준점수로 맞춰 더합니다.
         values = [dense + lexical for dense, lexical in zip(
@@ -130,7 +137,7 @@ def _max_per_doc(value):
 
 
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
-                      hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None):
+                      hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -164,6 +171,9 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
                                   DEFAULT_HYBRID_K if use_hybrid else candidates, "벡터 후보 수") if fused else None,
         "hybrid_bm25_k": _count(hybrid_bm25_k, "RETRIEVAL_HYBRID_BM25_K", DEFAULT_HYBRID_K, "BM25 후보 수")
         if use_hybrid else None,
+        "bm25_prefix": (_flag(bm25_prefix, "RETRIEVAL_BM25_PREFIX")
+                        if bm25_prefix is not None or os.getenv("RETRIEVAL_BM25_PREFIX", "").strip()
+                        else DEFAULT_BM25_PREFIX) if use_hybrid else None,
         "rrf_k": _count(rrf_k, "RETRIEVAL_RRF_K", 60, "RRF 상수") if fused else None,
         "rewrite": rewrite_mode,
         "rewrite_model": (rewrite_model or os.getenv("RETRIEVAL_REWRITE_MODEL") or "gpt-5-mini")
@@ -171,18 +181,19 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
     }
 
 
-def _bm25_index(chunks):
+def _bm25_index(chunks, prefix=False):
     """청크 본문 전체의 BM25 역색인 (토큰: _bigrams, 공식: _lexical_scores와 같은 k1=1.2·b=0.75).
 
+    prefix면 본문 앞에 사업명·발주 기관을 붙여 색인합니다(_with_project). 반환 청크 본문은 바꾸지 않습니다.
     처음 한 번만 만들고 같은 chunks 목록에는 다시 씁니다. IDF는 후보가 아니라 전체 청크 기준입니다.
     """
-    cached = _bm25_indexes.get(id(chunks))
+    cached = _bm25_indexes.get((id(chunks), prefix))
     if cached is not None and cached["chunks"] is chunks:
         return cached
     vocabulary, terms, docs, counts = {}, [], [], []
     lengths = np.zeros(len(chunks), dtype="float32")
     for number, chunk in enumerate(chunks):
-        grams = Counter(_bigrams(chunk["text"]))
+        grams = Counter(_bigrams(_with_project(chunk) if prefix else chunk["text"]))
         lengths[number] = sum(grams.values())
         for gram, count in grams.items():
             terms.append(vocabulary.setdefault(gram, len(vocabulary)))
@@ -199,14 +210,16 @@ def _bm25_index(chunks):
     built = {"chunks": chunks, "vocabulary": vocabulary, "docs": docs,
              "pointer": np.concatenate([[0], np.cumsum(frequency)]).astype("int64"),
              "weights": weights[terms] * counts * 2.2 / (counts + 1.2 * norm)}
-    _bm25_indexes.clear()  # 인덱스는 하나만 메모리에 둡니다.
-    _bm25_indexes[id(chunks)] = built
+    # 같은 chunks 목록의 본문·접두 색인만 메모리에 둡니다.
+    for key in [key for key, value in _bm25_indexes.items() if value["chunks"] is not chunks]:
+        del _bm25_indexes[key]
+    _bm25_indexes[(id(chunks), prefix)] = built
     return built
 
 
-def _bm25_ranking(question, chunks, eligible, limit):
-    """필터를 통과한 청크 중 BM25 점수가 0보다 큰 상위 limit개의 청크 번호."""
-    built = _bm25_index(chunks)
+def _bm25_ranking(question, chunks, eligible, limit, prefix=False):
+    """필터를 통과한 청크 중 BM25 점수가 0보다 큰 상위 limit개의 청크 번호. prefix는 _bm25_index 참고."""
+    built = _bm25_index(chunks, prefix)
     scores = np.zeros(len(chunks), dtype="float32")
     for gram in set(_bigrams(question)):
         term = built["vocabulary"].get(gram)
@@ -255,7 +268,7 @@ def _rrf(rankings, constant):
 @observed("retrieve")
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
-             rewrite=None, rewrite_model=None, rewrite_cache=None):
+             rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -274,6 +287,8 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
       RRF(상수 rrf_k, 기본 60)로 합쳐 후보를 만들고, 그 후보에 rerank를 적용합니다.
       합친 후보에는 rrf_score(float)가 추가되고 score는 여전히 질문과의 코사인 유사도입니다.
       환경 변수: RETRIEVAL_HYBRID, RETRIEVAL_HYBRID_VECTOR_K, RETRIEVAL_HYBRID_BM25_K, RETRIEVAL_RRF_K.
+    bm25_prefix: 하이브리드의 BM25 색인 본문 앞에 사업명·발주 기관을 붙입니다(기본 켬, 환경 변수
+      RETRIEVAL_BM25_PREFIX). 반환 청크의 text와 score는 그대로입니다. 하이브리드를 끄면 쓰이지 않습니다.
     rewrite: off(기본)·only·both. only는 재작성 질문만으로, both는 원문과 재작성 질문을 각각 검색해
       RRF로 합칩니다. 재작성은 query_rewrite.rewrite_question이 하며 실패하거나 비면 원문으로 돌아갑니다.
       rewrite_cache(파일 경로)를 주면 같은 질문은 다시 호출하지 않습니다. 환경 변수: RETRIEVAL_REWRITE,
@@ -283,7 +298,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
-                                rewrite=rewrite, rewrite_model=rewrite_model)
+                                rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -347,7 +362,7 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
             cosine = {int(i): float(s) for s, i in zip(scores[0], ids[0])}
         rankings.append([int(i) for i in ids[0] if int(i) in eligible][:vector_k])
         if options["hybrid"]:
-            rankings.append(_bm25_ranking(query, chunks, eligible, options["hybrid_bm25_k"]))
+            rankings.append(_bm25_ranking(query, chunks, eligible, options["hybrid_bm25_k"], options["bm25_prefix"]))
     fused = _rrf(rankings, options["rrf_k"] or 60)
     max_per_doc, mode = options["max_per_doc"], options["rerank"]
     per_doc = Counter()

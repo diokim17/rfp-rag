@@ -18,7 +18,7 @@ from test_retrieval_rerank import FakeClient, document
 QUESTION = "학사정보시스템 고도화 사업의 요구사항"
 ENV_KEYS = ("RETRIEVAL_RERANK", "RETRIEVAL_CANDIDATES", "RETRIEVAL_HYBRID", "RETRIEVAL_HYBRID_VECTOR_K",
             "RETRIEVAL_HYBRID_BM25_K", "RETRIEVAL_RRF_K", "RETRIEVAL_REWRITE", "RETRIEVAL_REWRITE_MODEL",
-            "RETRIEVAL_MAX_PER_DOC")
+            "RETRIEVAL_MAX_PER_DOC", "RETRIEVAL_BM25_PREFIX")
 
 
 class HybridTests(unittest.TestCase):
@@ -57,7 +57,7 @@ class HybridTests(unittest.TestCase):
         options = retrieval_options()
         self.assertEqual(options, {"rerank": "none", "candidates": None, "max_per_doc": None, "hybrid": False,
                                    "hybrid_vector_k": None, "hybrid_bm25_k": None, "rrf_k": None,
-                                   "rewrite": "off", "rewrite_model": None})
+                                   "rewrite": "off", "rewrite_model": None, "bm25_prefix": None})
         with patch.object(retrieval, "_bm25_ranking", side_effect=AssertionError("BM25가 호출되면 안 됨")):
             default = self.search(3)
             off = self.search(3, hybrid=False, rewrite="off")
@@ -89,13 +89,15 @@ class HybridTests(unittest.TestCase):
         documented = set(re.findall(r"RETRIEVAL_[A-Z0-9_]+", retrieve.__doc__))
         self.assertTrue(documented >= {"RETRIEVAL_RERANK", "RETRIEVAL_CANDIDATES", "RETRIEVAL_HYBRID",
                                        "RETRIEVAL_HYBRID_VECTOR_K", "RETRIEVAL_HYBRID_BM25_K", "RETRIEVAL_RRF_K",
-                                       "RETRIEVAL_REWRITE", "RETRIEVAL_REWRITE_MODEL", "RETRIEVAL_MAX_PER_DOC"})
+                                       "RETRIEVAL_REWRITE", "RETRIEVAL_REWRITE_MODEL", "RETRIEVAL_MAX_PER_DOC",
+                                       "RETRIEVAL_BM25_PREFIX"})
         base = {"RETRIEVAL_RERANK": "lexical", "RETRIEVAL_HYBRID": "on", "RETRIEVAL_REWRITE": "only"}
         with patch.dict(os.environ, base):
             before = retrieval_options()
         changes = {"RETRIEVAL_RERANK": "none", "RETRIEVAL_CANDIDATES": "7", "RETRIEVAL_HYBRID": "off",
                    "RETRIEVAL_HYBRID_VECTOR_K": "3", "RETRIEVAL_HYBRID_BM25_K": "4", "RETRIEVAL_RRF_K": "10",
-                   "RETRIEVAL_REWRITE": "both", "RETRIEVAL_REWRITE_MODEL": "gpt-5-nano", "RETRIEVAL_MAX_PER_DOC": "3"}
+                   "RETRIEVAL_REWRITE": "both", "RETRIEVAL_REWRITE_MODEL": "gpt-5-nano", "RETRIEVAL_MAX_PER_DOC": "3",
+                   "RETRIEVAL_BM25_PREFIX": "on"}
         for name in documented:
             with self.subTest(name=name), patch.dict(os.environ, {**base, name: changes[name]}):
                 self.assertNotEqual(retrieval_options(), before)

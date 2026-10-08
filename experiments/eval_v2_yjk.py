@@ -4,9 +4,10 @@
   python experiments/eval_v2_yjk.py ... --settings hybrid-ce-c50-cap2 prefix-ce-c50-cap2 --allow-api
 
 지표·집계는 team_eval_yjk.py와 같습니다(doc_recall@5, 정답 문서/정답 청크 첫 순위, 상위 50개 안에서만).
-실험 안에서 적용하는 변형 두 가지(fuzzy는 이후 retrieval._resolve_filters로 기본 동작에 반영되어 결과가 같습니다):
-- prefix: BM25 색인 텍스트 앞에 사업명·발주 기관을 붙입니다. 반환 청크 본문과 채점은 원문 그대로입니다.
-- fuzzy: 필터 값을 공백·기호를 지우고 '서울특별시→서울시'로 맞춘 뒤 메타데이터 값에 포함되는지로 찾아
+비교하는 변형 두 가지(둘 다 이후 retrieval.py 기본 동작으로 반영):
+- prefix: BM25 색인 텍스트 앞에 사업명·발주 기관을 붙입니다(retrieve의 bm25_prefix). 접두 없는 설정은
+  bm25_prefix=False를 명시합니다. 반환 청크 본문과 채점은 원문 그대로입니다.
+- fuzzy: retrieval._resolve_filters가 기본으로 같은 일을 하므로 이제는 결과가 같습니다. 예전 정의: 필터 값을 공백·기호를 지우고 '서울특별시→서울시'로 맞춘 뒤 메타데이터 값에 포함되는지로 찾아
   하나로 정해지면 그 값으로 바꿔 exact-match 필터에 넘깁니다(예: '한국철도공사' → '한국철도공사 (용역)').
 """
 
@@ -29,9 +30,9 @@ from parsing import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from team_eval_yjk import TOP_K, file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
 
-HYBRID = {"hybrid": True, "hybrid_vector_k": 100, "hybrid_bm25_k": 100}
 BASE = {"vector": {"rerank": "none", "hybrid": False, "max_per_doc": "none"}}
 for prefix in ("", "prefix-"):
+    HYBRID = {"hybrid": True, "hybrid_vector_k": 100, "hybrid_bm25_k": 100, "bm25_prefix": prefix == "prefix-"}
     BASE[f"{prefix}hybrid"] = {"rerank": "none", "candidates": 100, "max_per_doc": "none", **HYBRID}
     BASE[f"{prefix}hybrid-cap2"] = {"rerank": "none", "candidates": 100, "max_per_doc": 2, **HYBRID}
     for candidates in (50, 100):
@@ -41,7 +42,6 @@ for prefix in ("", "prefix-"):
                                                         "max_per_doc": 2, **HYBRID}
 # 이름에 'fuzzy'가 붙으면 필터 값 정규화를 함께 씁니다.
 SETTINGS = {**BASE, **{f"{name}+fuzzy": options for name, options in BASE.items()}}
-BM25_FIELDS = ("사업명", "발주 기관")
 
 
 def nfc(value):
@@ -63,17 +63,6 @@ def resolve_filters(filters, chunks):
         matches = sorted(v for v in known if org_key(value) in org_key(v))
         resolved[key] = matches[0] if nfc(value) not in known and len(matches) == 1 else value
     return resolved
-
-
-def prefixed_bm25(retrieval, chunks):
-    """retrieval._bm25_ranking이 사업명·발주 기관을 붙인 텍스트로 순위를 매기게 바꿉니다(청크 번호는 같음)."""
-    original = retrieval._bm25_ranking
-    shadow = [{**chunk, "text": "\n".join(nfc(chunk["metadata"].get(f, "")) for f in BM25_FIELDS)
-               + "\n" + chunk["text"]} for chunk in chunks]
-
-    def ranking(question, chunk_list, eligible, limit):
-        return original(question, shadow if chunk_list is chunks else chunk_list, eligible, limit)
-    return original, ranking
 
 
 def cached_cross_encoder(retrieval, path):
@@ -134,9 +123,6 @@ def main():
         embed_texts(missing[start:start + 64], client, model)
     client.save()
 
-    original, prefixed = prefixed_bm25(retrieval, chunks)
-    # BM25 색인을 본문·접두 두 개 모두 메모리에 둡니다(retrieval은 하나만 두고 바뀌면 다시 만듭니다).
-    retrieval._bm25_indexes = type("Keep", (dict,), {"clear": lambda self: None})(retrieval._bm25_indexes)
     ce_original, ce_cached, ce_save = cached_cross_encoder(retrieval, args.ce_cache_file)
     retrieval._cross_encoder_scores = ce_cached
     ce_load_ms, rerank_device = 0.0, None
@@ -150,7 +136,6 @@ def main():
     # eval_v2는 확장 문항에 bm25_reference가 없어 기준값 열은 싣지 않습니다.
     results = []
     for name in args.settings:
-        retrieval._bm25_ranking = prefixed if name.startswith("prefix-") else original
         rows, times = [], []
         for case in cases:
             filters = resolve_filters(case.get("filters"), chunks) if name.endswith("+fuzzy") else case.get("filters")
@@ -161,13 +146,12 @@ def main():
             rows.append({"id": case["id"], **score_case(case, hits), "hits": [hit["chunk_id"] for hit in hits]})
         ordered = sorted(times)
         results.append((name, {"options": {**retrieval.retrieval_options(**SETTINGS[name]),
-                                           "bm25_prefix": name.startswith("prefix-"),
                                            "fuzzy_filter": name.endswith("+fuzzy")},
                                "rows": rows, "mean_ms": statistics.fmean(times),
                                "p95_ms": ordered[min(len(ordered) - 1, math.ceil(.95 * len(ordered)) - 1)]}))
         ce_save()
         print(f"{name}: 완료 ({statistics.fmean(times):.0f}ms/질문)", flush=True)
-    retrieval._bm25_ranking, retrieval._cross_encoder_scores = original, ce_original
+    retrieval._cross_encoder_scores = ce_original
     for _, result in results:
         result["summary"] = summarize_groups(cases, result["rows"])
     if client.api_calls:
