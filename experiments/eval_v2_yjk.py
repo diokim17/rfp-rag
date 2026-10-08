@@ -50,6 +50,9 @@ SETTINGS = {**BASE, **{f"{name}+fuzzy": options for name, options in BASE.items(
 # '+wd'는 문서 안 재선택(residual+full), '+wdr'은 남은 질문만(residual) — retrieve의 within_doc
 SETTINGS.update({f"{name}{suffix}": {**options, "within_doc": mode} for name, options in BASE.items()
                  for suffix, mode in (("+wd", "residual+full"), ("+wdr", "residual"))})
+# '+x5'·'+x10'·'+x20'은 재정렬 후보 확장(retrieve의 expand) — 재정렬하는 설정에만
+SETTINGS.update({f"{name}+x{count}": {**options, "expand": count} for name, options in BASE.items()
+                 if options["rerank"] != "none" for count in (5, 10, 20)})
 
 
 def nfc(value):
@@ -136,11 +139,12 @@ def main():
     retrieval._cross_encoder_scores = ce_cached
     ce_load_ms, rerank_device = 0.0, None
     if any(SETTINGS[name]["rerank"] == "cross-encoder" for name in args.settings):
+        # 점수 캐시를 거치지 않고 모델을 직접 불러옵니다(캐시에 있으면 모델이 안 올라와 장치·로드 시간을 못 잼).
+        model_name = os.getenv("RETRIEVAL_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
         start = time.perf_counter()
-        retrieval.retrieve(cases[0]["question"], client, index, chunks, config, 1, None,
-                           rerank="cross-encoder", candidates=1)
+        ce_original(cases[0]["question"], ["모델 로드 확인"], model_name)
         ce_load_ms = (time.perf_counter() - start) * 1000
-        rerank_device = next(iter(retrieval._cross_encoders.values()))[2]
+        rerank_device = retrieval._cross_encoders[model_name][2]
 
     # eval_v2는 확장 문항에 bm25_reference가 없어 기준값 열은 싣지 않습니다.
     results = []

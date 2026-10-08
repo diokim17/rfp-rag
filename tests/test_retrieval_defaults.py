@@ -17,7 +17,7 @@ from test_retrieval_rerank import FakeClient, document
 QUESTION = "학사정보시스템 고도화 사업의 요구사항"
 DEFAULTS = {"rerank": "cross-encoder", "candidates": 50, "max_per_doc": 2, "hybrid": True,
             "hybrid_vector_k": 100, "hybrid_bm25_k": 100, "rrf_k": 60, "rewrite": "off", "rewrite_model": None,
-            "bm25_prefix": True, "within_doc": "off"}
+            "bm25_prefix": True, "within_doc": "off", "expand": 5}
 BASELINE = {"rerank": "none", "hybrid": False, "max_per_doc": "none"}
 
 
@@ -65,7 +65,11 @@ class DefaultRetrievalTests(unittest.TestCase):
         scorer = patch.object(retrieval, "_cross_encoder_scores", side_effect=fake_cross_encoder)
         with bm25 as bm25_spy, scorer as scorer_spy:
             hits = self.search(5)
-        bm25_spy.assert_called_once()
+        # 하이브리드 BM25(후보 100, 접두 색인)는 한 번, 나머지는 후보 확장의 문서 안 BM25(상위 문서 2개)
+        hybrid_calls = [call for call in bm25_spy.call_args_list if call.args[3] == 100]
+        self.assertEqual(len(hybrid_calls), 1)
+        self.assertIs(hybrid_calls[0].args[4], True)
+        self.assertEqual(len(bm25_spy.call_args_list) - 1, retrieval.EXPAND_DOCS)
         scorer_spy.assert_called_once()
         self.assertEqual([hit["doc_id"] for hit in hits], ["haksa", "haksa", "bus", "water"])  # 셋째 학사 청크는 상한으로 제외
         self.assertEqual([hit["text"] for hit in hits[:2]], ["가 학사 일정 요구사항", "가 학사 성적 요구사항 정의"])

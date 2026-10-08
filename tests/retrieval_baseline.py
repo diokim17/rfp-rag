@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 import retrieval
 
-BASELINE = {"DEFAULT_RERANK": "none", "DEFAULT_HYBRID": False, "DEFAULT_MAX_PER_DOC": None, "DEFAULT_BM25_PREFIX": False}
+BASELINE = {"DEFAULT_RERANK": "none", "DEFAULT_HYBRID": False, "DEFAULT_MAX_PER_DOC": None, "DEFAULT_BM25_PREFIX": False,
+            "DEFAULT_EXPAND": 0}
 
 
 def setUpModule():
