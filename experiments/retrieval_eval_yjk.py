@@ -80,6 +80,8 @@ class CachedEmbeddingClient:
         self.cache = read_json(self.path) if self.path.is_file() else {}
         self.api_calls = 0
         self.embeddings = SimpleNamespace(create=self.embed)
+        # 질문 재작성(retrieve rewrite)은 실제 client의 Responses API로 보냅니다(캐시하지 않음, 재작성 캐시는 따로).
+        self.responses = SimpleNamespace(create=lambda **kwargs: self.client().responses.create(**kwargs))
 
     def client(self):
         if self.real is None:
