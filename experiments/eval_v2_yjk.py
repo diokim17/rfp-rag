@@ -19,6 +19,7 @@ import statistics
 import sys
 import time
 import unicodedata
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,6 +54,12 @@ SETTINGS.update({f"{name}{suffix}": {**options, "within_doc": mode} for name, op
 # '+x5'·'+x10'·'+x20'은 재정렬 후보 확장(retrieve의 expand) — 재정렬하는 설정에만
 SETTINGS.update({f"{name}+x{count}": {**options, "expand": count} for name, options in BASE.items()
                  if options["rerank"] != "none" for count in (5, 10, 20)})
+# 'default'는 retrieve 기본값 그대로(회귀 점검용). '+rw'는 질문 재작성 both(원문 + 재작성 RRF), '+rwo'는 only.
+SETTINGS["default"] = {}
+SETTINGS.update({f"{name}{suffix}": {**options, "rewrite": mode} for name, options in
+                 [("default", {}), ("prefix-hybrid-ce-c50-cap2+x5", SETTINGS["prefix-hybrid-ce-c50-cap2+x5"]),
+                  ("prefix-hybrid-lex-c50-cap2+x5", SETTINGS["prefix-hybrid-lex-c50-cap2+x5"])]
+                 for suffix, mode in (("+rw", "both"), ("+rwo", "only"))})
 
 
 def nfc(value):
@@ -102,6 +109,8 @@ def main():
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문 임베딩 API 호출을 허용")
     parser.add_argument("--fresh-query-embeddings", action="store_true",
                         help="질문 임베딩 캐시를 읽지 않고 모두 API로 새로 받습니다(캐시 파일도 갱신하지 않음)")
+    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/cache/query_rewrites.json",
+                        help="질문 재작성 결과 캐시(같은 질문은 다시 호출하지 않음)")
     parser.add_argument("--allow-cpu-rerank", action="store_true",
                         help="GPU가 없을 때 cross-encoder를 CPU로 돌리는 것을 허용(기본은 중단)")
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
@@ -115,7 +124,9 @@ def main():
 
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)
-    if any(SETTINGS[name]["rerank"] == "cross-encoder" for name in args.settings) and not args.allow_cpu_rerank:
+    uses_cross_encoder = any(retrieval.retrieval_options(**SETTINGS[name])["rerank"] == "cross-encoder"
+                             for name in args.settings)
+    if uses_cross_encoder and not args.allow_cpu_rerank:
         import torch
         if not torch.cuda.is_available():
             parser.error("cross-encoder 설정은 GPU에서만 돌립니다. CUDA가 없습니다(--allow-cpu-rerank로 CPU 허용).")
@@ -138,7 +149,7 @@ def main():
     ce_original, ce_cached, ce_save = cached_cross_encoder(retrieval, args.ce_cache_file)
     retrieval._cross_encoder_scores = ce_cached
     ce_load_ms, rerank_device = 0.0, None
-    if any(SETTINGS[name]["rerank"] == "cross-encoder" for name in args.settings):
+    if uses_cross_encoder:
         # 점수 캐시를 거치지 않고 모델을 직접 불러옵니다(캐시에 있으면 모델이 안 올라와 장치·로드 시간을 못 잼).
         model_name = os.getenv("RETRIEVAL_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
         start = time.perf_counter()
@@ -146,25 +157,39 @@ def main():
         ce_load_ms = (time.perf_counter() - start) * 1000
         rerank_device = retrieval._cross_encoders[model_name][2]
 
+    # 질문 재작성 결과(cache·api·fallback-*)를 설정마다 세어, 재작성이 실제로 쓰였는지 보고서에 남깁니다.
+    import query_rewrite
+    rewrite_status = Counter()
+    rewrite_original = query_rewrite.rewrite_question
+
+    def counted_rewrite(*call_args, **call_kwargs):
+        text, info = rewrite_original(*call_args, **call_kwargs)
+        rewrite_status[info["status"]] += 1
+        return text, info
+    query_rewrite.rewrite_question = counted_rewrite
+
     # eval_v2는 확장 문항에 bm25_reference가 없어 기준값 열은 싣지 않습니다.
     results = []
     for name in args.settings:
         rows, times = [], []
+        rewrite_status.clear()
         for case in cases:
             filters = resolve_filters(case.get("filters"), chunks) if name.endswith("+fuzzy") else case.get("filters")
             start = time.perf_counter()
             hits = retrieval.retrieve(case["question"], client, index, chunks, config, args.top_k, filters,
-                                      **SETTINGS[name])
+                                      rewrite_cache=args.rewrite_cache, **SETTINGS[name])
             times.append((time.perf_counter() - start) * 1000)
             rows.append({"id": case["id"], **score_case(case, hits), "hits": [hit["chunk_id"] for hit in hits]})
         ordered = sorted(times)
         results.append((name, {"options": {**retrieval.retrieval_options(**SETTINGS[name]),
-                                           "fuzzy_filter": name.endswith("+fuzzy")},
+                                           "fuzzy_filter": name.endswith("+fuzzy"),
+                                           "rewrite_status": dict(rewrite_status)},
                                "rows": rows, "mean_ms": statistics.fmean(times),
                                "p95_ms": ordered[min(len(ordered) - 1, math.ceil(.95 * len(ordered)) - 1)]}))
         ce_save()
         print(f"{name}: 완료 ({statistics.fmean(times):.0f}ms/질문)", flush=True)
     retrieval._cross_encoder_scores = ce_original
+    query_rewrite.rewrite_question = rewrite_original
     for _, result in results:
         result["summary"] = summarize_groups(cases, result["rows"])
     if client.api_calls:
