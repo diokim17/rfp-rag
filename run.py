@@ -25,10 +25,32 @@ from retrieval import retrieve
 
 ROOT = Path(__file__).resolve().parent
 
+# 팀 공용 모델 기본 경로. A 모델 설정값은 이 경로 아래의 하위 폴더 이름입니다.
+A_GENERATION_MODEL_DIR = Path("/home/spai1313/models/generate")
+A_EMBEDDING_MODEL_DIR = Path("/home/spai1313/models/embedding")
+
 # VS Code에서 인자 없이 실행할 때 사용할 설정입니다.
 DEFAULT_COMMAND = "auto"  # 인덱스가 있으면 ask, 없으면 all. 재생성하려면 "all"
 DEFAULT_LIMIT = 3
 DEFAULT_QUESTION = "한영대학교 교육환경 구축 사업의 주요 요구사항은 무엇인가요?"
+
+
+def read_scenario_settings(env_path):
+    """설정만 읽고 검증합니다. 기존 프로세스 환경 변수는 .env보다 우선합니다."""
+    load_dotenv(env_path, override=False)
+    scenario = os.getenv("RFP_SCENARIO", "B").strip().upper()
+    if scenario not in {"A", "B"}:
+        raise ValueError("RFP_SCENARIO는 A 또는 B여야 합니다.")
+    settings = {"scenario": scenario}
+    for key in ("A_GENERATION_MODEL", "A_EMBEDDING_MODEL"):
+        value = os.getenv(key, "").strip()
+        if scenario == "A":
+            if not value:
+                raise ValueError(f"시나리오 A에는 {key}에 모델 하위 폴더 이름이 필요합니다.")
+            if value in {".", ".."} or "/" in value or "\\" in value:
+                raise ValueError(f"{key}에는 경로가 아닌 단일 모델 하위 폴더 이름을 입력하세요.")
+        settings[key] = value
+    return settings
 
 
 def check_index_documents(args, parser):
@@ -62,7 +84,7 @@ def check_index_documents(args, parser):
 
 def main():
     parser = argparse.ArgumentParser(description="시나리오 B: 최소 RFP RAG 파이프라인")
-    parser.add_argument("command", choices=["parse", "build", "ask", "all", "evaluate"])
+    parser.add_argument("command", choices=["parse", "build", "ask", "all", "evaluate", "check-config"])
     parser.add_argument("--question", help="ask/all 실행 질문")
     parser.add_argument("--owner", help="담당자 영문 이니셜 (기본: EXPERIMENT_OWNER)")
     parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
@@ -109,7 +131,23 @@ def main():
         filters[key] = item
 
     # 사용자가 실행할 때만 .env를 로드하며 키를 출력하거나 결과에 저장하지 않습니다.
-    load_dotenv(ROOT / ".env", override=False)
+    try:
+        settings = read_scenario_settings(ROOT / ".env")
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.command == "check-config":
+        print(json.dumps(settings, ensure_ascii=False, indent=2))
+        return
+    args.scenario_settings = settings
+    if settings["scenario"] == "A":
+        for flag, field, path in (("--index-dir", "index_dir", ROOT / "indexes/scenario-a"),
+                                  ("--results-dir", "results_dir", ROOT / "results/scenario-a"),
+                                  ("--reports-dir", "reports_dir", ROOT / "results/scenario-a/reports")):
+            if not any(arg == flag or arg.startswith(flag + "=") for arg in argv):
+                setattr(args, field, path)
+        if not sys.argv[1:] and DEFAULT_COMMAND == "auto":
+            args.command = "ask" if all((args.index_dir / name).is_file()
+                                       for name in ("index.faiss", "chunks.json", "config.json")) else "all"
     try:
         owner = owner_initials(args.owner or os.getenv("EXPERIMENT_OWNER", ""))
         experiment_id = next_experiment_id(owner, ROOT / ".experiment-state")
@@ -151,13 +189,27 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
     if args.command in {"ask", "evaluate"}:
         check_index_documents(args, parser)
 
-    if not os.getenv("OPENAI_API_KEY"):
-        parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
-    client = OpenAI(timeout=60.0, max_retries=2)
-    generation_model = os.getenv("OPENAI_GENERATION_MODEL", "gpt-5-mini")
-    if generation_model not in {"gpt-5-mini", "gpt-5-nano"}:
-        parser.error("허용된 답변 모델은 gpt-5-mini, gpt-5-nano입니다. "
-                     ".env의 OPENAI_GENERATION_MODEL을 수정하거나 삭제하세요.")
+    settings = getattr(args, "scenario_settings", {"scenario": "B"})
+    if settings["scenario"] == "A":
+        from scenario_a import ScenarioAClient
+        if os.getenv("RETRIEVAL_REWRITE", "off").strip().lower() not in {"", "off"}:
+            parser.error("시나리오 A에서는 OpenAI 질문 재작성을 끄세요: RETRIEVAL_REWRITE=off")
+        try:
+            client = ScenarioAClient(settings, A_GENERATION_MODEL_DIR, A_EMBEDDING_MODEL_DIR,
+                                     need_generation=args.command != "build")
+        except (ValueError, NotImplementedError) as exc:
+            parser.error(str(exc))
+        generation_model = settings["A_GENERATION_MODEL"]
+        embedding_model = settings["A_EMBEDDING_MODEL"]
+    else:
+        if not os.getenv("OPENAI_API_KEY"):
+            parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
+        client = OpenAI(timeout=60.0, max_retries=2)
+        generation_model = os.getenv("OPENAI_GENERATION_MODEL", "gpt-5-mini")
+        if generation_model not in {"gpt-5-mini", "gpt-5-nano"}:
+            parser.error("허용된 답변 모델은 gpt-5-mini, gpt-5-nano입니다. "
+                         ".env의 OPENAI_GENERATION_MODEL을 수정하거나 삭제하세요.")
+        embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
     if args.command in {"build", "all"}:
         # 역직렬화와 해시에 동일한 바이트를 사용해 실제 빌드 입력을 식별합니다.
         documents_bytes = (args.processed_dir / "documents.json").read_bytes()
@@ -165,7 +217,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         documents_sha256 = text_hash(documents_bytes)  # 줄바꿈을 LF로 맞춘 해시(운영체제 무관)
         experiment["documents_sha256"] = documents_sha256
         config = build_index(documents, client, args.index_dir,
-                             os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"),
+                             embedding_model,
                              args.chunk_size, args.chunk_overlap,
                              documents_sha256=documents_sha256)
         # build/all 모두 저장된 config를 검증하며, all도 검증 후에만 질의합니다.

@@ -66,6 +66,9 @@ def generate_answer(question, hits, client, model="gpt-5-mini"):
     실패해도 멈추지 않고 안내 문구를 answer로 돌려줍니다. api_error면 error에 예외 타입 이름만 남깁니다.
     요청 한도 오류(RateLimitError)는 run.py가 원인별로 안내하고 멈추도록 그대로 올려 보냅니다.
     """
+    from scenario_a import ScenarioAClient
+    if isinstance(client, ScenarioAClient):
+        return client.generate_answer(question, hits, model)
     sources = [{"citation": i, **hit} for i, hit in enumerate(hits, 1)]
     result = lambda answer, status, **extra: {"question": question, "answer": answer, "sources": sources,
                                               "model": model, "status": status, **extra}

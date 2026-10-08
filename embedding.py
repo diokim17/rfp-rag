@@ -317,19 +317,24 @@ def embed_texts(texts, client, model):
     """문서·질문에 공통으로 사용하는 정규화된 float32 벡터."""
     if not texts:
         raise ValueError("임베딩할 텍스트가 없습니다.")
-    response = model_call("embedding", model,
-                         lambda: client.embeddings.create(model=model, input=texts),
-                         batch_size=len(texts))
-    items = response.data
-    indices = [item.index for item in items]
-    if (any(type(i) is not int for i in indices)
-            or sorted(indices) != list(range(len(texts)))):
-        raise ValueError("임베딩 응답 index가 입력과 맞지 않습니다.")
+    from scenario_a import ScenarioAClient
+    if isinstance(client, ScenarioAClient):
+        raw_vectors = client.embed_texts(texts, model)
+    else:
+        response = model_call("embedding", model,
+                             lambda: client.embeddings.create(model=model, input=texts),
+                             batch_size=len(texts))
+        items = response.data
+        indices = [item.index for item in items]
+        if (any(type(i) is not int for i in indices)
+                or sorted(indices) != list(range(len(texts)))):
+            raise ValueError("임베딩 응답 index가 입력과 맞지 않습니다.")
+        raw_vectors = [item.embedding for item in sorted(items, key=lambda x: x.index)]
     try:
-        vectors = np.asarray([item.embedding for item in sorted(items, key=lambda x: x.index)], dtype="float32")
+        vectors = np.array(raw_vectors, dtype="float32", copy=True)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("임베딩 응답 벡터 형식이 올바르지 않습니다.") from exc
-    if vectors.ndim != 2 or vectors.shape[1] == 0 or not np.isfinite(vectors).all():
+    if vectors.ndim != 2 or vectors.shape[0] != len(texts) or vectors.shape[1] == 0 or not np.isfinite(vectors).all():
         raise ValueError("임베딩 응답이 입력과 맞지 않습니다.")
     # 먼저 스케일을 맞춰 float32 제곱합의 overflow/underflow를 방지합니다.
     scales = np.max(np.abs(vectors), axis=1)
