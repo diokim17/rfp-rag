@@ -1,6 +1,7 @@
-"""김연주: 질문 → 하이브리드 검색(벡터 + BM25, RRF) → cross-encoder 리랭킹 → 문서당 청크 상한.
+"""김연주: 질문 → 하이브리드 검색(벡터 + BM25 사업명 접두, RRF) → 재정렬 후보 확장 → cross-encoder 리랭킹 → 문서당 청크 상한.
 
-기본값은 팀 공통 평가셋(eval_team_v1) 측정(yjk-0017)에서 가장 좋았던 조합이며, 인자나 환경 변수로 끌 수 있습니다.
+기본값은 eval_team_v1(yjk-0017)·eval_v2(yjk-0021, yjk-0025)·새 질문 19개(yjk-0024) 측정에서 가장 좋았던 조합이며,
+인자나 환경 변수로 끌 수 있습니다. 설정 근거는 results/reports/b_retrieval_settings_yjk.md.
 """
 
 from collections import Counter
@@ -23,8 +24,9 @@ RERANK_FIELDS = ("사업명", "발주 기관")
 DEFAULT_RERANK, DEFAULT_HYBRID, DEFAULT_CANDIDATES, DEFAULT_HYBRID_K, DEFAULT_MAX_PER_DOC = "cross-encoder", True, 50, 100, 2
 # 하이브리드의 BM25 색인에도 사업명·발주 기관을 본문 앞에 붙입니다(eval_v2 yjk-0010: 50위 밖 정답 청크 10→1건).
 DEFAULT_BM25_PREFIX = True
-# 재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문 BM25 상위 청크를 더합니다(기본 0 = 끔).
-DEFAULT_EXPAND, EXPAND_DOCS = 0, 2
+# 재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문 BM25 상위 청크를 더합니다.
+# 기본 5(yjk-0024 새 질문 정답청크 5위 내 0.737→0.947, yjk-0025 eval_v2 0.968→0.984). 0이면 끔.
+DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
 _cross_encoders = {}
 
 
@@ -317,7 +319,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     within_doc: off(기본)·residual·residual+full. 위 과정이 끝난 뒤 문서가 차지한 자리 수·순서는 그대로 두고,
       각 자리의 청크만 그 문서의 전체 청크에서 다시 고릅니다(_reselect_within_docs). 환경 변수 RETRIEVAL_WITHIN_DOC.
       켜면 임베딩 API를 한 번 더 호출합니다(원래 질문과 문서별 남은 질문을 한 번에).
-    expand: 재정렬 후보 확장(기본 0 = 끔, 환경 변수 RETRIEVAL_EXPAND). 재정렬할 때만 쓰며, 후보에 처음 나온
+    expand: 재정렬 후보 확장(기본 5, 0이면 끔, 환경 변수 RETRIEVAL_EXPAND). 재정렬할 때만 쓰며, 후보에 처음 나온
       문서 2개에서 남은 질문(_residual_question)의 문서 안 BM25 상위 expand개 청크를 후보에 더해 재정렬기가
       순서를 정하게 합니다. 사업명이 질문 대부분을 차지해 정답 청크가 후보에 못 드는 경우(발표 시간 등)를 위한 것.
       더한 청크는 expanded=True를 갖고 rrf_score는 없습니다. API 호출은 늘지 않습니다.
