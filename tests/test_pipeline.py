@@ -38,7 +38,8 @@ class PipelineTests(unittest.TestCase):
             hits = retrieve("예산", client, index, chunks, config, top_k=1)
             self.assertEqual(hits[0]["doc_id"], "a")
             self.assertAlmostEqual(hits[0]["score"], 1.)
-            filtered = retrieve("예산", client, index, chunks, config, top_k=1, filters={"발주 기관": "나"})
+            filtered = retrieve("예산", client, index, chunks, config, top_k=1, filters={"발주 기관": "나"},
+                                min_score="none")  # 가짜 임베딩은 코사인이 0이라 범위 밖 차단을 끕니다
             self.assertEqual(filtered[0]["doc_id"], "b")
             self.assertEqual(retrieve("예산", client, index, chunks, config, filters={"발주 기관": "없음"}), [])
             result = generate_answer("예산", hits, client)

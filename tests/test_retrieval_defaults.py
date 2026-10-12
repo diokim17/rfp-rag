@@ -18,7 +18,7 @@ QUESTION = "학사정보시스템 고도화 사업의 요구사항"
 DEFAULTS = {"rerank": "cross-encoder", "candidates": 50, "max_per_doc": 2, "hybrid": True,
             "hybrid_vector_k": 100, "hybrid_bm25_k": 100, "rrf_k": 60, "rewrite": "off", "rewrite_model": None,
             "bm25_prefix": True, "within_doc": "off", "expand": 5,
-            "dedup": False, "min_score": None}
+            "dedup": False, "min_score": 0.40}
 BASELINE = {"rerank": "none", "hybrid": False, "max_per_doc": "none"}
 
 
@@ -80,6 +80,17 @@ class DefaultRetrievalTests(unittest.TestCase):
         with patch.object(retrieval, "_cross_encoder_scores", side_effect=fake_cross_encoder):
             self.assertEqual({hit["doc_id"] for hit in self.search(5, {"발주 기관": "가"})}, {"bus"})
             self.assertEqual(self.search(5, {"발주 기관": "없음"}), [])
+
+    def test_default_min_score_blocks_off_topic_question(self):
+        """기본 기준 0.40: '점'으로 시작하는 질문은 가장 가까운 청크('가')와도 코사인 ≈ 0.11이라 막힙니다."""
+        scorer = patch.object(retrieval, "_cross_encoder_scores", side_effect=fake_cross_encoder)
+        with scorer as scorer_spy:
+            hits = retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5)
+        self.assertEqual(hits, [])
+        scorer_spy.assert_not_called()  # 차단되면 리랭커도 부르지 않습니다
+        with patch.object(retrieval, "_cross_encoder_scores", side_effect=fake_cross_encoder), \
+                patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "off"}):
+            self.assertEqual(len(retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5)), 4)
 
     def test_missing_packages_fall_back_to_lexical_with_warning(self):
         with patch.object(retrieval, "_cross_encoder_available", return_value=False), \
