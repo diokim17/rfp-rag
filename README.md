@@ -93,8 +93,11 @@ rfp-rag/
 ```text
 /home/spai1313/models/
 ├── generate/<생성 모델 폴더>/
-└── embedding/<임베딩 모델 폴더>/
+├── embedding/<임베딩 모델 폴더>/
+└── rerank/<리랭커 모델 폴더>/      # 선택
 ```
+
+A의 cross-encoder 리랭커는 `A_RERANK_MODEL`에 지정한 `rerank/` 하위 폴더에서만 로딩하며, 계정별 HF 캐시로 내려받지 않습니다. 비워 두면 모델 없는 `lexical` 리랭킹으로 실행하고 경고합니다. `RETRIEVAL_RERANK=cross-encoder`를 명시했는데 폴더가 없으면 검색 전에 종료합니다. B는 기존처럼 `RETRIEVAL_RERANK_MODEL`(기본 `BAAI/bge-reranker-v2-m3`)을 사용합니다.
 
 ### 브랜치 운영
 

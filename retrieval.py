@@ -8,6 +8,7 @@ from collections import Counter
 import importlib.util
 import math
 import os
+from pathlib import Path
 import re
 import unicodedata
 import warnings
@@ -27,12 +28,36 @@ DEFAULT_BM25_PREFIX = True
 # 재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문 BM25 상위 청크를 더합니다.
 # 기본 5(yjk-0024 새 질문 정답청크 5위 내 0.737→0.947, yjk-0025 eval_v2 0.968→0.984). 0이면 끔.
 DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
+DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
+# 시나리오 A 리랭커 공용 경로. A_RERANK_MODEL은 이 경로 아래의 단일 하위 폴더 이름입니다.
+# 계정별 HF 캐시에 각자 받지 않도록 A에서는 이 폴더에서만 로딩하고 다운로드하지 않습니다.
+A_RERANK_MODEL_DIR = Path("/home/spai1313/models/rerank")
 _cross_encoders = {}
 
 
 def _cross_encoder_available():
     """torch·transformers를 불러오지 않고 설치 여부만 확인합니다."""
     return all(importlib.util.find_spec(name) is not None for name in ("torch", "transformers"))
+
+
+def _scenario_a():
+    return os.getenv("RFP_SCENARIO", "B").strip().upper() == "A"
+
+
+def rerank_model_source():
+    """cross-encoder 로딩 대상. A는 공용 경로의 로컬 폴더, B는 RETRIEVAL_RERANK_MODEL(HF ID 또는 경로)."""
+    if not _scenario_a():
+        return os.getenv("RETRIEVAL_RERANK_MODEL", DEFAULT_RERANK_MODEL)
+    name = os.getenv("A_RERANK_MODEL", "").strip()
+    if not name:
+        raise ValueError("시나리오 A의 cross-encoder 리랭킹에는 A_RERANK_MODEL에 모델 하위 폴더 이름이 필요합니다 "
+                         "(모델 없이 실행하려면 RETRIEVAL_RERANK=lexical).")
+    if name in {".", ".."} or "/" in name or "\\" in name:
+        raise ValueError("A_RERANK_MODEL에는 경로가 아닌 단일 모델 하위 폴더 이름을 입력하세요.")
+    path = A_RERANK_MODEL_DIR / name
+    if not path.is_dir():
+        raise ValueError(f"시나리오 A 리랭커 모델 폴더가 없습니다: {path}")
+    return str(path)
 
 
 def _bigrams(text):
@@ -67,9 +92,12 @@ def _cross_encoder_scores(question, passages, model_name):
         raise RuntimeError("cross-encoder 리랭킹에는 개인 가상환경에 torch, transformers 설치가 필요합니다.") from exc
     if model_name not in _cross_encoders:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        # 로컬 폴더면 Hub에 접속하지 않습니다(A 공용 경로). HF ID면 기존처럼 캐시를 쓰거나 내려받습니다.
+        local = Path(model_name).is_dir()
         model = AutoModelForSequenceClassification.from_pretrained(
-            model_name, dtype=torch.float16 if device == "cuda" else torch.float32)
-        _cross_encoders[model_name] = AutoTokenizer.from_pretrained(model_name), model.to(device).eval(), device
+            model_name, dtype=torch.float16 if device == "cuda" else torch.float32, local_files_only=local)
+        _cross_encoders[model_name] = (AutoTokenizer.from_pretrained(model_name, local_files_only=local),
+                                       model.to(device).eval(), device)
     tokenizer, model, device = _cross_encoders[model_name]
     scores = []
     with torch.no_grad():
@@ -94,8 +122,7 @@ def _rerank(question, hits, mode):
         values = [dense + lexical for dense, lexical in zip(
             _standardize([hit["score"] for hit in hits]), _standardize(_lexical_scores(question, passages)))]
     else:
-        values = _cross_encoder_scores(question, passages,
-                                       os.getenv("RETRIEVAL_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"))
+        values = _cross_encoder_scores(question, passages, rerank_model_source())
     if len(values) != len(hits) or not all(math.isfinite(value) for value in values):
         raise ValueError("리랭킹 점수가 후보와 맞지 않습니다.")
     # 안정 정렬: 리랭킹 점수가 같으면 코사인 유사도 순서를 유지합니다.
@@ -159,7 +186,8 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
     candidates·벡터/BM25 후보 수·RRF 상수는 그 값을 쓰는 기능이 켜졌을 때만 채웁니다.
-    리랭킹 방식을 지정하지 않았는데 torch·transformers가 없으면 cross-encoder 대신 lexical을 쓰고 경고합니다.
+    리랭킹 방식을 지정하지 않았는데 torch·transformers가 없거나, 시나리오 A에서 A_RERANK_MODEL이 비어 있으면
+    cross-encoder 대신 lexical을 쓰고 경고합니다. A에서 cross-encoder면 모델 폴더를 검색 전에 확인합니다.
     """
     mode = (os.getenv("RETRIEVAL_RERANK", "") if rerank is None else rerank).strip().lower()
     if not mode:
@@ -168,8 +196,14 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
             warnings.warn("torch·transformers가 없어 기본 리랭킹을 cross-encoder 대신 lexical로 실행합니다.",
                           RuntimeWarning, stacklevel=2)
             mode = "lexical"
+        elif mode == "cross-encoder" and _scenario_a() and not os.getenv("A_RERANK_MODEL", "").strip():
+            warnings.warn("시나리오 A에 A_RERANK_MODEL이 없어 기본 리랭킹을 cross-encoder 대신 lexical로 실행합니다.",
+                          RuntimeWarning, stacklevel=2)
+            mode = "lexical"
     if mode not in RERANK_MODES:
         raise ValueError(f"지원하는 리랭킹 방식: {', '.join(RERANK_MODES)}")
+    if mode == "cross-encoder" and _scenario_a():
+        rerank_model_source()
     max_per_doc = _max_per_doc(max_per_doc)
     use_hybrid = (_flag(hybrid, "RETRIEVAL_HYBRID") if hybrid is not None or os.getenv("RETRIEVAL_HYBRID", "").strip()
                   else DEFAULT_HYBRID)
