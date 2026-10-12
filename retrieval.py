@@ -173,7 +173,7 @@ def _expand_count(value):
 
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
                       hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None,
-                      within_doc=None, expand=None):
+                      within_doc=None, expand=None, dedup=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -226,6 +226,8 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         if rewrite_mode != "off" else None,
         "within_doc": within_mode,
         "expand": _expand_count(expand) if mode != "none" else None,
+        "dedup": _flag(dedup, "RETRIEVAL_DEDUP") if dedup is not None or os.getenv("RETRIEVAL_DEDUP", "").strip()
+        else False,
     }
 
 
@@ -317,7 +319,7 @@ def _rrf(rankings, constant):
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
              rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None,
-             expand=None):
+             expand=None, dedup=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -349,13 +351,16 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
       문서 2개에서 남은 질문(_residual_question)의 문서 안 BM25 상위 expand개 청크를 후보에 더해 재정렬기가
       순서를 정하게 합니다. 사업명이 질문 대부분을 차지해 정답 청크가 후보에 못 드는 경우(발표 시간 등)를 위한 것.
       더한 청크는 expanded=True를 갖고 rrf_score는 없습니다. API 호출은 늘지 않습니다.
+    dedup: 켜면(기본 끔, 환경 변수 RETRIEVAL_DEDUP) 최종 결과에서 같은 내용이 자리를 겹쳐 차지하지 않게 합니다.
+      본문이 완전히 같은 문서(같은 공고가 다른 파일명으로 두 번 들어온 경우)는 한 문서로 보고 max_per_doc을 함께 세며,
+      이미 고른 청크와 본문이 똑같은 청크(문서 사이의 같은 서식 문구 등)는 건너뜁니다. 먼저 나온(순위가 높은) 쪽을 남깁니다.
     """
     if not question.strip() or top_k < 1:
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
                                 rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix,
-                                within_doc=within_doc, expand=expand)
+                                within_doc=within_doc, expand=expand, dedup=dedup)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -374,15 +379,14 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     if vector.shape[1] != index.d:
         raise ValueError("질문 임베딩 차원이 인덱스와 다릅니다.")
     # 소규모 baseline: 전체 순위를 얻고 필터를 적용하여 후보를 채웁니다.
-    # 문서당 상한이 있으면 건너뛰는 청크만큼 더 아래 순위까지 봐야 합니다.
-    scores, ids = index.search(vector, index.ntotal if filters or max_per_doc else min(pool, index.ntotal))
-    per_doc = Counter()
+    # 문서당 상한·중복 제거가 있으면 건너뛰는 청크만큼 더 아래 순위까지 봐야 합니다.
+    scores, ids = index.search(vector, index.ntotal if filters or max_per_doc or options["dedup"]
+                               else min(pool, index.ntotal))
     # 리랭킹을 할 때는 후보를 줄이지 않고 재정렬한 뒤에 상한을 적용합니다.
-    within_limit = lambda doc_id: max_per_doc is None or per_doc[doc_id] < max_per_doc
+    take = _selector(chunks, options)
     hits = []
     for score, i in zip(scores[0], ids[0]):
-        if int(i) in eligible and (mode != "none" or within_limit(chunks[int(i)]["doc_id"])):
-            per_doc[chunks[int(i)]["doc_id"]] += 1
+        if int(i) in eligible and (mode != "none" or take(chunks[int(i)])):
             hits.append({**chunks[int(i)], "score": float(score)})
             if len(hits) == pool:
                 break
@@ -390,13 +394,9 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"],
                                   lambda number: float(index.reconstruct(number) @ vector[0]))
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
-        ranked, hits = observed(f"rerank-{mode}")(_rerank)(question, hits, mode), []
-        per_doc.clear()
-        for hit in ranked:
-            if within_limit(hit["doc_id"]):
-                per_doc[hit["doc_id"]] += 1
-                hits.append(hit)
-        hits = hits[:top_k]
+        ranked = observed(f"rerank-{mode}")(_rerank)(question, hits, mode)
+        take = _selector(chunks, options)
+        hits = [hit for hit in ranked if take(hit)][:top_k]
     return _finish(question, hits, client, index, chunks, config, eligible, options)
 
 
@@ -517,23 +517,45 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
         if options["hybrid"]:
             rankings.append(_bm25_ranking(query, chunks, eligible, options["hybrid_bm25_k"], options["bm25_prefix"]))
     fused = _rrf(rankings, options["rrf_k"] or 60)
-    max_per_doc, mode = options["max_per_doc"], options["rerank"]
-    per_doc = Counter()
-    within_limit = lambda doc_id: max_per_doc is None or per_doc[doc_id] < max_per_doc
+    mode = options["rerank"]
+    take = _selector(chunks, options)
     hits = []
     for i, rrf_score in fused:
-        if mode != "none" or within_limit(chunks[i]["doc_id"]):
-            per_doc[chunks[i]["doc_id"]] += 1
+        if mode != "none" or take(chunks[i]):
             hits.append({**chunks[i], "score": cosine[i], "rrf_score": rrf_score})
             if len(hits) == pool:
                 break
     if mode != "none":
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"], lambda number: cosine[number])
-        ranked, hits = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode), []
-        per_doc.clear()
-        for hit in ranked:
-            if within_limit(hit["doc_id"]):
-                per_doc[hit["doc_id"]] += 1
-                hits.append(hit)
-        hits = hits[:top_k]
+        ranked = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode)
+        take = _selector(chunks, options)
+        hits = [hit for hit in ranked if take(hit)][:top_k]
     return hits
+
+
+def _selector(chunks, options):
+    """최종 결과에 넣을 청크를 순위 순서대로 하나씩 받아 넣을지(True) 정하는 함수를 만듭니다.
+
+    max_per_doc: 한 문서에서 이미 그만큼 골랐으면 뺍니다.
+    dedup: 본문이 완전히 같은 문서들은 먼저 나온 doc_id 하나로 묶어 상한을 함께 세고,
+      이미 고른 청크와 본문이 똑같은 청크는 뺍니다.
+    """
+    max_per_doc, dedup = options["max_per_doc"], options["dedup"]
+    same_doc = {}
+    if dedup:
+        # 문서마다 청크 본문을 순서대로 이은 것이 같으면 같은 문서입니다.
+        first = {}
+        for doc_id, numbers in _members(chunks).items():
+            same_doc[doc_id] = first.setdefault(tuple(chunks[n]["text"] for n in numbers), doc_id)
+    per_doc, taken_texts = Counter(), set()
+
+    def take(chunk):
+        doc_id = same_doc.get(chunk["doc_id"], chunk["doc_id"])
+        if max_per_doc is not None and per_doc[doc_id] >= max_per_doc:
+            return False
+        if dedup and chunk["text"] in taken_texts:
+            return False
+        per_doc[doc_id] += 1
+        taken_texts.add(chunk["text"])
+        return True
+    return take
