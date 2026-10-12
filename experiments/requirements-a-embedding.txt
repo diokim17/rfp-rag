@@ -1,0 +1,5 @@
+# Optional local inference dependencies; install only in the owner's .venv.
+# Keep the team requirements and server lock unchanged.
+torch==2.8.0
+sentence-transformers==5.1.1
+transformers==4.57.1
