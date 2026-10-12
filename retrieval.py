@@ -210,6 +210,9 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
     rewrite_mode = (os.getenv("RETRIEVAL_REWRITE", "") if rewrite is None else rewrite).strip().lower() or "off"
     if rewrite_mode not in REWRITE_MODES:
         raise ValueError(f"지원하는 질문 재작성 방식: {', '.join(REWRITE_MODES)}")
+    # 재작성은 OpenAI 호출이라 A(서버 모델)에서는 당분간 끕니다. 켜면 원문 폴백으로 조용히 바뀌지 않게 막습니다.
+    if rewrite_mode != "off" and _scenario_a():
+        raise ValueError("시나리오 A에서는 OpenAI 질문 재작성을 끄세요: RETRIEVAL_REWRITE=off")
     within_mode = (os.getenv("RETRIEVAL_WITHIN_DOC", "") if within_doc is None else within_doc).strip().lower() or "off"
     if within_mode not in WITHIN_DOC_MODES:
         raise ValueError(f"지원하는 문서 안 재선택 방식: {', '.join(WITHIN_DOC_MODES)}")

@@ -99,6 +99,8 @@ rfp-rag/
 
 A의 cross-encoder 리랭커는 `A_RERANK_MODEL`에 지정한 `rerank/` 하위 폴더에서만 로딩하며, 계정별 HF 캐시로 내려받지 않습니다. 비워 두면 모델 없는 `lexical` 리랭킹으로 실행하고 경고합니다. `RETRIEVAL_RERANK=cross-encoder`를 명시했는데 폴더가 없으면 검색 전에 종료합니다. B는 기존처럼 `RETRIEVAL_RERANK_MODEL`(기본 `BAAI/bge-reranker-v2-m3`)을 사용합니다.
 
+A의 질문 재작성(`RETRIEVAL_REWRITE`)은 당분간 `off`입니다. 현재 재작성은 OpenAI 호출이라 A에서 켜면 `run.py`와 `retrieve`가 모두 실행 전에 오류로 막습니다(원문 폴백으로 조용히 바뀌지 않음). A 생성 모델로 재작성하는 방식은 생성 모듈이 준비된 뒤 검토합니다.
+
 ### 브랜치 운영
 
 A/B 모두 최신 `dev`에서 개인 기능 브랜치를 만들고, PR 대상도 `dev`로 지정합니다. 각자의 기능 브랜치에서 작업·테스트한 뒤 리뷰를 거쳐 통합하며, 최종 검증된 `dev`를 `main`에 반영합니다. 기존 B 기능 브랜치는 그대로 사용하되 최신 `dev`를 반영하고 PR 대상을 확인하세요.
