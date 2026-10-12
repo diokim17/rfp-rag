@@ -19,7 +19,7 @@ QUESTION = "학사정보시스템 고도화 사업의 요구사항"
 ENV_KEYS = ("RETRIEVAL_RERANK", "RETRIEVAL_CANDIDATES", "RETRIEVAL_HYBRID", "RETRIEVAL_HYBRID_VECTOR_K",
             "RETRIEVAL_HYBRID_BM25_K", "RETRIEVAL_RRF_K", "RETRIEVAL_REWRITE", "RETRIEVAL_REWRITE_MODEL",
             "RETRIEVAL_MAX_PER_DOC", "RETRIEVAL_BM25_PREFIX", "RETRIEVAL_WITHIN_DOC",
-            "RETRIEVAL_EXPAND")
+            "RETRIEVAL_EXPAND", "RETRIEVAL_MIN_SCORE")
 
 
 class HybridTests(unittest.TestCase):
@@ -59,7 +59,7 @@ class HybridTests(unittest.TestCase):
         self.assertEqual(options, {"rerank": "none", "candidates": None, "max_per_doc": None, "hybrid": False,
                                    "hybrid_vector_k": None, "hybrid_bm25_k": None, "rrf_k": None,
                                    "rewrite": "off", "rewrite_model": None, "bm25_prefix": None,
-                                   "within_doc": "off", "expand": None, "dedup": False})
+                                   "within_doc": "off", "expand": None, "dedup": False, "min_score": None})
         with patch.object(retrieval, "_bm25_ranking", side_effect=AssertionError("BM25가 호출되면 안 됨")):
             default = self.search(3)
             off = self.search(3, hybrid=False, rewrite="off")
@@ -93,7 +93,7 @@ class HybridTests(unittest.TestCase):
                                        "RETRIEVAL_HYBRID_VECTOR_K", "RETRIEVAL_HYBRID_BM25_K", "RETRIEVAL_RRF_K",
                                        "RETRIEVAL_REWRITE", "RETRIEVAL_REWRITE_MODEL", "RETRIEVAL_MAX_PER_DOC",
                                        "RETRIEVAL_BM25_PREFIX", "RETRIEVAL_WITHIN_DOC",
-                                       "RETRIEVAL_EXPAND", "RETRIEVAL_DEDUP"})
+                                       "RETRIEVAL_EXPAND", "RETRIEVAL_DEDUP", "RETRIEVAL_MIN_SCORE"})
         base = {"RETRIEVAL_RERANK": "lexical", "RETRIEVAL_HYBRID": "on", "RETRIEVAL_REWRITE": "only"}
         with patch.dict(os.environ, base):
             before = retrieval_options()
@@ -101,7 +101,7 @@ class HybridTests(unittest.TestCase):
                    "RETRIEVAL_HYBRID_VECTOR_K": "3", "RETRIEVAL_HYBRID_BM25_K": "4", "RETRIEVAL_RRF_K": "10",
                    "RETRIEVAL_REWRITE": "both", "RETRIEVAL_REWRITE_MODEL": "gpt-5-nano", "RETRIEVAL_MAX_PER_DOC": "3",
                    "RETRIEVAL_BM25_PREFIX": "on", "RETRIEVAL_WITHIN_DOC": "residual", "RETRIEVAL_EXPAND": "5",
-                   "RETRIEVAL_DEDUP": "on"}
+                   "RETRIEVAL_DEDUP": "on", "RETRIEVAL_MIN_SCORE": "0.5"}
         for name in documented:
             with self.subTest(name=name), patch.dict(os.environ, {**base, name: changes[name]}):
                 self.assertNotEqual(retrieval_options(), before)
@@ -143,6 +143,27 @@ class HybridTests(unittest.TestCase):
                         {"hybrid": True, "hybrid_vector_k": 0}, {"rewrite": "always"}, {"max_per_doc": 0}):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 self.search(**options)
+
+    def test_min_score_blocks_off_topic_question(self):
+        """가장 가까운 청크의 코사인(질문 '학' ↔ 본문 '가' ≈ 0.994)이 기준보다 낮으면 두 경로 모두 빈 결과입니다."""
+        for options in ({}, {"hybrid": True}, {"hybrid": True, "rerank": "lexical"}):
+            with self.subTest(**options):
+                self.assertEqual(len(self.search(3, min_score=0.99, **options)), 3)
+                self.assertEqual(self.search(3, min_score=0.999, **options), [])
+        # 필터가 있으면 필터를 통과한 청크 중 가장 가까운 것으로 판단합니다('다' 본문 ≈ 0.919).
+        self.assertEqual(self.docs(self.search(3, {"사업명": "학사정보시스템 고도화"}, min_score=0.9)), ["haksa"])
+        self.assertEqual(self.search(3, {"사업명": "학사정보시스템 고도화"}, min_score=0.95), [])
+
+    def test_min_score_environment_and_off(self):
+        self.assertIsNone(retrieval_options()["min_score"])
+        with patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "0.999"}):
+            self.assertEqual(retrieval_options()["min_score"], 0.999)
+            self.assertEqual(self.search(3), [])
+            self.assertEqual(len(self.search(3, min_score="none")), 3)  # 인자가 환경 변수보다 우선
+        with patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "off"}):
+            self.assertIsNone(retrieval_options()["min_score"])
+        with self.assertRaises(ValueError):
+            retrieval_options(min_score="높게")
 
 
 if __name__ == "__main__":

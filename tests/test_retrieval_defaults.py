@@ -18,7 +18,7 @@ QUESTION = "학사정보시스템 고도화 사업의 요구사항"
 DEFAULTS = {"rerank": "cross-encoder", "candidates": 50, "max_per_doc": 2, "hybrid": True,
             "hybrid_vector_k": 100, "hybrid_bm25_k": 100, "rrf_k": 60, "rewrite": "off", "rewrite_model": None,
             "bm25_prefix": True, "within_doc": "off", "expand": 5,
-            "dedup": False}
+            "dedup": False, "min_score": None}
 BASELINE = {"rerank": "none", "hybrid": False, "max_per_doc": "none"}
 
 

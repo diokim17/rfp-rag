@@ -28,6 +28,9 @@ DEFAULT_BM25_PREFIX = True
 # 재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문 BM25 상위 청크를 더합니다.
 # 기본 5(yjk-0024 새 질문 정답청크 5위 내 0.737→0.947, yjk-0025 eval_v2 0.968→0.984). 0이면 끔.
 DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
+# 범위 밖 질문 차단: 질문과 가장 가까운 청크의 코사인이 이 값보다 낮으면 빈 결과를 돌려줘 생성 API를 부르지 않습니다.
+# None이면 끔. 무관한 질문의 점수를 실측한 뒤 정합니다(experiments/offtopic_threshold_yjk.py).
+DEFAULT_MIN_SCORE = None
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # 시나리오 A는 리랭커를 각자 HF 캐시로 내려받지 않고, 서버의 이 공용 폴더에 받아 둔 모델을 함께 씁니다.
 # .env의 A_RERANK_MODEL에는 이 폴더 아래 모델 폴더 이름만 적습니다 (예: bge-reranker-v2-m3).
@@ -171,9 +174,19 @@ def _expand_count(value):
     return int(raw)
 
 
+def _min_score(value):
+    """None이면 환경 변수 RETRIEVAL_MIN_SCORE, 없으면 기본값. none·off는 끔(None)."""
+    raw = os.getenv("RETRIEVAL_MIN_SCORE") if value is None else value
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return DEFAULT_MIN_SCORE
+    if isinstance(raw, str) and raw.strip().lower() in ("none", "off"):
+        return None
+    return float(raw)
+
+
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
                       hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None,
-                      within_doc=None, expand=None, dedup=None):
+                      within_doc=None, expand=None, dedup=None, min_score=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -228,6 +241,7 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         "expand": _expand_count(expand) if mode != "none" else None,
         "dedup": _flag(dedup, "RETRIEVAL_DEDUP") if dedup is not None or os.getenv("RETRIEVAL_DEDUP", "").strip()
         else False,
+        "min_score": _min_score(min_score),
     }
 
 
@@ -319,7 +333,7 @@ def _rrf(rankings, constant):
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
              rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None,
-             expand=None, dedup=None):
+             expand=None, dedup=None, min_score=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -354,13 +368,16 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     dedup: 켜면(기본 끔, 환경 변수 RETRIEVAL_DEDUP) 최종 결과에서 같은 내용이 자리를 겹쳐 차지하지 않게 합니다.
       본문이 완전히 같은 문서(같은 공고가 다른 파일명으로 두 번 들어온 경우)는 한 문서로 보고 max_per_doc을 함께 세며,
       이미 고른 청크와 본문이 똑같은 청크(문서 사이의 같은 서식 문구 등)는 건너뜁니다. 먼저 나온(순위가 높은) 쪽을 남깁니다.
+    min_score: 범위 밖 질문 차단(기본 끔, 환경 변수 RETRIEVAL_MIN_SCORE). 필터를 통과한 청크 중 질문과의 코사인이
+      가장 높은 값도 이보다 낮으면 RFP와 무관한 질문으로 보고 빈 목록을 돌려줍니다. 그러면 generate_answer가
+      생성 API를 부르지 않고 안내 문구를 답합니다. 질문 임베딩 호출은 그대로 한 번 일어납니다.
     """
     if not question.strip() or top_k < 1:
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
                                 rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix,
-                                within_doc=within_doc, expand=expand, dedup=dedup)
+                                within_doc=within_doc, expand=expand, dedup=dedup, min_score=min_score)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -382,6 +399,10 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     # 문서당 상한·중복 제거가 있으면 건너뛰는 청크만큼 더 아래 순위까지 봐야 합니다.
     scores, ids = index.search(vector, index.ntotal if filters or max_per_doc or options["dedup"]
                                else min(pool, index.ntotal))
+    best = next(float(score) for score, i in zip(scores[0], ids[0]) if int(i) in eligible)
+    if options["min_score"] is not None and best < options["min_score"]:
+        record_retrieval([])
+        return []
     # 리랭킹을 할 때는 후보를 줄이지 않고 재정렬한 뒤에 상한을 적용합니다.
     take = _selector(chunks, options)
     hits = []
@@ -516,6 +537,8 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
         rankings.append([int(i) for i in ids[0] if int(i) in eligible][:vector_k])
         if options["hybrid"]:
             rankings.append(_bm25_ranking(query, chunks, eligible, options["hybrid_bm25_k"], options["bm25_prefix"]))
+    if options["min_score"] is not None and max(cosine[i] for i in eligible) < options["min_score"]:
+        return []
     fused = _rrf(rankings, options["rrf_k"] or 60)
     mode = options["rerank"]
     take = _selector(chunks, options)
