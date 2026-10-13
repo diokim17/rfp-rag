@@ -245,8 +245,9 @@ def _clean_text(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ue000-\uf8ff\U000f0000-\U0010ffff]", "", text)  # 제어문자 + PUA(깨진 기호)
     text = re.sub(r"[·.…ㆍ‥․]{5,}", " ", text)  # 목차 점선
-    text = re.sub(r"[ \t\u3000]+", " ", text)
+    text = re.sub(r"[^\S\n]+", " ", text)  # 줄바꿈 외 공백 전부(전각 공백·NBSP·EN SPACE 포함)
     text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"^- ?이 ?하 ?여 ?백 ?-\n?", "", text, flags=re.M)  # 줄 전체가 '- 이 하 여 백 -'
     text = re.sub(r"\(?이 ?하 ?여 ?백\)?\n?", "", text)  # 서식 끝 표시
     text = re.sub(r"^- ?본 ?페이지 *-\n?", "", text, flags=re.M)  # 빈 페이지 표시
     text = re.sub(r"\[\n+\]", "[ ]", text)  # PDF에서 줄이 갈린 체크박스
@@ -446,6 +447,17 @@ def parse_documents(raw_dir="data/raw", output_dir="data/processed", limit=None)
             })
         except (ValueError, OSError, UnicodeError) as exc:
             errors.append({"filename": filename, "error": str(exc)})
+    # 본문이 똑같은 문서(같은 공고가 다른 파일명·기관명으로 두 번 들어온 경우)는 공고 번호가 있는 쪽 하나만 남깁니다.
+    kept = {}
+    for doc in documents:
+        other = kept.setdefault(doc["text"], doc)
+        if other is not doc:
+            keep, drop = (doc, other) if doc["metadata"].get("공고 번호") and not other["metadata"].get("공고 번호") \
+                else (other, doc)
+            kept[doc["text"]] = keep
+            errors.append({"filename": drop["metadata"]["filename"],
+                           "error": f"본문 중복: {keep['metadata']['filename']}만 남김"})
+    documents = [doc for doc in documents if kept[doc["text"]] is doc]
     write_json(output_dir / "documents.json", documents)
     write_json(output_dir / "parsing_errors.json", errors)
     if not documents:
