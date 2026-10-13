@@ -10,6 +10,8 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+
+from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 from unittest.mock import patch
 
 import run

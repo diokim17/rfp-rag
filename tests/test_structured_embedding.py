@@ -7,6 +7,8 @@ from pathlib import Path
 import random
 import tempfile
 import unittest
+
+from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 from unittest.mock import Mock, patch
 
 import numpy as np
