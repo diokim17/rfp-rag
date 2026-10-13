@@ -1,0 +1,8 @@
+# 시나리오 A(서버 모델 직접 추론) 전용 환경: B 환경 + A 임베딩·생성 모델용 패키지.
+# 서버(GPU, CUDA 12.6) 기준입니다. torch·torchvision·transformers 버전은 requirements-b.txt(experiments/requirements-rerank.txt)를 따릅니다.
+#   python3.12 -m venv .venv-a && .venv-a/bin/python -m pip install -r requirements-a.txt
+-r requirements-b.txt
+# scenario_a_embedding.py: SentenceTransformer로 임베딩 (5.1.1은 transformers 5 미만만 받아 5.7.0 사용)
+sentence-transformers==5.7.0
+# scenario_a_generation.py: from_pretrained(device_map="cuda")에 필요 (transformers 5.1은 1.1.0 이상 요구)
+accelerate==1.10.1

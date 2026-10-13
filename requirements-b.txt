@@ -1,0 +1,5 @@
+# 시나리오 B(OpenAI API) 전용 환경: 공용 패키지 + 기본 리랭커(cross-encoder)용 torch·transformers.
+# 서버(GPU, CUDA 12.6) 기준입니다. 리랭커 없이 쓰려면 requirements.txt만 설치하면 됩니다(리랭킹은 lexical로 대체).
+#   python3.12 -m venv .venv-b && .venv-b/bin/python -m pip install -r requirements-b.txt
+-r requirements.txt
+-r experiments/requirements-rerank.txt
