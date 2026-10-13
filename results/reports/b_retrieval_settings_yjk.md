@@ -15,7 +15,7 @@ B 시나리오 검색은 **하이브리드(벡터 + BM25) + BM25 사업명 접�
 | 필터 | 정확 일치, 일치 값이 없으면 표기 차이(공백·기호, 서울특별시/서울시)를 무시한 유일 값 | 기본 동작 |
 | 문서 안 재선택 | 끔 | `RETRIEVAL_WITHIN_DOC=residual+full` |
 | 질문 재작성 | 끔 (gpt-5-mini로 재작성하면 정답 청크 지표가 떨어지고 질문당 1~2초 늘어남, yjk-0026·0027) | `RETRIEVAL_REWRITE=both`·`only` |
-| 실행 환경 | GPU 필요(L4에서 측정). torch·transformers는 requirements에 없음 | GPU가 없으면 lexical로 대체되고 성능이 크게 떨어짐(아래 표) |
+| 실행 환경 | GPU 권장(L4에서 측정). torch·transformers는 공용 requirements에 없고 `experiments/requirements-rerank.txt`로 설치 | lexical 자동 대체는 리랭킹 방식을 지정하지 않았는데 torch·transformers가 설치되지 않았을 때(A는 `A_RERANK_MODEL`이 비었을 때도)만 경고와 함께 일어나며, 이때 성능이 크게 떨어짐(아래 표). cross-encoder를 직접 지정했거나 패키지는 있는데 모델 로딩·다운로드가 실패하면 대체하지 않고 오류로 멈춤. GPU가 없으면 lexical로 바뀌지 않고 CPU에서 cross-encoder를 실행해 느려짐 |
 
 ## 성능표: eval_v2 본 집계 62문항, k=5, 후보 50 (yjk-0021·yjk-0025, GPU L4)
 
