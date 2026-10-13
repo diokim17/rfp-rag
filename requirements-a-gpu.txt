@@ -4,8 +4,8 @@
 #
 # 설치 (시나리오 A 전용 가상환경을 새로 만드는 경우):
 #   python3 -m venv .venv-a
-#   .venv-a/bin/python -m pip install -r requirements-scenario-a.txt
-#   (하위 패키지까지 완전히 같은 버전이 필요하면 requirements-scenario-a.lock.txt로 설치)
+#   .venv-a/bin/python -m pip install -r requirements-a-gpu.txt
+#   (하위 패키지까지 완전히 같은 버전이 필요하면 requirements-a-gpu.lock.txt로 설치)
 #
 # 버전을 이렇게 고정한 이유:
 # - transformers==5.1.0: EXAONE은 모델 폴더의 전용 코드로 동작하는데, 이 코드가 5.0~5.1에서만 맞습니다.

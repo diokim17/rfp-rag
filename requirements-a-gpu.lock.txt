@@ -1,9 +1,9 @@
 # 시나리오 A 환경 잠금 파일: 실제로 A가 돌아가는 박단비 가상환경(.venv)의 모든 패키지 버전을 그대로 뽑았습니다.
-# requirements-scenario-a.txt와 같은 환경이고, 이 파일로 설치하면 하위 패키지까지 완전히 같은 버전이 됩니다.
+# requirements-a-gpu.txt와 같은 환경이고, 이 파일로 설치하면 하위 패키지까지 완전히 같은 버전이 됩니다.
 # (Python 3.12.3 / Linux x86_64 / GCP L4, 2026-10-13)
 #
 #   python3 -m venv .venv-a
-#   .venv-a/bin/python -m pip install -r requirements-scenario-a.lock.txt
+#   .venv-a/bin/python -m pip install -r requirements-a-gpu.lock.txt
 
 --extra-index-url https://download.pytorch.org/whl/cu126
 accelerate==1.15.0
