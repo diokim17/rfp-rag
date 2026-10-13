@@ -1,0 +1,7 @@
+# cross-encoder 리랭킹(retrieval.py 기본값, BAAI/bge-reranker-v2-m3)에 필요한 선택 패키지입니다.
+# 공용 requirements.txt와 서버 lock은 바꾸지 않고, GPU를 쓰는 사람의 .venv에만 설치합니다.
+# 버전은 A 임베딩(experiments/requirements-a-embedding.txt)과 같게 맞췄습니다. 같은 .venv에 함께 설치해도 충돌하지 않습니다.
+# retrieval.py는 from_pretrained(dtype=...)를 쓰므로 transformers 4.56 이상이 필요합니다.
+#   .venv/bin/python -m pip install -r experiments/requirements-rerank.txt
+torch==2.8.0
+transformers==4.57.1

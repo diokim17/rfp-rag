@@ -305,7 +305,8 @@ class IndexContractTests(unittest.TestCase):
                     hits = retrieve("예산", client, index, chunks, loaded, 1)
                     self.assertEqual(hits[0]["doc_id"], "a")
                     self.assertIsInstance(hits[0]["score"], float)
-                    filtered = retrieve("예산", client, index, chunks, loaded, 1, {"발주 기관": "나"})
+                    filtered = retrieve("예산", client, index, chunks, loaded, 1, {"발주 기관": "나"},
+                                        min_score="none")  # 가짜 임베딩은 코사인이 0이라 범위 밖 차단을 끕니다
                     self.assertEqual(filtered[0]["doc_id"], "b")
                     self.assertEqual(retrieve("예산", client, index, chunks, loaded, filters={"발주 기관": "없음"}), [])
                     answer = generate_answer("예산", hits, client)

@@ -95,11 +95,11 @@ def relative(path):
 
 def plan_rewrite(cases, model, cache_path):
     """API를 부르지 않고 재작성 호출 수와 토큰 한도를 계산합니다."""
-    from query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, RewriteCache, estimate_input_tokens
+    from query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, RewriteCache, cache_key, estimate_input_tokens
 
     cache = RewriteCache.open(cache_path)
     questions = sorted({case["question"] for case in cases})
-    todo = [q for q in questions if hashlib.sha256(f"{model}\n{q}".encode()).hexdigest() not in cache.items]
+    todo = [q for q in questions if cache_key(q, model) not in cache.items]
     estimates = [estimate_input_tokens(q) for q in todo]
     callable_ = [e for e in estimates if e <= MAX_INPUT_TOKENS]
     return {"model": model, "unique_questions": len(questions), "cached": len(questions) - len(todo),

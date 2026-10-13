@@ -187,7 +187,8 @@ class LocalEmbeddingTests(unittest.TestCase):
                 "sources": [{"citation": i, **hit} for i, hit in enumerate(h, 1)]})
             def answer(question, filters):
                 hits = retrieve(question, client, index, chunks, loaded, 5, filters,
-                                rerank="none", hybrid=False, rewrite="off", within_doc="off", max_per_doc="none")
+                                rerank="none", hybrid=False, rewrite="off", within_doc="off", max_per_doc="none",
+                                min_score="none")  # 가짜 임베딩은 코사인이 낮아 범위 밖 차단을 끕니다
                 return generate_answer(question, hits, client, "gen")
             result = evaluate([{"question": "q", "expected_doc_ids": ["d"]}], answer)
             self.assertEqual(result["summary"]["recall_at_k"], 1)

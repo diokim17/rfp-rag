@@ -203,7 +203,7 @@ class TableMetadataTests(unittest.TestCase):
             self.assertEqual(config, saved)
             inputs = [text for call in client.embeddings.create.call_args_list for text in call.kwargs["input"]]
             self.assertEqual(inputs, [c["text"] for c in chunks])
-            hits = retrieve("예산", client, index, chunks, config)
+            hits = retrieve("예산", client, index, chunks, config, min_score="none")  # 가짜 임베딩은 코사인이 0이라 범위 밖 차단을 끕니다
             answer = generate_answer("예산", hits, client)
             for source in answer["sources"]:
                 self.assertEqual(source["metadata"]["tables"][0]["table_id"], "T1")
