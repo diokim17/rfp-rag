@@ -72,6 +72,12 @@ class CleanTextTest(unittest.TestCase):
         self.assertEqual(_clean_text(raw),
                          "합계 | 77 |\n다음\n현상태사용[ ]\n☑적용) 보고서\n• GPA 분석\n• 주소 | FAX 02-6312")
 
+    def test_end_marker_with_dashes_removed(self):
+        self.assertEqual(_clean_text("합 계 | 55 |\n- 이 하 여 백 -\n3.2.2 요구사항"), "합 계 | 55 |\n3.2.2 요구사항")
+
+    def test_nbsp_and_en_space_collapsed(self):
+        self.assertEqual(_clean_text("시행령」\xa0 제12조\u2002및\u3000동법"), "시행령」 제12조 및 동법")
+
     def test_blank_page_marker_removed(self):
         self.assertEqual(_clean_text("시스템 현황\n- 본 페이지  -\nⅢ 사업추진 계획"), "시스템 현황\nⅢ 사업추진 계획")
 
@@ -207,6 +213,35 @@ class DropTocTest(unittest.TestCase):
                "Ⅱ. 추진방안 4 1. 추진목표 4 2. 추진체계 5 3. 추진일정 6 4. 협상내용과 범위 7\n")  # 한 문단 목차
         body = "본문 " * 200 + "\n1. 웹서버 2\n2. DB서버 2\n3. 백업서버 1\n"
         self.assertEqual(_drop_toc("제안요청서\n" + toc + body), "제안요청서\n" + body)
+
+
+
+class ParseDocumentsTest(unittest.TestCase):
+    def test_duplicate_body_keeps_document_with_notice_number(self):
+        import csv
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        import parsing
+
+        rows = [("가_사업.hwp", ""), ("나_사업.hwp", "20240001"), ("다_사업.hwp", "")]
+        texts = {"가_사업.hwp": "같은 본문", "나_사업.hwp": "같은 본문", "다_사업.hwp": "다른 본문"}
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            (raw / "files").mkdir(parents=True)
+            for name, _ in rows:
+                (raw / "files" / name).write_bytes(b"")
+            with (raw / "data_list.csv").open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow(["파일명", "공고 번호"])
+                writer.writerows(rows)
+            with patch.object(parsing, "extract_text", side_effect=lambda path: texts[path.name]):
+                documents = parsing.parse_documents(raw, Path(tmp) / "out")
+            errors = json.loads((Path(tmp) / "out" / "parsing_errors.json").read_text(encoding="utf-8"))
+        self.assertEqual([d["metadata"]["filename"] for d in documents], ["나_사업.hwp", "다_사업.hwp"])
+        self.assertEqual(errors, [{"filename": "가_사업.hwp", "error": "본문 중복: 나_사업.hwp만 남김"}])
 
 
 if __name__ == "__main__":
