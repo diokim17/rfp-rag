@@ -1,5 +1,6 @@
 """질문 재작성의 캐시·폴백·한도와 retrieve 연결을 외부 API 없이 검증합니다."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -55,6 +56,16 @@ class RewriteTests(unittest.TestCase):
         self.assertEqual(len(client.requests), 1)
         rewrite_question("가 사업 예산은?", client, "gpt-5-nano", self.cache)  # 모델이 다르면 별도 항목
         self.assertEqual(len(client.requests), 2)
+
+    def test_cache_key_is_compatible_and_tied_to_prompt(self):
+        # 예전 캐시 파일과 같은 키 형식(프롬프트 버전·모델·질문)이어야 기존 재작성 결과를 다시 씁니다.
+        self.assertEqual(query_rewrite.cache_key("질문", "gpt-5-mini"),
+                         hashlib.sha256("1\ngpt-5-mini\n질문".encode()).hexdigest())
+        # 지시문을 바꾸면 PROMPT_VERSION을 올리고 새 지시문의 해시를 여기에 추가하세요.
+        prompts = {1: "e127e624a5cac1bca66fb9295c201b9d8b2becf0999dc7733456fe7e4214664e"}
+        self.assertEqual(hashlib.sha256(query_rewrite.INSTRUCTIONS.encode()).hexdigest(),
+                         prompts[query_rewrite.PROMPT_VERSION],
+                         "재작성 지시문이 바뀌었으면 PROMPT_VERSION을 올리세요 (옛 캐시 결과를 재사용하지 않도록)")
 
     def test_cache_file_has_no_api_key(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-secret-value"}):
