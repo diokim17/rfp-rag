@@ -36,6 +36,8 @@ _SMALL = {"십": 10, "백": 100, "천": 1000}
 _BIG = {"만": 10**4, "억": 10**8, "조": 10**12}
 _NUM_TOKEN = re.compile(r"\d[\d,]*(?:\.\d+)?|[일이삼사오육칠팔구]|[십백천]|[만억조]")
 _NUM_SPAN = re.compile(r"[\d일이삼사오육칠팔구십백천만억조](?:[\d,.\s일이삼사오육칠팔구십백천만억조]*[\d일이삼사오육칠팔구십백천만억조])?")
+_ARTICLE = re.compile(r"제\s*\d+\s*조(?:\s*의\s*\d+)?")  # 법령 조항 번호. '조'가 금액 단위(兆)로 읽히지 않게 제거
+_SENTENCE_BREAK = re.compile(r"(?<=[다요음함됨임][.!?。])\s+|\n+")  # 한국어 문장 끝. '2024. 12. 31.'은 나누지 않음
 _DATE = re.compile(r"(\d{4}|\d{2})\s*[.년/\-]\s*(\d{1,2})\s*[.월/\-]\s*(\d{1,2})\s*일?")
 _DURATION = re.compile(r"(\d+)\s*(개월|일)")
 
@@ -60,7 +62,7 @@ def _span_value(span):
 def amounts(text):
     """텍스트의 금액(원) 집합. '원'이 뒤따르거나 억·조가 있거나 쉼표 자릿수가 있는 구간만 금액으로 봅니다.
     한글 수사만 있는 구간은 '원'이 바로 뒤따를 때만 인정('계약일', '조사' 등 일반 단어 방지)."""
-    text = unicodedata.normalize("NFKC", text)
+    text = _ARTICLE.sub(" ", unicodedata.normalize("NFKC", text))
     found = set()
     for match in _NUM_SPAN.finditer(text):
         span = match.group(0).strip()
@@ -118,17 +120,56 @@ def citations(answer):
     return found
 
 
+# 답 없는 문항에서 거절 뒤에 덧붙인 값의 허용 범위: 질문한 사업(expected_doc_ids)의 검색 근거에 있는 값만 허용.
+# 합성 답변 51개 비교에서 불허 0.941 · 전부 허용 0.686 · 검색 근거 전체 허용 0.843 · 관련 문서 근거만 허용 1.000.
+ALLOW_GROUNDED_VALUES = True
+
+
+def _first_sentence(answer):
+    # 인용 표시('입니다 [1].')가 문장 끝을 가리지 않도록 먼저 지운 뒤 문장을 나눕니다.
+    text = re.sub(r"\s*[\[【][^\]】]*[\]】]", "", unicodedata.normalize("NFKC", answer)).strip()
+    for sentence in _SENTENCE_BREAK.split(text):
+        if sentence.strip():
+            return sentence.strip()
+    return ""
+
+
 def is_refusal(answer, status=None):
-    """근거 없음 문구가 있는가. 검색 결과가 없어 고정 안내(NO_HITS_ANSWER)를 반환한 no_hits 상태는 항상 거절로 봅니다."""
-    return status == "no_hits" or bool(_REFUSAL.search(unicodedata.normalize("NFC", answer)))
-
-
-def is_clean_refusal(answer, status=None):
-    """답 없는 질문의 정답 기준: 거절 문구가 있고, 금액·기간·날짜 같은 구체적인 값을 지어내지 않음.
-    '예산은 3억 원이며 기간은 확인되지 않습니다'처럼 일부만 거절한 답은 환각으로 봅니다."""
+    """질문 자체를 거절한 답인가. no_hits는 항상 거절입니다.
+    첫 문장에 거절 문구가 있고 그 문장에 구체적인 값이 없을 때만 거절로 봅니다.
+    - 정상 답변 끝의 단서 문장('단, 세부 일정은 문서에서 확인되지 않습니다.')은 거절이 아님
+    - '예산은 1억 원이며 기간은 확인되지 않습니다'처럼 값을 답하면서 일부만 모른다고 한 답도 거절이 아님"""
     if status == "no_hits":
         return True
-    return is_refusal(answer) and not amounts(answer) and not periods(answer)
+    first = _first_sentence(answer)
+    return bool(_REFUSAL.search(first)) and not amounts(first) and not periods(first)
+
+
+def _grounded(values, sources):
+    """답변의 금액·기간·날짜가 모두 검색 근거(청크 본문·metadata)에 있는가."""
+    evidence = "\n".join(f"{s.get('text', '')}\n" + "\n".join(str(v) for v in (s.get("metadata") or {}).values())
+                         for s in sources or [])
+    found = amounts(evidence) | periods(evidence)
+    return bool(evidence) and values <= found
+
+
+def is_clean_refusal(answer, status=None, sources=None, allow_grounded_values=None, related_doc_ids=None):
+    """답 없는 질문의 정답 기준: 질문을 거절했고, 근거 없는 값을 지어내지 않음.
+    거절 뒤에 값을 덧붙였다면 그 값이 모두 '질문한 사업의 문서'(related_doc_ids) 검색 근거에 있을 때만 정답.
+    - 실제 사업의 RFP에 없는 정보를 물었을 때 '참고로 이 사업의 예산은 130,000,000원입니다 [1]' → 정답
+    - 검색된 다른 사업의 값을 덧붙임 → 오답(서로 다른 사업 정보 혼합) / 근거에 없는 값 → 환각
+    related_doc_ids가 None이면 검색 근거 전체를, 빈 목록이면 어떤 값도 허용하지 않습니다."""
+    if status == "no_hits":
+        return True
+    if not is_refusal(answer):
+        return False
+    values = amounts(answer) | periods(answer)
+    if not values:
+        return True
+    allow = ALLOW_GROUNDED_VALUES if allow_grounded_values is None else allow_grounded_values
+    if related_doc_ids is not None:
+        sources = [s for s in sources or [] if s.get("doc_id") in set(related_doc_ids)]
+    return allow and _grounded(values, sources)
 
 
 def _compact(text):
@@ -191,7 +232,9 @@ def _grade_content(case, result, judge):
         return None, None
     if grading == "refusal":
         asserted = forbidden and _values_present(answer, forbidden)
-        return float(is_clean_refusal(answer, result.get("status")) and not asserted), None
+        clean = is_clean_refusal(answer, result.get("status"), result.get("sources"),
+                                 related_doc_ids=case.get("expected_doc_ids") or [])
+        return float(clean and not asserted), None
     verdict = None
     if grading == "numeric":
         score = float(_values_present(answer, case["expected_values"]))
@@ -337,8 +380,8 @@ def evaluate(cases, answer_fn, *, judge=None):
             "mrr": _mrr(expected, result["sources"]) if answerable else None,
             "answer_chunk_hit": _answer_chunk_hit(case, result["sources"]) if answerable else None,
             "gold_cited": _gold_cited(case, result) if answerable else None,
-            # 값 없이 거절만 한 답. '예산은 1억 원이며 기간은 확인되지 않습니다'처럼 일부만 모른다고 한 답은 거절로 보지 않음
-            "refused": is_clean_refusal(result["answer"], result.get("status")),
+            # 질문 자체를 거절한 답(첫 문장 기준). 끝의 단서 문장이나 값을 답하면서 일부만 모른다고 한 답은 거절이 아님
+            "refused": is_refusal(result["answer"], result.get("status")),
             "answer_score": score, "answer_content_score": content_score, "judge_verdict": verdict,
             "case_token_usage": usage, "judge_token_usage": judge_usage,
         })

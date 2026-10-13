@@ -250,6 +250,40 @@ class PullRequestReviewTests(unittest.TestCase):
                 self.assertEqual(r["summary"]["refusal_accuracy"], 1.)
 
 
+class RefusalRuleTests(unittest.TestCase):
+    """법령 조항 번호, 끝의 단서 문장, 답 없는 문항에서 덧붙인 실제 값의 판정."""
+
+    def test_article_numbers_are_not_amounts(self):
+        self.assertEqual(amounts("소프트웨어 진흥법 제50조, 시행령 제47조 제1항"), set())
+        self.assertEqual(amounts("제12조의2에 따라 사업비는 1억 원"), {100_000_000})
+        self.assertEqual(amounts("5조 원 규모"), {5_000_000_000_000})  # '제'가 없는 실제 금액은 유지
+
+    def test_trailing_caveat_is_not_a_refusal(self):
+        for answer in ("사업 범위는 학사 시스템 고도화입니다 [1]. 단, 세부 일정은 문서에서 확인되지 않습니다.",
+                       "사업 범위는 학사 시스템 고도화입니다[1][2]. 다만 세부 일정은 확인되지 않습니다.",
+                       "기간은 2024. 12. 31.까지이며 그 밖의 내용은 확인되지 않습니다."):
+            with self.subTest(answer=answer):
+                self.assertFalse(is_refusal(answer))
+        self.assertTrue(is_refusal("해당 내용은 문서에서 확인되지 않습니다. 다만 유사 사업이 있습니다 [1]."))
+        result = evaluate([{"question": "q", "expected_doc_ids": ["d"], "expected_keywords": ["고도화"]}],
+                          lambda q, f: answer_with("사업 범위는 고도화입니다 [1]. 단, 세부 일정은 확인되지 않습니다.", "d"))
+        self.assertEqual(result["summary"]["false_refusal_rate"], 0.)
+
+    def test_unanswerable_allows_only_related_document_values(self):
+        sources = [source(1, "d", "사업예산: 130,000,000원(VAT 포함)"), source(2, "x", "사업예산: 200,000,000원")]
+        reply = lambda text: {"question": "q", "answer": text, "sources": sources, "model": "fake", "status": "ok"}
+        related = {"question": "낙찰 업체는?", "answerable": False, "expected_doc_ids": ["d"]}
+        unrelated = {"question": "없는 사업 예산은?", "answerable": False}
+        cases = [(related, "낙찰 업체는 확인되지 않습니다. 참고로 이 사업의 예산은 130,000,000원입니다 [1].", 1.),
+                 (related, "낙찰 업체는 확인되지 않습니다. 참고로 사업 예산은 200,000,000원입니다 [2].", 0.),  # 다른 사업 값
+                 (related, "낙찰 업체는 확인되지 않습니다. 참고로 사업 예산은 777,000,000원입니다 [1].", 0.),  # 근거에 없는 값
+                 (unrelated, "해당 사업은 확인되지 않습니다. 참고로 사업 예산은 200,000,000원입니다 [2].", 0.),
+                 (unrelated, "해당 사업은 문서에서 확인되지 않습니다.", 1.)]
+        for case, text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(evaluate([case], lambda q, f: reply(text))["summary"]["refusal_accuracy"], expected)
+
+
 class AggregationTests(unittest.TestCase):
     def test_dedup_ci_status_latency_and_breakdown(self):
         cases = [{"id": f"c{i}", "question": f"q{i}", "expected_doc_ids": ["a" if i < 3 else "b"], "grading": "keyword",
