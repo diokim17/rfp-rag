@@ -88,7 +88,8 @@ def _cross_encoder_scores(question, passages, model_name):
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
     except ImportError as exc:
-        raise RuntimeError("cross-encoder 리랭킹에는 개인 가상환경에 torch, transformers 설치가 필요합니다.") from exc
+        raise RuntimeError("cross-encoder 리랭킹에는 개인 가상환경에 torch, transformers 설치가 필요합니다 "
+                           "(pip install -r experiments/requirements-rerank.txt).") from exc
     if model_name not in _cross_encoders:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = AutoModelForSequenceClassification.from_pretrained(

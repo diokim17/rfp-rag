@@ -15,7 +15,7 @@ EXPECTED_DOCS=0e93af3a97c4f261ea7304aa8db76b7638ed02eadf021eb6babc279ef7a5842c
 export PYTHONUTF8=1 LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
 
 "$PY" -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 'CUDA 없음: GPU 서버에서 실행하세요')"
-"$PY" -c "import transformers" 2>/dev/null || "$PY" -m pip install transformers
+"$PY" -c "import transformers" 2>/dev/null || "$PY" -m pip install -r experiments/requirements-rerank.txt
 EVAL=${EVAL:-data/eval_v2.json}
 [ -f "$EVAL" ] || { echo "평가셋 $EVAL 이 없습니다."; exit 1; }
 [ -f data/raw/data_list.csv ] || { echo "data/raw/data_list.csv와 data/raw/files/가 필요합니다."; exit 1; }
