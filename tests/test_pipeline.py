@@ -4,6 +4,8 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 
+from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
+
 from embedding import build_index, chunk_documents, load_index
 from evaluation import evaluate
 from generation import generate_answer

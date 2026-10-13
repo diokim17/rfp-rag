@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+
+from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 from unittest.mock import Mock, patch
 
 from embedding import build_index, chunk_documents, load_index
