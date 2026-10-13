@@ -1,7 +1,7 @@
 """김연주: 검색용 질문 재작성 (선택 기능, retrieve(rewrite=...)로 켤 때만 사용).
 
 질문에 사업 유형·발주 기관·핵심 검색어를 보강해 한 줄로 다시 씁니다.
-- 결과는 파일 캐시(질문·모델·프롬프트 버전의 해시 → 재작성문)에 저장해 같은 질문은 다시 호출하지 않습니다.
+- 결과는 파일 캐시(모델·질문의 해시 → 재작성문)에 저장해 같은 질문은 다시 호출하지 않습니다.
 - 호출 실패, 빈 응답, 입력 한도 초과면 원문을 그대로 돌려줍니다(폴백). 실패는 캐시에 저장하지 않습니다.
 - API 키는 OpenAI 클라이언트가 환경 변수(OPENAI_API_KEY)에서 읽으며 이 파일과 캐시에는 남기지 않습니다.
 - 한도: 질문당 입력 약 250토큰(추정치로 사전 차단), 출력은 추론 포함 최대 500토큰(max_output_tokens).
@@ -15,7 +15,6 @@ from pathlib import Path
 
 from observability import model_call
 
-PROMPT_VERSION = 1
 MAX_INPUT_TOKENS = 250
 MAX_OUTPUT_TOKENS = 500
 # 영어 지시문이 한국어보다 토큰이 적어 입력 한도를 지키기 쉽습니다. 출력은 한국어 한 줄입니다.
@@ -29,10 +28,6 @@ def estimate_input_tokens(question):
     text = INSTRUCTIONS + "\n" + question
     wide = len(re.findall(r"[ㄱ-ㆎ가-힣一-鿿]", text))
     return wide + math.ceil((len(text) - wide) / 3) + 10
-
-
-def cache_key(question, model):
-    return hashlib.sha256(f"{PROMPT_VERSION}\n{model}\n{question}".encode()).hexdigest()
 
 
 class RewriteCache:
@@ -61,7 +56,7 @@ class RewriteCache:
 def rewrite_question(question, client, model="gpt-5-mini", cache_path=None):
     """반환: (검색에 쓸 질문, 정보). 정보의 status는 cache·api·fallback-error·fallback-empty·fallback-over-limit·fallback-repeat."""
     cache = RewriteCache.open(cache_path)
-    key = cache_key(question, model)
+    key = hashlib.sha256(f"{model}\n{question}".encode()).hexdigest()
     if key in cache.items:
         return cache.items[key]["rewrite"], {"status": "cache"}
     if key in cache.failed:

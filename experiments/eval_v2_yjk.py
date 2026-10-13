@@ -60,6 +60,8 @@ SETTINGS.update({f"{name}{suffix}": {**options, "rewrite": mode} for name, optio
                  [("default", {}), ("prefix-hybrid-ce-c50-cap2+x5", SETTINGS["prefix-hybrid-ce-c50-cap2+x5"]),
                   ("prefix-hybrid-lex-c50-cap2+x5", SETTINGS["prefix-hybrid-lex-c50-cap2+x5"])]
                  for suffix, mode in (("+rw", "both"), ("+rwo", "only"))})
+# '+dd'는 중복 처리(retrieve의 dedup): 본문이 같은 문서는 한 문서로 상한을 세고, 같은 본문 청크는 한 번만
+SETTINGS["default+dd"] = {"dedup": True}
 
 
 def nfc(value):
@@ -179,7 +181,9 @@ def main():
             hits = retrieval.retrieve(case["question"], client, index, chunks, config, args.top_k, filters,
                                       rewrite_cache=args.rewrite_cache, **SETTINGS[name])
             times.append((time.perf_counter() - start) * 1000)
-            rows.append({"id": case["id"], **score_case(case, hits), "hits": [hit["chunk_id"] for hit in hits]})
+            # dup_texts: 상위 결과 중 앞 순위와 본문이 똑같아 자리만 차지한 청크 수(중복 문서·같은 서식 문구)
+            rows.append({"id": case["id"], **score_case(case, hits), "hits": [hit["chunk_id"] for hit in hits],
+                         "dup_texts": len(hits) - len({hit["text"] for hit in hits})})
         ordered = sorted(times)
         results.append((name, {"options": {**retrieval.retrieval_options(**SETTINGS[name]),
                                            "fuzzy_filter": name.endswith("+fuzzy"),
@@ -208,6 +212,13 @@ def main():
     lines = report_lines(meta, cases, results)
     lines[0] = "# eval_v2 검색 지표: 하이브리드·리랭킹·BM25 메타 접두·필터 정규화"
     lines = [line.replace("상위 50개 안에서만", f"상위 {args.top_k}개 안에서만") for line in lines]
+    # 정답 지표에는 안 드러나는 '같은 내용이 자리를 겹쳐 차지했는지'를 따로 봅니다(dedup 비교용).
+    lines += ["", f"## 상위 {args.top_k}개 안 중복 본문", "",
+              "| 설정 | 중복 본문 자리 합계 | 중복이 있는 질문 수 | 평균 반환 수 |", "| --- | ---: | ---: | ---: |"]
+    for name, result in results:
+        rows = result["rows"]
+        lines.append(f"| {name} | {sum(row['dup_texts'] for row in rows)} | {sum(row['dup_texts'] > 0 for row in rows)} | "
+                     f"{statistics.fmean(row['returned'] for row in rows):.2f} |")
     report_path = Path(args.reports_dir) / f"eval_v2_yjk_{experiment_id}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(lines), encoding="utf-8")
