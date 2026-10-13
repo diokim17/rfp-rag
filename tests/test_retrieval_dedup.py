@@ -55,6 +55,15 @@ class DedupTests(unittest.TestCase):
         texts = [text for _, text in self.search(max_per_doc="none", dedup=True)]
         self.assertEqual(sorted(texts), sorted(PIECES.values()))
 
+    def test_within_doc_reselect_keeps_dedup(self):
+        # 문서 안 재선택은 자리마다 청크를 다시 고르므로, 다른 문서와 같은 본문(other의 뒤 조각)을 다시 고르면 안 됩니다.
+        for mode in ("residual", "residual+full"):
+            with self.subTest(within_doc=mode):
+                hits = self.search(max_per_doc=2, dedup=True, within_doc=mode)
+                texts = [text for _, text in hits]
+                self.assertEqual(len(texts), len(set(texts)))
+                self.assertEqual(sum(doc_id in ("orig", "copy") for doc_id, _ in hits), 2)
+
     def test_option_default_off_and_env(self):
         with patch.dict(os.environ, {"RETRIEVAL_DEDUP": ""}):
             self.assertFalse(retrieval_options()["dedup"])

@@ -427,7 +427,7 @@ def _finish(question, hits, client, index, chunks, config, eligible, options):
     """두 검색 경로의 공통 마무리: 문서 안 재선택(켰을 때)과 결과 기록."""
     if options["within_doc"] != "off" and hits:
         hits = observed("within-doc")(_reselect_within_docs)(question, hits, client, index, chunks, config,
-                                                             eligible, options["within_doc"])
+                                                             eligible, options["within_doc"], options["dedup"])
     record_retrieval(hits)
     return hits
 
@@ -480,12 +480,13 @@ def _expand_candidates(question, hits, chunks, eligible, count, score_of):
     return hits + extra
 
 
-def _reselect_within_docs(question, hits, client, index, chunks, config, eligible, mode):
+def _reselect_within_docs(question, hits, client, index, chunks, config, eligible, mode, dedup=False):
     """같은 문서 안에서 청크 다시 고르기 (eval_v2 yjk-0013).
 
     문서별로 남은 질문의 BM25(문서 안, 접두 없음)와 벡터 코사인 순위를 RRF(60)로 합치고, residual+full이면
     원래 질문의 두 순위도 더합니다. 문서가 차지한 자리마다 그 순서대로 청크를 넣으며 within_doc_rank(1부터)를 붙입니다.
     같은 청크가 다시 뽑히면 원래 Hit(rerank_score·rrf_score 포함)을 그대로 쓰고, 새 청크는 score(질문과의 코사인)만 가집니다.
+    dedup이면 이미 고른 청크와 본문이 같은 청크는 건너뜁니다. 그 문서에 남은 청크가 모두 겹치면 그 자리는 비웁니다.
     """
     members = _members(chunks)
     residuals = {}
@@ -496,7 +497,7 @@ def _reselect_within_docs(question, hits, client, index, chunks, config, eligibl
     if vectors[question].shape[0] != index.d:
         raise ValueError("질문 임베딩 차원이 인덱스와 다릅니다.")
     original = {hit["chunk_id"]: hit for hit in hits}
-    queues, reselected = {}, []
+    queues, reselected, taken = {}, [], set()
     for hit in hits:
         doc_id = hit["doc_id"]
         if doc_id not in queues:
@@ -512,8 +513,12 @@ def _reselect_within_docs(question, hits, client, index, chunks, config, eligibl
             scores = dict(zip(ids, cosine.tolist()))
             queues[doc_id] = iter([(rank, number, scores[number])
                                    for rank, (number, _) in enumerate(_rrf(rankings, 60), 1)])
-        rank, number, score = next(queues[doc_id])
+        picked = next((item for item in queues[doc_id] if not dedup or chunks[item[1]]["text"] not in taken), None)
+        if picked is None:
+            continue
+        rank, number, score = picked
         chunk = chunks[number]
+        taken.add(chunk["text"])
         base = original.get(chunk["chunk_id"]) or {**chunk, "score": float(score)}
         reselected.append({**base, "within_doc_rank": rank})
     return reselected
