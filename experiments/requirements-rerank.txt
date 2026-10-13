@@ -1,6 +1,6 @@
 # cross-encoder 리랭킹(retrieval.py 기본값, BAAI/bge-reranker-v2-m3)에 필요한 선택 패키지입니다.
 # 공용 requirements.txt와 서버 lock은 바꾸지 않고, GPU를 쓰는 사람의 .venv에만 설치합니다.
-# 버전은 A 생성(EXAONE)을 돌리는 환경(단비님)과 같게 맞췄습니다. torch는 서버(L4)에서 측정한 CUDA 12.6 빌드이며,
+# 버전은 시나리오 A 환경(setup_scenario_a.txt)과 같게 맞췄습니다. A 버전을 바꾸면 여기도 함께 바꿉니다. torch는 서버(L4)에서 측정한 CUDA 12.6 빌드이며,
 # +cu126 빌드는 PyTorch 저장소에만 있어 아래 주소가 필요합니다.
 # transformers 5.x는 torchvision이 없으면 테스트가 깨져서 torchvision을 함께 고정합니다.
 #   .venv/bin/python -m pip install -r experiments/requirements-rerank.txt

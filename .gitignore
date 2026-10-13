@@ -36,6 +36,6 @@ __pycache__/
 .DS_Store
 .experiment-state/
 
-# 시나리오별 가상환경 (requirements-a.txt·requirements-b.txt)
+# 시나리오별 가상환경 (A: setup_scenario_a.txt, B: requirements-b.txt)
 .venv-a/
 .venv-b/
