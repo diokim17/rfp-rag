@@ -62,6 +62,8 @@ SETTINGS.update({f"{name}{suffix}": {**options, "rewrite": mode} for name, optio
                  for suffix, mode in (("+rw", "both"), ("+rwo", "only"))})
 # '+dd'는 중복 처리(retrieve의 dedup): 본문이 같은 문서는 한 문서로 상한을 세고, 같은 본문 청크는 한 번만
 SETTINGS["default+dd"] = {"dedup": True}
+# '+sec'는 재정렬 입력에 절 제목 추가(retrieve의 rerank_section)
+SETTINGS["default+sec"] = {"rerank_section": True}
 
 
 def nfc(value):

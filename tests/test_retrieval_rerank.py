@@ -139,6 +139,36 @@ class RerankTests(unittest.TestCase):
             with patch.object(retrieval, "_cross_encoder_scores", bad), self.assertRaises(ValueError):
                 self.search(4, rerank="cross-encoder")
 
+    def test_rerank_section_adds_section_title_to_rerank_input_only(self):
+        # 같은 문서 안에서 절 제목으로만 구분되는 상황: 절 제목에 '발표'가 든 청크만 점수를 받습니다.
+        chunks = [{**chunk, "metadata": {**chunk["metadata"], "section_path": section}}
+                  for chunk, section in zip(self.chunks, ["Ⅰ 개요", "Ⅳ 제안 > 3 발표", "", "Ⅱ 일정"])]
+        seen = []
+
+        def scorer(question, passages, model_name):
+            seen.append(passages)
+            return [3. if "발표" in passage else 0. for passage in passages]
+
+        search = lambda **options: retrieve(self.QUESTION, self.client, self.index, chunks, self.config, 4,
+                                            rerank="cross-encoder", **options)
+        with patch.object(retrieval, "_cross_encoder_scores", scorer):
+            off = search()
+            on = search(rerank_section=True)
+            with patch.dict(os.environ, {"RETRIEVAL_RERANK_SECTION": "on"}):
+                self.assertEqual(search(), on)
+                self.assertEqual(search(rerank_section=False), off)  # 인자가 환경 변수보다 우선
+        self.assertFalse(any("발표" in passage for passage in seen[0]))  # 기본은 절 제목을 넣지 않음
+        self.assertEqual(on[0]["chunk_id"], chunks[1]["chunk_id"])
+        self.assertIn(f"학사정보시스템 고도화 나\nⅣ 제안 > 3 발표\n{chunks[1]['text']}", seen[1])
+        # 절 제목이 빈 청크는 기존 입력과 같습니다.
+        self.assertEqual(sum(passage.count("\n") == 1 for passage in seen[1]), 1)
+        # 반환 청크(본문 포함)와 score는 바뀌지 않고 순서만 달라집니다.
+        strip = lambda hits: {hit["chunk_id"]: {k: v for k, v in hit.items() if k != "rerank_score"} for hit in hits}
+        self.assertEqual(strip(on), strip(off))
+        with self.assertRaises(ValueError):
+            search(rerank_section="maybe")
+        self.assertIsNone(retrieval.retrieval_options(rerank="none", rerank_section=True)["rerank_section"])
+
     def test_cross_encoder_without_optional_packages_fails_clearly(self):
         with patch.dict(sys.modules, {"torch": None, "transformers": None}):
             with self.assertRaisesRegex(RuntimeError, "torch"):
