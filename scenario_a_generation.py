@@ -11,6 +11,19 @@ from generation import INSTRUCTIONS, NO_HITS_ANSWER, _finish, _prompt, _result
 
 MAX_NEW_TOKENS = 1024  # 답변 최대 길이(토큰)
 
+# B 지시문에 덧붙이는 A(EXAONE) 전용 규칙. eval_v4 기준선에서 A만 틀린 유형을 겨냥합니다.
+A_RULES = (
+    "\n- 없는 정보: 낙찰 금액·낙찰 업체·계약 결과처럼 공고 이후에 정해지는 정보나 검색 자료에 없는 사업은 "
+    "RFP에서 확인할 수 없으니 추측하지 말고 확인되지 않는다고 답하세요. 비슷한 다른 항목(예: 사업 예산)을 대신 답하지 마세요."
+    "\n- 빠짐없이: 질문이 여러 항목을 물으면 하나도 빠뜨리지 말고 각각 답하고, 자료에 있는 조건·기준·수치는 생략하지 말고 구체적으로 쓰세요."
+    "\n- 원문 표기: 금액·날짜·수치는 검색 자료에 적힌 표기 그대로 쓰세요."
+)
+
+# 긴 검색 자료 뒤에 질문을 한 번 더 붙입니다. 작은 모델은 자료가 길면 앞쪽 질문을 놓쳐서
+# 자료에 없는 정보(낙찰 금액 등)를 비슷한 항목으로 대신 답하는 경우가 있었습니다.
+A_REMINDER = ("\n\n다시 질문: {question}\n자료에 있는 내용은 빠짐없이 답하세요. 질문이 직접 묻는 항목이 자료에 없을 때만 "
+              "확인되지 않는다고 답하고, 다른 항목으로 대신 답하지 마세요. 질문이 묻지 않은 항목은 언급하지 마세요.")
+
 
 class LocalGenerator:
     def __init__(self, tokenizer, model):
@@ -21,7 +34,8 @@ class LocalGenerator:
         sources = [{"citation": i, **hit} for i, hit in enumerate(hits, 1)]
         if not hits:
             return _result(question, sources, model, NO_HITS_ANSWER, "no_hits")
-        messages = [{"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": _prompt(question, sources)}]
+        messages = [{"role": "system", "content": INSTRUCTIONS + A_RULES},
+                    {"role": "user", "content": _prompt(question, sources) + A_REMINDER.format(question=question)}]
         text, truncated = self._generate(messages)
         return _finish(question, sources, model, text, truncated)
 
