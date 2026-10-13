@@ -3,7 +3,7 @@
 import unittest
 
 import generation
-from scenario_a_generation import LocalGenerator
+from scenario_a_generation import A_REMINDER, A_RULES, LocalGenerator
 
 HITS = [{"chunk_id": "a:0", "doc_id": "a", "text": "예산 100원", "score": .9, "metadata": {"사업명": "a 사업"}}]
 
@@ -24,14 +24,16 @@ class LocalGeneratorTests(unittest.TestCase):
     def answer(self, generator, hits=HITS):
         return generator.generate_answer("예산은?", hits, "generation_model")
 
-    def test_same_prompt_and_answer_format_as_b(self):
+    def test_b_prompt_plus_a_rules_and_same_answer_format(self):
         generator = FakeGenerator()
         result = self.answer(generator)
         sources = [{"citation": 1, **HITS[0]}]
         self.assertEqual(result, {"question": "예산은?", "answer": "a 사업 예산은 100원입니다.[1]", "sources": sources,
                                   "model": "generation_model", "status": "ok"})
-        self.assertEqual(generator.messages, [{"role": "system", "content": generation.INSTRUCTIONS},
-                                              {"role": "user", "content": generation._prompt("예산은?", sources)}])
+        # 지시문은 B 지시문 + A 전용 규칙, 입력은 B 입력 뒤에 질문 재확인 문장
+        self.assertEqual(generator.messages, [{"role": "system", "content": generation.INSTRUCTIONS + A_RULES},
+                                              {"role": "user", "content": generation._prompt("예산은?", sources)
+                                               + A_REMINDER.format(question="예산은?")}])
 
     def test_no_hits_skips_model(self):
         generator = FakeGenerator()
