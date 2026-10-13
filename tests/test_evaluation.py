@@ -67,7 +67,8 @@ class BackwardCompatibilityTests(unittest.TestCase):
                {"question": "q", "expected_doc_ids": ["a"], "grading": "unknown"},
                {"question": "q", "expected_doc_ids": ["a"], "grading": "numeric"},
                {"question": "q", "answerable": "no"},
-               {"question": "q", "answerable": False, "expected_doc_ids": ["a"]}]
+               {"question": "q", "answerable": False, "expected_doc_ids": "a"},
+               {"question": "q", "answerable": False, "expected_doc_ids": [""]}]
         for case in bad:
             with self.subTest(case=case), self.assertRaises(ValueError):
                 evaluate([case], lambda q, f: self.fail("검증 전에 답변하면 안 됨"))
@@ -226,6 +227,27 @@ class ReviewFixTests(unittest.TestCase):
         self.assertEqual(r["records"][0]["case_token_usage"], {"gpt-5-mini": {"input": 100, "output": 20}})
         self.assertEqual(r["records"][0]["judge_token_usage"], {"gpt-5-mini": {"input": 50, "output": 5}})
         self.assertEqual((r["summary"]["input_tokens_per_case"], r["summary"]["judge_input_tokens"]), (100, 50))
+
+
+class PullRequestReviewTests(unittest.TestCase):
+    """PR #20 리뷰: eval_v4 u05~u07(관련 사업은 있지만 RFP에 없는 정보) 형식, PR #18 범위 밖 안내 문구."""
+
+    def test_unanswerable_case_may_list_related_documents(self):
+        case = {"question": "낙찰 업체는?", "answerable": False, "expected_doc_ids": ["d"]}
+        result = evaluate([case], lambda q, f: answer_with("RFP에서는 낙찰 업체가 확인되지 않습니다.", "d"))
+        s = result["summary"]
+        self.assertEqual((s["unanswerable_count"], s["refusal_accuracy"]), (1, 1.))
+        self.assertIsNone(s["recall_at_k"])  # 답 없는 문항은 Recall에서 제외
+        self.assertIsNone(result["records"][0]["gold_cited"])
+
+    def test_off_topic_and_new_no_hits_phrases_are_refusals(self):
+        off_topic = "RFP 문서에 관한 질문에만 답할 수 있습니다. 사업명이나 궁금한 항목을 넣어 다시 질문해 주세요."
+        no_hits = "질문과 관련된 RFP 문서가 없어 답변할 수 없습니다."
+        for answer in (off_topic, no_hits):
+            with self.subTest(answer=answer):
+                self.assertTrue(is_refusal(answer))
+                r = evaluate([{"question": "오늘 날씨는?", "answerable": False}], lambda q, f: answer_with(answer))
+                self.assertEqual(r["summary"]["refusal_accuracy"], 1.)
 
 
 class AggregationTests(unittest.TestCase):

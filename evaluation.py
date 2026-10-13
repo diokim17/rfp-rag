@@ -6,7 +6,7 @@
 - grading: numeric(금액·기간 정규화 비교) · keyword(키워드 전부 포함) · llm(판정기) · refusal(근거 없음 응답)
 - expected_values: numeric 정답값 {"amount_won": [정수…], "period": [["개월"|"일"|"날짜", 값]…]}
 - requires_gold_citation: 답변의 [n] 출처 중 정답 문서가 없으면 0점
-- answerable: false면 답이 없거나 범위 밖 질문(expected_doc_ids 생략 가능). '확인할 수 없다'류 응답을 정답으로 봄
+- answerable: false면 답이 없거나 범위 밖 질문(expected_doc_ids는 생략·빈 목록·관련 문서 모두 허용). '확인할 수 없다'류 응답을 정답으로 봄
 - forbidden_values: 답변에 나오면 오답인 값(거짓 전제 질문). 형식은 expected_values와 같음
 - weight, doc_cluster, question_type, source: 중복 보정 집계·문서 단위 신뢰구간·유형별 집계
 """
@@ -25,7 +25,8 @@ STATUSES = ("ok", "no_hits", "empty", "truncated", "api_error")
 GRADINGS = {"numeric", "keyword", "llm", "refusal"}
 VERDICT_SCORE = {"correct": 1.0, "partial": 0.5, "incorrect": 0.0}
 _REFUSAL = re.compile(r"확인할 수 없|확인되지 않|확인이 어렵|답변할 수 없|답변드리기 어렵|찾을 수 없|알 수 없|정보가 없|자료가 없|문서가 없"
-                      r"|명시되어 있지 않|언급되어 있지 않|포함되어 있지 않|제공되지 않|나와 있지 않")
+                      r"|명시되어 있지 않|언급되어 있지 않|포함되어 있지 않|제공되지 않|나와 있지 않"
+                      r"|질문에만 답할 수")  # 범위 밖 안내 문구: "RFP 문서에 관한 질문에만 답할 수 있습니다"
 
 
 # ---------- 숫자 정규화 ("470백만원" = "4억 7천만 원" = 470,000,000원) ----------
@@ -234,11 +235,12 @@ def _validate(case):
     if not isinstance(answerable, bool):
         raise ValueError("answerable은 true/false여야 합니다.")
     ids = case.get("expected_doc_ids", [] if not answerable else None)
-    if answerable:
-        if not isinstance(ids, list) or not ids or not all(isinstance(x, str) and x for x in ids):
-            raise ValueError("expected_doc_ids에 정답 문서 ID 목록이 필요합니다.")
-    elif not isinstance(ids, list) or ids:
-        raise ValueError("answerable=false 문항은 expected_doc_ids가 비어 있어야 합니다.")
+    if not isinstance(ids, list) or not all(isinstance(x, str) and x for x in ids):
+        raise ValueError("expected_doc_ids는 문서 ID 문자열 목록이어야 합니다.")
+    if answerable and not ids:
+        raise ValueError("expected_doc_ids에 정답 문서 ID 목록이 필요합니다.")
+    # answerable=false는 비어 있어도 되고, 관련 사업 문서가 있으면 넣어도 됩니다(예: 실제 사업의 RFP에 없는 낙찰 정보).
+    # 답 없는 문항은 Recall·인용 검사에서 빠지므로 이 목록은 채점에 쓰이지 않습니다.
     words = case.get("expected_keywords", [])
     if not isinstance(words, list) or not all(isinstance(x, str) and x.strip() for x in words):
         raise ValueError("expected_keywords는 비어 있지 않은 문자열 목록이어야 합니다.")
