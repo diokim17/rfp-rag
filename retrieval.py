@@ -31,9 +31,11 @@ DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
 # 범위 밖 질문 차단: 질문과 가장 가까운 청크의 코사인이 이 값보다 낮으면 빈 결과를 돌려줘 생성 API를 부르지 않습니다.
 # 기본 0.40(eval_v2 정상 질문 최소 0.423, 범위 밖 질문 24개 중 17개 차단). 나머지는 생성 프롬프트의 거절 규칙이 처리합니다.
 # 점수는 인덱스(청킹)·임베딩 모델마다 달라지므로 바꾸면 experiments/offtopic_threshold_yjk.py로 다시 잽니다. none·off로 끔.
-# 이 값은 B 임베딩(text-embedding-3-small)으로 잰 것이라, 시나리오 A는 A 모델로 검증하기 전까지 기본으로 끕니다
-# (A에서도 RETRIEVAL_MIN_SCORE나 min_score 인자로 기준값을 주면 차단합니다).
+# 이 값은 B 임베딩(text-embedding-3-small)으로 잰 것이고, 시나리오 A는 A 임베딩(default_model)으로 따로 잰 0.53을 씁니다.
+# A 0.53: eval_v4 정상 질문 최소 0.569, 범위 밖 24개 중 21개 차단. 필터 질문은 필터 안 최고점으로 비교해 더 낮게 나오는데,
+# 0.55에서는 필터 질문 1개가 막혔고(yjk-0033) 0.53에서는 하나도 안 막혔습니다(yjk-0035). 답 없는 문항은 8개 중 2개 차단.
 DEFAULT_MIN_SCORE = 0.40
+DEFAULT_MIN_SCORE_A = 0.53
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # 시나리오 A는 리랭커를 각자 HF 캐시로 내려받지 않고, 서버의 이 공용 폴더에 받아 둔 모델을 함께 씁니다.
 # .env의 A_RERANK_MODEL에는 이 폴더 아래 모델 폴더 이름만 적습니다 (예: bge-reranker-v2-m3).
@@ -184,10 +186,10 @@ def _expand_count(value):
 
 
 def _min_score(value):
-    """None이면 환경 변수 RETRIEVAL_MIN_SCORE, 없으면 기본값(B는 DEFAULT_MIN_SCORE, A는 끔). none·off는 끔(None)."""
+    """None이면 환경 변수 RETRIEVAL_MIN_SCORE, 없으면 기본값(B는 DEFAULT_MIN_SCORE, A는 DEFAULT_MIN_SCORE_A). none·off는 끔(None)."""
     raw = os.getenv("RETRIEVAL_MIN_SCORE") if value is None else value
     if raw is None or (isinstance(raw, str) and not raw.strip()):
-        return None if os.getenv("RFP_SCENARIO", "B").strip().upper() == "A" else DEFAULT_MIN_SCORE
+        return DEFAULT_MIN_SCORE_A if os.getenv("RFP_SCENARIO", "B").strip().upper() == "A" else DEFAULT_MIN_SCORE
     if isinstance(raw, str) and raw.strip().lower() in ("none", "off"):
         return None
     return float(raw)
@@ -380,7 +382,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     dedup: 켜면(기본 끔, 환경 변수 RETRIEVAL_DEDUP) 최종 결과에서 같은 내용이 자리를 겹쳐 차지하지 않게 합니다.
       본문이 완전히 같은 문서(같은 공고가 다른 파일명으로 두 번 들어온 경우)는 한 문서로 보고 max_per_doc을 함께 세며,
       이미 고른 청크와 본문이 똑같은 청크(문서 사이의 같은 서식 문구 등)는 건너뜁니다. 먼저 나온(순위가 높은) 쪽을 남깁니다.
-    min_score: 범위 밖 질문 차단(기본 B 0.40·A 끔, none·off로 끔, 환경 변수 RETRIEVAL_MIN_SCORE). 필터를 통과한 청크 중 질문과의 코사인이
+    min_score: 범위 밖 질문 차단(기본 B 0.40·A 0.53, none·off로 끔, 환경 변수 RETRIEVAL_MIN_SCORE). 필터를 통과한 청크 중 질문과의 코사인이
       가장 높은 값도 이보다 낮으면 RFP와 무관한 질문으로 보고 빈 목록을 돌려줍니다. 그러면 generate_answer가
       생성 API를 부르지 않고 안내 문구를 답합니다. 질문 임베딩 호출은 그대로 한 번 일어납니다.
     rerank_section: 켜면(기본 끔, 환경 변수 RETRIEVAL_RERANK_SECTION) 재정렬 입력의 사업명·발주 기관 아래 줄에
