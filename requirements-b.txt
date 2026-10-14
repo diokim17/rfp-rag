@@ -1,0 +1,5 @@
+# B 전용 Python 3.12 / Linux NVIDIA 환경 (rag-b)
+--extra-index-url https://download.pytorch.org/whl/cu126
+-r requirements.txt
+torch==2.14.1+cu126
+transformers==4.57.1
