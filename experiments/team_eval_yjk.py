@@ -67,11 +67,11 @@ def summarize(rows):
     정답 청크 지표는 판단 근거(정답값·키워드)가 있는 문항만 셉니다(answer_cases). 하나도 없으면 nan입니다.
     """
     out = {"cases": len(rows), "doc_recall@5": statistics.fmean(row["doc_recall@5"] for row in rows)}
-    judged = [row for row in rows if row.get("answer_judged", True)]
+    judged = [row for row in rows if row["answer_judged"]]
     out["answer_cases"] = len(judged)
     for key, short in (("first_gold_rank", "gold"), ("first_answer_chunk_rank", "answer")):
         ranks = [row[key] for row in (rows if short == "gold" else judged)]
-        if not ranks:
+        if not ranks:  # 정답값·키워드가 하나도 없는 묶음(예: 필터 질문)은 정답 청크 지표를 비워 둡니다
             out.update({f"{short}_top1": math.nan, f"{short}_top5": math.nan, f"{short}_mrr": math.nan,
                         f"{short}_missing": 0})
             continue
@@ -154,7 +154,7 @@ def report_lines(meta, cases, results):
             if "doc_recall@5" not in row:
                 cells.append(f"답 없음 (반환 {row['returned']})")
                 continue
-            answer = fmt_rank(row["first_answer_chunk_rank"]) if row.get("answer_judged", True) else "n/a"
+            answer = fmt_rank(row["first_answer_chunk_rank"]) if row["answer_judged"] else "n/a"
             cells.append(f"{row['doc_recall@5']:.2f} / {fmt_rank(row['first_gold_rank'])} / {answer}")
         lines.append(f"| {case['id']} | {case['difficulty']} | {case['type']} | " + " | ".join(cells) + " |")
     lines += ["", "## 처리 시간과 적용 옵션", "", "| 설정 | 평균(ms) | 상위 5%(ms) | 적용 옵션 |", "| --- | ---: | ---: | --- |"]

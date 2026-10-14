@@ -148,7 +148,7 @@ def main():
         from scenario_a import ScenarioAClient
         client = ScenarioAClient(read_scenario_settings(ROOT / ".env"), A_GENERATION_MODEL_DIR, A_EMBEDDING_MODEL_DIR,
                                  need_generation=False)
-        client.api_calls, client.save = 0, lambda: None
+        client.api_calls, client.save = 0, lambda: None  # 아래 B용 코드(API 호출 수 기록·캐시 저장)를 그대로 쓰기 위한 값
         missing = []
     else:
         client = CachedEmbeddingClient(args.cache_file)
