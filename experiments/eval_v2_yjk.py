@@ -20,7 +20,10 @@ import argparse
 import hashlib
 import math
 import os
+import platform
+import socket
 import statistics
+import subprocess
 import sys
 import time
 import unicodedata
@@ -165,6 +168,8 @@ def main():
         embed_texts(missing[start:start + 64], client, model)
     client.save()
 
+    # 점수 캐시가 이미 있으면 리랭커를 다시 돌리지 않아 처리 시간이 짧게 나옵니다(지표는 같음). 보고서에 남겨 둡니다.
+    ce_cache_existed = Path(args.ce_cache_file).is_file()
     ce_original, ce_cached, ce_save = cached_cross_encoder(retrieval, args.ce_cache_file)
     retrieval._cross_encoder_scores = ce_cached
     ce_load_ms, rerank_device = 0.0, None
@@ -216,14 +221,46 @@ def main():
     if client.api_calls:
         client.save()
 
+    # 같은 조건에서 돌렸는지 나중에 확인할 수 있도록 코드·인덱스·모델·실행 환경을 남깁니다.
+    # 코드: 커밋 해시. 커밋하지 않은 수정이 있으면 뒤에 +dirty를 붙입니다.
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    if subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
+                      capture_output=True, text=True).stdout.strip():
+        commit += "+dirty"
+    # 모델: 폴더 이름만으로는 안에 든 모델(bge-m3, e5 등)이 바뀌어도 알 수 없어 가중치 파일 해시를 남깁니다.
+    # A만 해당합니다(B 임베딩은 OpenAI 모델 이름, B 리랭커는 HF 모델 ID로 이미 구분됨).
+    model_dirs = {"embedding": client.embedding_path} if scenario_a else {}
+    if scenario_a and uses_cross_encoder:
+        model_dirs["cross_encoder"] = Path(retrieval.rerank_model_source())
+    weights_sha256 = {"embedding": None, "cross_encoder": None}
+    for kind, folder in model_dirs.items():
+        digest = hashlib.sha256()
+        for path in sorted(p for p in folder.rglob("*") if p.suffix in (".safetensors", ".bin", ".pt", ".onnx")):
+            with path.open("rb") as f:
+                digest.update(path.relative_to(folder).as_posix().encode() + hashlib.file_digest(f, "sha256").digest())
+        weights_sha256[kind] = digest.hexdigest()
+    # 실행 환경: torch는 리랭커나 A 임베딩을 쓸 때만 설치돼 있으므로 그때만 적습니다.
+    environment = {"host": socket.gethostname(), "python": platform.python_version()}
+    if uses_cross_encoder or scenario_a:
+        import torch
+        import transformers
+        environment.update({"torch": torch.__version__, "transformers": transformers.__version__,
+                            "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None})
+
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    meta = {"experiment_id": experiment_id, "measured_at_utc": stamp, "eval_file": relative(args.eval_file),
+    meta = {"git_commit": commit, "experiment_id": experiment_id, "measured_at_utc": stamp, "eval_file": relative(args.eval_file),
             "evaluation_sha256": file_hash(args.eval_file), "cases": len(cases), "index_dir": relative(args.index_dir),
             "chunks_sha256": file_hash(Path(args.index_dir) / "chunks.json"), "chunk_count": len(chunks),
+            # 임베딩 모델을 바꿔 다시 만들면 청크는 같아도 벡터가 달라지므로 index.faiss도 해시합니다.
+            "index_faiss_sha256": hashlib.sha256((Path(args.index_dir) / "index.faiss").read_bytes()).hexdigest(),
+            "documents_sha256": config.get("documents_sha256"),
             "chunking_strategy": config.get("chunking_strategy"),
             "embedding_context": config.get("embedding_context"), "embedding_model": model, "top_k": args.top_k,
             "scenario": "A" if scenario_a else "B",
             "cross_encoder_model": retrieval.rerank_model_source() if uses_cross_encoder else None,
+            "embedding_weights_sha256": weights_sha256["embedding"],
+            "cross_encoder_weights_sha256": weights_sha256["cross_encoder"],
+            "cross_encoder_score_cache_used": ce_cache_existed, **environment,
             "cross_encoder_load_ms": round(ce_load_ms), "embedding_api_calls": client.api_calls,
             "fresh_query_embeddings": args.fresh_query_embeddings, "rerank_device": rerank_device}
     write_json(Path(args.results_dir) / f"eval_v2_{experiment_id}_{stamp}.json", {"meta": meta, "results": dict(results)})
