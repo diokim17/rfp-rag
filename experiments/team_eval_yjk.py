@@ -19,7 +19,6 @@ import os
 import statistics
 import sys
 import time
-import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,27 +42,39 @@ SEPARATE_TYPE = "기관명-필터표기"
 GROUPS = ("쉬움", "보통", "어려움", "본 집계", SEPARATE_TYPE)
 
 
-def normalize(text):
-    return unicodedata.normalize("NFC", text).casefold()
-
-
 def score_case(case, hits):
-    """질문 하나의 공통 지표. hits는 retrieve 결과(순위순)."""
+    """질문 하나의 공통 지표. hits는 retrieve 결과(순위순).
+
+    답 없는 문항(answerable=false, eval_v4)은 정답 문서가 없거나 채점에 쓰지 않으므로 반환 수만 남기고 검색 지표에서 뺍니다.
+    정답 청크는 팀 evaluate와 같은 기준(evaluation._answer_chunk_hit)으로 봅니다: expected_values가 있으면 금액·기간을
+    표기와 무관하게 비교하고, 없으면 expected_keywords를 봅니다. 둘 다 없으면(LLM 채점 문항) 판단하지 않습니다(answer_judged=False).
+    """
+    if case.get("answerable") is False:
+        return {"returned": len(hits)}
+    from evaluation import _answer_chunk_hit
     gold = set(case["expected_doc_ids"])
-    words = [normalize(word) for word in case.get("expected_keywords", [])]
     docs = [hit["doc_id"] for hit in hits]
+    judged = bool(case.get("expected_values") or case.get("expected_keywords"))
     first_gold = next((rank for rank, doc in enumerate(docs, 1) if doc in gold), None)
-    first_answer = next((rank for rank, hit in enumerate(hits, 1) if hit["doc_id"] in gold
-                         and any(word in normalize(hit["text"]) for word in words)), None) if words else None
+    first_answer = next((rank for rank, hit in enumerate(hits, 1) if _answer_chunk_hit(case, [hit])), None) if judged else None
     return {"doc_recall@5": len(gold & set(docs[:5])) / len(gold), "first_gold_rank": first_gold,
-            "first_answer_chunk_rank": first_answer, "returned": len(hits)}
+            "first_answer_chunk_rank": first_answer, "answer_judged": judged, "returned": len(hits)}
 
 
 def summarize(rows):
-    """평균 doc_recall@5, 순위 지표는 1위 비율·5위 이내 비율·MRR(null은 0)."""
+    """평균 doc_recall@5, 순위 지표는 1위 비율·5위 이내 비율·MRR(null은 0).
+
+    정답 청크 지표는 판단 근거(정답값·키워드)가 있는 문항만 셉니다(answer_cases). 하나도 없으면 nan입니다.
+    """
     out = {"cases": len(rows), "doc_recall@5": statistics.fmean(row["doc_recall@5"] for row in rows)}
+    judged = [row for row in rows if row["answer_judged"]]
+    out["answer_cases"] = len(judged)
     for key, short in (("first_gold_rank", "gold"), ("first_answer_chunk_rank", "answer")):
-        ranks = [row[key] for row in rows]
+        ranks = [row[key] for row in (rows if short == "gold" else judged)]
+        if not ranks:  # 정답값·키워드가 하나도 없는 묶음(예: 필터 질문)은 정답 청크 지표를 비워 둡니다
+            out.update({f"{short}_top1": math.nan, f"{short}_top5": math.nan, f"{short}_mrr": math.nan,
+                        f"{short}_missing": 0})
+            continue
         out[f"{short}_top1"] = statistics.fmean(r == 1 for r in ranks)
         out[f"{short}_top5"] = statistics.fmean(r is not None and r <= 5 for r in ranks)
         out[f"{short}_mrr"] = statistics.fmean(1 / r if r else 0.0 for r in ranks)
@@ -76,10 +87,14 @@ def group_of(case):
 
 
 def summarize_groups(cases, rows):
+    """난이도·본 집계별 요약. 답 없는 문항은 빼고, eval_v4처럼 group(질문 유형 묶음)이 있으면 그것별로도 냅니다."""
+    pairs = [(case, row) for case, row in zip(cases, rows) if "doc_recall@5" in row]
+    extra = sorted({case["group"] for case, _ in pairs if case.get("group")})
     summary = {}
-    for group in GROUPS:
-        members = [row for case, row in zip(cases, rows)
-                   if group == group_of(case) or (group_of(case) == "본 집계" and group == case["difficulty"])]
+    for group in (*GROUPS, *extra):
+        members = [row for case, row in pairs
+                   if group == group_of(case) or (group_of(case) == "본 집계" and group == case["difficulty"])
+                   or group == case.get("group")]
         if members:
             summary[group] = summarize(members)
     return summary
@@ -113,14 +128,15 @@ def report_lines(meta, cases, results):
              "어느 인덱스·청킹으로 계산했는지는 평가셋에 적혀 있지 않습니다.", "",
              "| 항목 | 값 |", "| --- | --- |", *(f"| {k} | `{v}` |" for k, v in meta.items()), "",
              "지표: doc_recall@5 평균 / 정답 문서 첫 순위의 1위 비율·5위 이내 비율·MRR / "
-             "정답 청크(정답 문서 + 기대 키워드 포함) 첫 순위의 1위 비율·5위 이내 비율·MRR. "
-             f"순위는 상위 {TOP_K}개 안에서만 세며, 없으면 MRR 0으로 계산합니다.", ""]
-    for group in GROUPS:
+             "정답 청크(정답 문서 + 정답값·기대 키워드 포함, 팀 evaluate 기준) 첫 순위의 1위 비율·5위 이내 비율·MRR. "
+             f"순위는 상위 {TOP_K}개 안에서만 세며, 없으면 MRR 0으로 계산합니다. "
+             "정답 청크 지표는 정답값·키워드가 있는 문항만 셉니다(괄호 안 문항 수). 답 없는 문항은 검색 지표에서 뺍니다.", ""]
+    for group in dict.fromkeys(group for _, result in results for group in result["summary"]):
         rows = [(name, result["summary"].get(group)) for name, result in results]
         rows = [(name, row) for name, row in rows if row]
         if not rows:
             continue
-        lines += [f"## {group} ({rows[0][1]['cases']}문항)", "",
+        lines += [f"## {group} ({rows[0][1]['cases']}문항, 정답 청크 판단 {rows[0][1]['answer_cases']}문항)", "",
                   "| 설정 | doc_recall@5 | 문서 1위 | 문서 5위 내 | 문서 MRR | 정답청크 1위 | 정답청크 5위 내 | 정답청크 MRR | 정답청크 없음 |",
                   "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for name, row in rows:
@@ -135,7 +151,11 @@ def report_lines(meta, cases, results):
         cells = []
         for _, result in results:
             row = result["rows"][i]
-            cells.append(f"{row['doc_recall@5']:.2f} / {fmt_rank(row['first_gold_rank'])} / {fmt_rank(row['first_answer_chunk_rank'])}")
+            if "doc_recall@5" not in row:
+                cells.append(f"답 없음 (반환 {row['returned']})")
+                continue
+            answer = fmt_rank(row["first_answer_chunk_rank"]) if row["answer_judged"] else "n/a"
+            cells.append(f"{row['doc_recall@5']:.2f} / {fmt_rank(row['first_gold_rank'])} / {answer}")
         lines.append(f"| {case['id']} | {case['difficulty']} | {case['type']} | " + " | ".join(cells) + " |")
     lines += ["", "## 처리 시간과 적용 옵션", "", "| 설정 | 평균(ms) | 상위 5%(ms) | 적용 옵션 |", "| --- | ---: | ---: | --- |"]
     for name, result in results:

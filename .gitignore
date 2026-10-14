@@ -35,3 +35,7 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .experiment-state/
+
+# 시나리오별 가상환경 (예: A는 setup_scenario_a.txt로 .venv-a에 설치)
+.venv-a/
+.venv-b/
