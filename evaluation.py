@@ -26,7 +26,10 @@ GRADINGS = {"numeric", "keyword", "llm", "refusal"}
 VERDICT_SCORE = {"correct": 1.0, "partial": 0.5, "incorrect": 0.0}
 _REFUSAL = re.compile(r"확인할 수 없|확인되지 않|확인이 어렵|답변할 수 없|답변드리기 어렵|찾을 수 없|알 수 없|정보가 없|자료가 없|문서가 없"
                       r"|명시되어 있지 않|언급되어 있지 않|포함되어 있지 않|제공되지 않|나와 있지 않"
-                      r"|질문에만 답할 수")  # 범위 밖 안내 문구: "RFP 문서에 관한 질문에만 답할 수 있습니다"
+                      r"|질문에만 답할 수"
+                      # 대상을 되묻는 답: '어떤 사업에 대한 질문인지 특정되지 않아 … 알려주십시오'
+                      r"|특정되지 않|특정할 수 없|특정하기 어렵|어떤 사업을 말씀|어느 사업을 말씀|어떤 사업인지|어느 사업인지"
+                      r"|사업명을 알려|알려\s?주십시오|알려\s?주시기 바랍")  # 범위 밖 안내 문구: "RFP 문서에 관한 질문에만 답할 수 있습니다"
 
 
 # ---------- 숫자 정규화 ("470백만원" = "4억 7천만 원" = 470,000,000원) ----------
@@ -120,8 +123,9 @@ def citations(answer):
     return found
 
 
-# 답 없는 문항에서 거절 뒤에 덧붙인 값의 허용 범위: 질문한 사업(expected_doc_ids)의 검색 근거에 있는 값만 허용.
-# 합성 답변 51개 비교에서 불허 0.941 · 전부 허용 0.686 · 검색 근거 전체 허용 0.843 · 관련 문서 근거만 허용 1.000.
+# 답 없는 문항에서 거절 뒤에 덧붙인 값의 허용 범위 (거절 여부는 첫 문장으로, 값 검사는 '지어낸 값이 있는지'만 판단)
+# - 정답 문서가 있는 문항: 그 문서의 검색 근거에 있는 값만 허용(다른 사업 정보 혼합 방지)
+# - 정답 문서가 없는 문항: 답변이 인용한 출처(인용이 없으면 검색된 출처)에 실제로 있는 값은 허용
 ALLOW_GROUNDED_VALUES = True
 
 
@@ -153,12 +157,20 @@ def _grounded(values, sources):
     return bool(evidence) and values <= found
 
 
+def _used_sources(answer, sources):
+    """답변이 인용한 출처. 인용이 하나도 없으면 검색된 출처 전체(답변 생성에 쓰인 자료)."""
+    sources = sources or []
+    cited = citations(answer)
+    used = [s for s in sources if s.get("citation") in cited]
+    return used if cited else sources
+
+
 def is_clean_refusal(answer, status=None, sources=None, allow_grounded_values=None, related_doc_ids=None):
-    """답 없는 질문의 정답 기준: 질문을 거절했고, 근거 없는 값을 지어내지 않음.
-    거절 뒤에 값을 덧붙였다면 그 값이 모두 '질문한 사업의 문서'(related_doc_ids) 검색 근거에 있을 때만 정답.
-    - 실제 사업의 RFP에 없는 정보를 물었을 때 '참고로 이 사업의 예산은 130,000,000원입니다 [1]' → 정답
-    - 검색된 다른 사업의 값을 덧붙임 → 오답(서로 다른 사업 정보 혼합) / 근거에 없는 값 → 환각
-    related_doc_ids가 None이면 검색 근거 전체를, 빈 목록이면 어떤 값도 허용하지 않습니다."""
+    """답 없는 질문의 정답 기준: 질문을 거절했고(첫 문장), 근거 없는 값을 지어내지 않음.
+    - related_doc_ids가 있으면: 덧붙인 값이 모두 그 문서의 검색 근거에 있어야 정답
+      ('참고로 이 사업의 예산은 130,000,000원입니다 [1]' → 정답, 검색된 다른 사업의 값 → 오답)
+    - related_doc_ids가 없거나 비어 있으면: 덧붙인 값이 모두 답변이 인용한 출처(인용이 없으면 검색된 출처)에 있어야 정답
+      (출처의 '2019.11.01로 가정'을 그대로 인용 → 정답, 출처에 없는 값 → 환각)"""
     if status == "no_hits":
         return True
     if not is_refusal(answer):
@@ -167,9 +179,11 @@ def is_clean_refusal(answer, status=None, sources=None, allow_grounded_values=No
     if not values:
         return True
     allow = ALLOW_GROUNDED_VALUES if allow_grounded_values is None else allow_grounded_values
-    if related_doc_ids is not None:
-        sources = [s for s in sources or [] if s.get("doc_id") in set(related_doc_ids)]
-    return allow and _grounded(values, sources)
+    if related_doc_ids:
+        evidence = [s for s in sources or [] if s.get("doc_id") in set(related_doc_ids)]
+    else:
+        evidence = _used_sources(answer, sources)
+    return allow and _grounded(values, evidence)
 
 
 def _compact(text):
