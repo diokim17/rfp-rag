@@ -250,6 +250,68 @@ class PullRequestReviewTests(unittest.TestCase):
                 self.assertEqual(r["summary"]["refusal_accuracy"], 1.)
 
 
+class RefusalRuleTests(unittest.TestCase):
+    """법령 조항 번호, 끝의 단서 문장, 답 없는 문항에서 덧붙인 실제 값의 판정."""
+
+    def test_article_numbers_are_not_amounts(self):
+        self.assertEqual(amounts("소프트웨어 진흥법 제50조, 시행령 제47조 제1항"), set())
+        self.assertEqual(amounts("제12조의2에 따라 사업비는 1억 원"), {100_000_000})
+        self.assertEqual(amounts("5조 원 규모"), {5_000_000_000_000})  # '제'가 없는 실제 금액은 유지
+
+    def test_trailing_caveat_is_not_a_refusal(self):
+        for answer in ("사업 범위는 학사 시스템 고도화입니다 [1]. 단, 세부 일정은 문서에서 확인되지 않습니다.",
+                       "사업 범위는 학사 시스템 고도화입니다[1][2]. 다만 세부 일정은 확인되지 않습니다.",
+                       "기간은 2024. 12. 31.까지이며 그 밖의 내용은 확인되지 않습니다."):
+            with self.subTest(answer=answer):
+                self.assertFalse(is_refusal(answer))
+        self.assertTrue(is_refusal("해당 내용은 문서에서 확인되지 않습니다. 다만 유사 사업이 있습니다 [1]."))
+        result = evaluate([{"question": "q", "expected_doc_ids": ["d"], "expected_keywords": ["고도화"]}],
+                          lambda q, f: answer_with("사업 범위는 고도화입니다 [1]. 단, 세부 일정은 확인되지 않습니다.", "d"))
+        self.assertEqual(result["summary"]["false_refusal_rate"], 0.)
+
+    def test_unanswerable_allows_only_related_document_values(self):
+        sources = [source(1, "d", "사업예산: 130,000,000원(VAT 포함)"), source(2, "x", "사업예산: 200,000,000원")]
+        reply = lambda text: {"question": "q", "answer": text, "sources": sources, "model": "fake", "status": "ok"}
+        related = {"question": "낙찰 업체는?", "answerable": False, "expected_doc_ids": ["d"]}
+        unrelated = {"question": "없는 사업 예산은?", "answerable": False}
+        cases = [(related, "낙찰 업체는 확인되지 않습니다. 참고로 이 사업의 예산은 130,000,000원입니다 [1].", 1.),
+                 (related, "낙찰 업체는 확인되지 않습니다. 참고로 사업 예산은 200,000,000원입니다 [2].", 0.),  # 다른 사업 값
+                 (related, "낙찰 업체는 확인되지 않습니다. 참고로 사업 예산은 777,000,000원입니다 [1].", 0.),  # 근거에 없는 값
+                 # 정답 문서가 없는 문항: 답변이 인용한 출처에 실제로 있는 값은 지어낸 값이 아님
+                 (unrelated, "해당 사업은 확인되지 않습니다. 참고로 사업 예산은 200,000,000원입니다 [2].", 1.),
+                 (unrelated, "해당 사업은 확인되지 않습니다. 참고로 사업 예산은 200,000,000원입니다 [1].", 0.),  # 인용한 [1]에 없는 값
+                 (unrelated, "해당 사업은 확인되지 않습니다. 참고로 사업 예산은 777,000,000원입니다 [2].", 0.),  # 어느 출처에도 없는 값
+                 (unrelated, "해당 사업은 확인되지 않습니다. 참고로 사업 예산은 200,000,000원입니다.", 1.),  # 인용 없음 → 검색된 출처 기준
+                 (unrelated, "해당 사업은 문서에서 확인되지 않습니다.", 1.)]
+        for case, text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(evaluate([case], lambda q, f: reply(text))["summary"]["refusal_accuracy"], expected)
+
+
+class ClarifyAndCitedValueTests(unittest.TestCase):
+    """u10(대상을 되묻는 답)과 u09(정답 문서가 없는 문항에서 출처의 날짜 인용)."""
+
+    def test_clarifying_question_counts_as_refusal(self):
+        u10 = "어떤 사업에 대한 질문인지 특정되지 않아 어떤 사업을 말씀하시는지 알려주십시오.\n제공된 자료로는 확인할 수 없습니다."
+        for answer in (u10, "어느 사업인지 알려 주십시오.", "사업명을 알려주시면 다시 찾아보겠습니다."):
+            with self.subTest(answer=answer):
+                self.assertTrue(is_refusal(answer))
+        r = evaluate([{"question": "그 사업 예산은?", "answerable": False}], lambda q, f: answer_with(u10))
+        self.assertEqual(r["summary"]["refusal_accuracy"], 1.)
+        # 정상 답변 끝에 되묻는 문장이 붙은 경우는 거절이 아님(첫 문장 기준 유지)
+        self.assertFalse(is_refusal("사업 범위는 학사 시스템 고도화입니다 [1]. 다른 사업이라면 사업명을 알려주십시오."))
+
+    def test_unanswerable_without_gold_allows_values_quoted_from_cited_source(self):
+        sources = [source(1, "x", "※ 사업 착수일은 2019.11.01로 가정하여 산정"), source(2, "y", "사업기간: 6개월")]
+        reply = lambda text: {"question": "q", "answer": text, "sources": sources, "model": "fake", "status": "ok"}
+        case = {"question": "2019년에 공고된 사업은?", "answerable": False}
+        for text, expected in [("2019년에 공고된 사업은 문서에서 확인되지 않습니다. 다만 출처에는 착수일을 2019.11.01로 가정했습니다 [1].", 1.),
+                               ("2019년에 공고된 사업은 확인되지 않습니다. 다만 착수일은 2019.11.01입니다 [2].", 0.),  # 인용한 [2]에 없음
+                               ("2019년에 공고된 사업은 확인되지 않습니다. 다만 착수일은 2020.03.01입니다 [1].", 0.)]:  # 지어낸 날짜
+            with self.subTest(text=text):
+                self.assertEqual(evaluate([case], lambda q, f: reply(text))["summary"]["refusal_accuracy"], expected)
+
+
 class AggregationTests(unittest.TestCase):
     def test_dedup_ci_status_latency_and_breakdown(self):
         cases = [{"id": f"c{i}", "question": f"q{i}", "expected_doc_ids": ["a" if i < 3 else "b"], "grading": "keyword",
