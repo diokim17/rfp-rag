@@ -1,7 +1,12 @@
-"""김연주: 평가셋 eval_v2로 검색 고도화 후보를 비교 (답변 생성 없음).
+"""김연주: 평가셋(eval_v2·eval_v4)으로 검색 고도화 후보를 비교 (답변 생성 없음).
 
   python experiments/eval_v2_yjk.py --eval-file data/eval_v2.json --index-dir indexes/eval-v2-structured-yjk
   python experiments/eval_v2_yjk.py ... --settings hybrid-ce-c50-cap2 prefix-ce-c50-cap2 --allow-api
+  .venv-a/bin/python experiments/eval_v2_yjk.py --eval-file data/eval_v4.json --index-dir indexes/scenario-a --settings default
+
+.env의 RFP_SCENARIO=A면 질문을 서버의 A 임베딩 모델(A_EMBEDDING_MODEL)로 임베딩합니다(API·질문 캐시 없음, 생성 모델은 안 불러옴).
+인덱스도 같은 A 모델로 만든 것이어야 합니다. 리랭커도 A 공용 폴더(A_RERANK_MODEL)의 모델을 씁니다.
+eval_v4의 답 없는 문항(answerable=false)은 검색 지표에서 빼고, 설정마다 빈 결과로 돌아온 수만 따로 봅니다.
 
 지표·집계는 team_eval_yjk.py와 같습니다(doc_recall@5, 정답 문서/정답 청크 첫 순위). 순위는 --top-k(기본 5) 안에서만 셉니다.
 비교하는 변형 두 가지(둘 다 이후 retrieval.py 기본 동작으로 반영):
@@ -126,6 +131,8 @@ def main():
     from experiment_ids import next_experiment_id, owner_initials
     import retrieval
 
+    load_dotenv(ROOT / ".env", override=False)
+    scenario_a = os.getenv("RFP_SCENARIO", "B").strip().upper() == "A"
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)
     uses_cross_encoder = any(retrieval.retrieval_options(**SETTINGS[name])["rerank"] == "cross-encoder"
@@ -134,16 +141,24 @@ def main():
         import torch
         if not torch.cuda.is_available():
             parser.error("cross-encoder 설정은 GPU에서만 돌립니다. CUDA가 없습니다(--allow-cpu-rerank로 CPU 허용).")
-    client = CachedEmbeddingClient(args.cache_file)
-    if args.fresh_query_embeddings:
-        client.cache, client.save = {}, lambda: None
-        args.allow_api = True
     model = config["embedding_model"]
-    questions = sorted({case["question"] for case in cases})
-    missing = [q for q in questions if hashlib.sha256(f"{model}\n{q}".encode()).hexdigest() not in client.cache]
-    if missing and not args.allow_api:
-        parser.error(f"캐시에 없는 질문 {len(missing)}건은 임베딩 API를 호출합니다. 확인 후 --allow-api를 붙이세요.")
-    load_dotenv(ROOT / ".env", override=False)
+    if scenario_a:
+        # 질문은 retrieve가 부를 때마다 A 모델로 바로 임베딩하므로 미리 채울 캐시가 없습니다.
+        from run import A_EMBEDDING_MODEL_DIR, A_GENERATION_MODEL_DIR, read_scenario_settings
+        from scenario_a import ScenarioAClient
+        client = ScenarioAClient(read_scenario_settings(ROOT / ".env"), A_GENERATION_MODEL_DIR, A_EMBEDDING_MODEL_DIR,
+                                 need_generation=False)
+        client.api_calls, client.save = 0, lambda: None
+        missing = []
+    else:
+        client = CachedEmbeddingClient(args.cache_file)
+        if args.fresh_query_embeddings:
+            client.cache, client.save = {}, lambda: None
+            args.allow_api = True
+        questions = sorted({case["question"] for case in cases})
+        missing = [q for q in questions if hashlib.sha256(f"{model}\n{q}".encode()).hexdigest() not in client.cache]
+        if missing and not args.allow_api:
+            parser.error(f"캐시에 없는 질문 {len(missing)}건은 임베딩 API를 호출합니다. 확인 후 --allow-api를 붙이세요.")
     experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state")
     print(f"실험 ID: {experiment_id} / 설정 {len(args.settings)}개 / 질문 {len(cases)}건 / 임베딩할 질문 {len(missing)}건")
     for start in range(0, len(missing), 64):
@@ -155,7 +170,7 @@ def main():
     ce_load_ms, rerank_device = 0.0, None
     if uses_cross_encoder:
         # 점수 캐시를 거치지 않고 모델을 직접 불러옵니다(캐시에 있으면 모델이 안 올라와 장치·로드 시간을 못 잼).
-        model_name = os.getenv("RETRIEVAL_RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+        model_name = retrieval.rerank_model_source()  # A면 공용 폴더 경로, B면 HF 모델 ID
         start = time.perf_counter()
         ce_original(cases[0]["question"], ["모델 로드 확인"], model_name)
         ce_load_ms = (time.perf_counter() - start) * 1000
@@ -207,12 +222,13 @@ def main():
             "chunks_sha256": file_hash(Path(args.index_dir) / "chunks.json"), "chunk_count": len(chunks),
             "chunking_strategy": config.get("chunking_strategy"),
             "embedding_context": config.get("embedding_context"), "embedding_model": model, "top_k": args.top_k,
-            "cross_encoder_model": os.getenv("RETRIEVAL_RERANK_MODEL", "BAAI/bge-reranker-v2-m3"),
+            "scenario": "A" if scenario_a else "B",
+            "cross_encoder_model": retrieval.rerank_model_source() if uses_cross_encoder else None,
             "cross_encoder_load_ms": round(ce_load_ms), "embedding_api_calls": client.api_calls,
             "fresh_query_embeddings": args.fresh_query_embeddings, "rerank_device": rerank_device}
     write_json(Path(args.results_dir) / f"eval_v2_{experiment_id}_{stamp}.json", {"meta": meta, "results": dict(results)})
     lines = report_lines(meta, cases, results)
-    lines[0] = "# eval_v2 검색 지표: 하이브리드·리랭킹·BM25 메타 접두·필터 정규화"
+    lines[0] = f"# {Path(args.eval_file).stem} 검색 지표: 하이브리드·리랭킹·BM25 메타 접두·필터 정규화"
     lines = [line.replace("상위 50개 안에서만", f"상위 {args.top_k}개 안에서만") for line in lines]
     # 정답 지표에는 안 드러나는 '같은 내용이 자리를 겹쳐 차지했는지'를 따로 봅니다(dedup 비교용).
     lines += ["", f"## 상위 {args.top_k}개 안 중복 본문", "",
@@ -221,7 +237,15 @@ def main():
         rows = result["rows"]
         lines.append(f"| {name} | {sum(row['dup_texts'] for row in rows)} | {sum(row['dup_texts'] > 0 for row in rows)} | "
                      f"{statistics.fmean(row['returned'] for row in rows):.2f} |")
-    report_path = Path(args.reports_dir) / f"eval_v2_yjk_{experiment_id}.md"
+    # 답 없는 문항: 검색 지표에서 빼고, 빈 결과(min_score 차단 등)로 돌아온 수만 봅니다.
+    unanswerable = [i for i, case in enumerate(cases) if case.get("answerable") is False]
+    if unanswerable:
+        lines += ["", f"## 답 없는 문항 ({len(unanswerable)}문항, 검색 지표에서 제외)", "",
+                  "| 설정 | 빈 결과로 돌아온 문항 | min_score |", "| --- | ---: | --- |"]
+        for name, result in results:
+            empty = sum(result["rows"][i]["returned"] == 0 for i in unanswerable)
+            lines.append(f"| {name} | {empty} / {len(unanswerable)} | {result['options']['min_score']} |")
+    report_path = Path(args.reports_dir) / f"{Path(args.eval_file).stem}_yjk_{experiment_id}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"보고서: {relative(report_path)}")
