@@ -198,7 +198,7 @@ python run.py check-config
 python run.py parse
 python run.py build
 python run.py ask --question "질문 내용"
-python run.py evaluate --eval-file data/eval.json
+python run.py evaluate --eval-file data/eval.json --judge-model gpt-5-nano --judge-cache results/judge-cache.jsonl
 ```
 
 `data/eval.json`은 팀에서 준비한 평가셋이 있어야 합니다. 다른 파일을 사용할 때는 해당 경로를 지정하세요. `all --question "질문 내용"`은 파싱·인덱스 구축·질의를 연속 실행하며, B에서는 임베딩·생성 API 비용이 발생합니다.
@@ -230,3 +230,24 @@ python -m unittest discover -s tests -v
 
 - 제공받은 원본 RFP 문서는 외부 공유가 금지되어 있으므로 저장소에 업로드하지 않습니다.
 - API Key, SSH Key 등 인증 정보는 저장소에 포함하지 않습니다.
+
+### B 전용 가상환경과 평가 판정기
+
+A와 B는 별도 venv를 사용합니다. B는 Python 3.12 / Linux NVIDIA 환경에서 다음과 같이 준비합니다.
+이미 `rag-b`가 있다면 생성 명령은 생략하고 기존 환경을 활성화하세요.
+
+```bash
+python3.12 -m venv rag-b
+source rag-b/bin/activate
+python -m pip install -r requirements-b.txt
+python -m pip check
+```
+
+B는 `torch==2.14.1+cu126`, `transformers==4.57.1`을 사용합니다. CUDA 12.6 다운로드 경로는 설치 파일에 명시되어 있습니다.
+B 환경에는 torch 2.8.0을 지정한 `experiments/requirements-rerank.txt`나 A 임베딩 설치 파일을 설치하지 마세요.
+`requirements-b.txt`는 B 직접 의존성 목록이며, 팀원이 제공한 전체 환경 스냅샷과는 구분됩니다.
+
+`evaluate --judge-model gpt-5-nano` 또는 `--judge-model gpt-5-mini`로 기존 LLM 판정기를 연결합니다.
+판정에는 추가 OpenAI API 비용이 발생합니다. `--judge-cache results/judge-cache.jsonl`을 함께 지정하면 동일 입력의 판정을 재사용합니다.
+판정기 옵션을 생략하면 LLM 문항은 미채점되며 문항 수를 경고로 출력합니다. 판정기 옵션은 B의 evaluate에서만 지원합니다.
+결과 JSON의 `judge_settings`에 판정 모델과 캐시 경로를 기록합니다.

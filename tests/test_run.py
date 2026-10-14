@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import run
 from observability import Trace
-from parsing import write_json
+from parsing import read_json, write_json
 from test_pipeline import FakeClient
 
 
@@ -184,3 +184,36 @@ class IndexFreshnessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BJudgePipelineTests(unittest.TestCase):
+    setUp = IndexFreshnessTests.setUp
+    pipeline = IndexFreshnessTests.pipeline
+
+    def test_evaluate_connects_judge_and_reports_missing_judge(self):
+        self.args.command = "evaluate"
+        self.args.eval_file = self.args.processed_dir / "eval.json"
+        self.args.reports_dir = self.args.results_dir / "reports"
+        write_json(self.args.eval_file, [{"id": "llm-1", "grading": "llm"}])
+        for model in (None, "gpt-5-nano"):
+            with self.subTest(model=model):
+                self.args.judge_model = model
+                self.args.judge_cache = self.args.results_dir / "judge.jsonl" if model else None
+                output = io.StringIO()
+                with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "OPENAI_GENERATION_MODEL": "gpt-5-mini"}), \
+                        patch("run.OpenAI") as client, \
+                        patch("run.load_index", return_value=(object(), [], self.config)), \
+                        patch("run.make_llm_judge") as factory, \
+                        patch("run.evaluate", return_value={"summary": {}}) as evaluate, \
+                        patch("run.save_report"), redirect_stdout(io.StringIO()), redirect_stderr(output):
+                    self.pipeline()
+                if model:
+                    factory.assert_called_once_with(client.return_value, model=model, cache_path=self.args.judge_cache)
+                    self.assertIs(evaluate.call_args.kwargs["judge"], factory.return_value)
+                    self.assertNotIn("미채점", output.getvalue())
+                else:
+                    factory.assert_not_called()
+                    self.assertIsNone(evaluate.call_args.kwargs["judge"])
+                    self.assertIn("LLM 1문항은 미채점", output.getvalue())
+                saved = read_json(self.args.results_dir / "evaluate_tester-0001_test.json")
+                self.assertEqual(saved["judge_settings"]["model"], model)

@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
 from embedding import build_index, load_index
-from evaluation import evaluate
+from evaluation import JUDGE_MODELS, evaluate, make_llm_judge
 from experiment_ids import next_experiment_id, owner_initials
 from experiment_reports import file_hash, save_report, text_file_hash, text_hash
 from generation import generate_answer
@@ -95,6 +95,8 @@ def main():
     parser.add_argument("--chunk-overlap", type=int, default=150)
     parser.add_argument("--filter", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--eval-file", type=Path, help="수동 작성한 평가 JSON 파일")
+    parser.add_argument("--judge-model", choices=sorted(JUDGE_MODELS), help="LLM 문항 판정 모델 (추가 API 비용)")
+    parser.add_argument("--judge-cache", type=Path, help="판정 결과 재사용 JSONL 경로 (--judge-model 필요)")
     parser.add_argument("--raw-dir", type=Path, default=ROOT / "data/raw")
     parser.add_argument("--processed-dir", type=Path, default=ROOT / "data/processed")
     parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes")
@@ -117,6 +119,10 @@ def main():
         parser.error("ask/all에는 --question이 필요합니다.")
     if args.command == "evaluate" and not args.eval_file:
         parser.error("evaluate에는 --eval-file이 필요합니다.")
+    if args.judge_cache and not args.judge_model:
+        parser.error("--judge-cache에는 --judge-model이 필요합니다.")
+    if args.command != "evaluate" and (args.judge_model or args.judge_cache):
+        parser.error("판정기 옵션은 evaluate에서만 사용할 수 있습니다.")
     if args.top_k < 1 or (args.limit is not None and args.limit < 1):
         parser.error("top-k, limit은 1 이상이어야 합니다.")
     if args.max_per_doc is not None and args.max_per_doc < 1:
@@ -135,6 +141,8 @@ def main():
         settings = read_scenario_settings(ROOT / ".env")
     except ValueError as exc:
         parser.error(str(exc))
+    if settings["scenario"] != "B" and args.judge_model:
+        parser.error("--judge-model은 시나리오 B에서만 지원합니다.")
     if args.command == "check-config":
         print(json.dumps(settings, ensure_ascii=False, indent=2))
         return
@@ -262,7 +270,16 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                         "인덱스는 저장되어 있으므로 기본 실행 ask로 재시도할 수 있습니다.\n")
 
     if args.command == "evaluate":
-        result = evaluate(read_json(args.eval_file), answer)
+        cases = read_json(args.eval_file)
+        judge_model = getattr(args, "judge_model", None)
+        judge_cache = getattr(args, "judge_cache", None)
+        judge = make_llm_judge(client, model=judge_model, cache_path=judge_cache) if judge_model else None
+        ungraded = sum(case.get("grading") == "llm" for case in cases) if judge is None else 0
+        if ungraded:
+            print(f"경고: 판정기가 없어 LLM {ungraded}문항은 미채점됩니다. --judge-model로 판정기를 지정하세요.",
+                  file=sys.stderr)
+        result = evaluate(cases, answer, judge=judge)
+        result["judge_settings"] = {"model": judge_model, "cache_path": str(judge_cache) if judge_cache else None}
         print(result["summary"])
     else:
         result = answer(args.question)
