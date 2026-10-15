@@ -19,7 +19,7 @@ from b_experiment_reports import file_hash, save_report, text_file_hash, text_ha
 from b_generation import generate_answer
 from b_observability import Trace, code_version, observed
 from b_parsing import parse_documents, read_json, write_json
-from b_retrieval import retrieve
+from b_retrieval import retrieve, with_next_chunk
 
 ROOT = Path(__file__).resolve().parent
 
@@ -231,6 +231,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
             pass
         merged = {**filters, **(case_filters or {})}
         hits = retrieve(question, client, index, chunks, config, args.top_k, merged, max_per_doc=max_per_doc)
+        hits = with_next_chunk(hits, chunks)
         try:
             return generate_answer(question, hits, client, generation_model, merged)
         except RateLimitError as exc:

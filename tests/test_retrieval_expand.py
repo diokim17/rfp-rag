@@ -106,6 +106,21 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class NextChunkTests(unittest.TestCase):
+    """1위 청크의 바로 다음 청크(같은 문서)를 덧붙이고, 이미 있거나 문서 끝이면 그대로 둡니다."""
+
+    def test_with_next_chunk(self):
+        chunks = [chunk("a:0", "목록 앞", PROJECT), chunk("a:1", "목록 뒤", PROJECT), chunk("b:0", "다른 문서", OTHER)]
+        top = [{**chunks[0], "score": .9}]
+        self.assertEqual([(h["chunk_id"], h.get("neighbor")) for h in retrieval.with_next_chunk(top, chunks)],
+                         [("a:0", None), ("a:1", True)])
+        both = [{**chunks[0], "score": .9}, {**chunks[1], "score": .8}]
+        self.assertEqual(retrieval.with_next_chunk(both, chunks), both)
+        last = [{**chunks[1], "score": .9}]
+        self.assertEqual(retrieval.with_next_chunk(last, chunks), last)
+        self.assertEqual(retrieval.with_next_chunk([], chunks), [])
+
+
 class AspectTests(unittest.TestCase):
     """여러 문장 질문: 찾은 청크와 덜 겹치는 문장(묻는 항목)으로 1위 문서의 청크 순서를 다시 정합니다."""
 

@@ -436,6 +436,25 @@ def _finish(question, hits, client, index, chunks, config, eligible, options):
     return hits
 
 
+def with_next_chunk(hits, chunks):
+    """1위 청크의 바로 다음 청크(같은 문서)를 맨 뒤에 덧붙입니다. 이미 결과에 있으면 그대로 둡니다.
+
+    목록·표가 청크 경계에서 잘리면 뒷부분 항목이 빠집니다(eval_v4 yA048: 입찰 참가 자격 목록이 다음 청크로 이어짐).
+    덧붙인 청크는 neighbor=True이고 score는 1위 청크 값을 그대로 씁니다(질문과 따로 비교하지 않음).
+    retrieve()의 top_k 결과는 그대로 두고, b_run이 생성 직전에 부릅니다.
+    """
+    if not hits:
+        return hits
+    numbers = _members(chunks)[hits[0]["doc_id"]]
+    ids = [chunks[number]["chunk_id"] for number in numbers]
+    if hits[0]["chunk_id"] not in ids:
+        return hits
+    after = ids.index(hits[0]["chunk_id"]) + 1
+    if after == len(ids) or any(hit["chunk_id"] == ids[after] for hit in hits):
+        return hits
+    return hits + [{**chunks[numbers[after]], "score": hits[0]["score"], "neighbor": True}]
+
+
 def _members(chunks):
     """doc_id별 청크 번호. 같은 chunks 목록에는 다시 만들지 않습니다."""
     cached = _doc_members.get(id(chunks))
