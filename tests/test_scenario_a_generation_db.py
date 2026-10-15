@@ -2,8 +2,8 @@
 
 import unittest
 
-import generation
-from scenario_a_generation import A_REMINDER, A_RULES, LocalGenerator
+import a_generation as generation
+from a_local_generation import A_REMINDER, A_RULES, LocalGenerator
 
 HITS = [{"chunk_id": "a:0", "doc_id": "a", "text": "예산 100원", "score": .9, "metadata": {"사업명": "a 사업"}}]
 
