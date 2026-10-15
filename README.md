@@ -7,7 +7,7 @@
 ## A·B 독립 파이프라인 사용
 
 A는 `a_*.py`, B는 `b_*.py`에서 독립적으로 개발하며 각각의 가상환경에서 실행합니다.
-환경 설정은 최상위 [A 설정](setup_scenario_a.txt)·[A 잠금 파일](setup_scenario_a_lock.txt)·[B 설정](requirements-b-venv.txt)을 사용합니다.
+환경 설정은 최상위 [setup_scenario_a.txt](setup_scenario_a.txt)·[setup_scenario_a_lock.txt](setup_scenario_a_lock.txt)·[requirements-b-venv.txt](requirements-b-venv.txt)을 사용합니다.
 기존 최상위 환경 파일은 `docs/environment_archive/`에 임시 보관했고, 실험별 설정은 `experiments/`에 유지합니다.
 `requirements.txt`는 첨부 A 설정의 참조를 유지하기 위한 연결 파일입니다.
 
