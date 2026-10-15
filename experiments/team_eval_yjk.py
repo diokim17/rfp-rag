@@ -1,6 +1,6 @@
 """김연주: 팀 공통 평가셋(eval_team_v1)의 공통 지표로 검색 설정 비교 (답변 생성 없음).
 
-  python experiments/team_eval_yjk.py --eval-file data/eval_team_v1.json --index-dir indexes/dev-20261007-structured
+  python experiments/team_eval_yjk.py --eval-file data/eval_team_v1.json --index-dir indexes/b/dev-20261007-structured
   python experiments/team_eval_yjk.py --eval-file ... --settings hybrid-ce-c50-cap2 --allow-api
 
 - 공통 지표 (평가셋의 bm25_reference와 같은 이름)
@@ -9,7 +9,7 @@
   first_answer_chunk_rank = 정답 문서 청크 중 expected_keywords 하나 이상을 포함한 첫 청크의 순위 (없으면 null)
   순위는 retrieve가 돌려준 목록(top_k=50) 안에서만 셉니다. 리랭킹은 후보 50개만 재정렬하므로 50위 밖은 null입니다.
 - 집계: 본 집계는 note가 있는 '기관명-필터표기' 문항(exact-match 필터가 0건)을 뺀 문항이며, 그 문항은 따로 보입니다.
-- 질문 임베딩은 results/cache/query_embeddings.json 캐시를 쓰고, 캐시에 없을 때만 --allow-api로 호출합니다.
+- 질문 임베딩은 results/b/cache/query_embeddings.json 캐시를 쓰고, 캐시에 없을 때만 --allow-api로 호출합니다.
 """
 
 import argparse
@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from parsing import read_json, write_json  # noqa: E402
+from b_parsing import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 
 TOP_K = 50
@@ -94,7 +94,7 @@ def bm25_rows(cases):
 
 def file_hash(path):
     """평가셋·chunks.json 같은 JSON 파일 해시(줄바꿈을 LF로 맞춰 운영체제와 무관)."""
-    from experiment_reports import text_file_hash
+    from b_experiment_reports import text_file_hash
     return text_file_hash(path)
 
 
@@ -149,18 +149,18 @@ def report_lines(meta, cases, results):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/dev-20261007-structured")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/dev-20261007-structured")
     parser.add_argument("--settings", nargs="+", choices=list(SETTINGS), default=list(SETTINGS))
-    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/cache/query_embeddings.json")
+    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/b/cache/query_embeddings.json")
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문 임베딩 API 호출을 허용")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
-    from embedding import embed_texts, load_index
-    from experiment_ids import next_experiment_id, owner_initials
-    import retrieval
+    from b_embedding import embed_texts, load_index
+    from b_experiment_ids import next_experiment_id, owner_initials
+    import b_retrieval as retrieval
 
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)
@@ -170,8 +170,8 @@ def main():
     missing = [q for q in questions if hashlib.sha256(f"{model}\n{q}".encode()).hexdigest() not in client.cache]
     if missing and not args.allow_api:
         parser.error(f"캐시에 없는 질문 {len(missing)}건은 임베딩 API를 호출합니다. 확인 후 --allow-api를 붙이세요.")
-    load_dotenv(ROOT / ".env", override=False)  # 키는 환경 변수로만 읽고 결과에 남기지 않습니다.
-    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state")
+    load_dotenv(ROOT / ".env.b", override=False)  # 키는 환경 변수로만 읽고 결과에 남기지 않습니다.
+    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/b")
     print(f"실험 ID: {experiment_id} / 설정 {len(args.settings)}개 / 질문 {len(cases)}건 / 임베딩할 질문 {len(missing)}건")
     for start in range(0, len(missing), 64):
         embed_texts(missing[start:start + 64], client, model)

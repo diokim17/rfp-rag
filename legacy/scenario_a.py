@@ -35,8 +35,8 @@ class ScenarioAClient:
         self.generation_model = settings["A_GENERATION_MODEL"]
         self.embedding_path = embedding_dir / self.embedding_model
         self.generation_path = generation_dir / self.generation_model
-        self.embedding = load_component("scenario_a_embedding", self.embedding_path, "embed_texts")
-        self.generation = (load_component("scenario_a_generation", self.generation_path, "generate_answer")
+        self.embedding = load_component("legacy.scenario_a_embedding", self.embedding_path, "embed_texts")
+        self.generation = (load_component("legacy.scenario_a_generation", self.generation_path, "generate_answer")
                            if need_generation else None)
 
     def embed_texts(self, texts, model):

@@ -1,6 +1,6 @@
 """김연주: 평가셋 eval_v2로 검색 고도화 후보를 비교 (답변 생성 없음).
 
-  python experiments/eval_v2_yjk.py --eval-file data/eval_v2.json --index-dir indexes/eval-v2-structured-yjk
+  python experiments/eval_v2_yjk.py --eval-file data/eval_v2.json --index-dir indexes/b/eval-v2-structured-yjk
   python experiments/eval_v2_yjk.py ... --settings hybrid-ce-c50-cap2 prefix-ce-c50-cap2 --allow-api
 
 지표·집계는 team_eval_yjk.py와 같습니다(doc_recall@5, 정답 문서/정답 청크 첫 순위). 순위는 --top-k(기본 5) 안에서만 셉니다.
@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from parsing import read_json, write_json  # noqa: E402
+from b_parsing import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from team_eval_yjk import file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
 
@@ -105,24 +105,24 @@ def main():
     parser.add_argument("--eval-file", type=Path, required=True)
     parser.add_argument("--index-dir", type=Path, required=True)
     parser.add_argument("--settings", nargs="+", choices=list(SETTINGS), default=list(SETTINGS))
-    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/cache/query_embeddings.json")
+    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/b/cache/query_embeddings.json")
     parser.add_argument("--top-k", type=int, default=5, help="반환 청크 수이자 지표를 세는 순위 범위(팀 기준 5로 고정)")
-    parser.add_argument("--ce-cache-file", type=Path, default=ROOT / "results/cache/cross_encoder_scores.json")
+    parser.add_argument("--ce-cache-file", type=Path, default=ROOT / "results/b/cache/cross_encoder_scores.json")
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문 임베딩 API 호출을 허용")
     parser.add_argument("--fresh-query-embeddings", action="store_true",
                         help="질문 임베딩 캐시를 읽지 않고 모두 API로 새로 받습니다(캐시 파일도 갱신하지 않음)")
-    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/cache/query_rewrites.json",
+    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/b/cache/query_rewrites.json",
                         help="질문 재작성 결과 캐시(같은 질문은 다시 호출하지 않음)")
     parser.add_argument("--allow-cpu-rerank", action="store_true",
                         help="GPU가 없을 때 cross-encoder를 CPU로 돌리는 것을 허용(기본은 중단)")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
-    from embedding import embed_texts, load_index
-    from experiment_ids import next_experiment_id, owner_initials
-    import retrieval
+    from b_embedding import embed_texts, load_index
+    from b_experiment_ids import next_experiment_id, owner_initials
+    import b_retrieval as retrieval
 
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)
@@ -141,8 +141,8 @@ def main():
     missing = [q for q in questions if hashlib.sha256(f"{model}\n{q}".encode()).hexdigest() not in client.cache]
     if missing and not args.allow_api:
         parser.error(f"캐시에 없는 질문 {len(missing)}건은 임베딩 API를 호출합니다. 확인 후 --allow-api를 붙이세요.")
-    load_dotenv(ROOT / ".env", override=False)
-    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state")
+    load_dotenv(ROOT / ".env.b", override=False)
+    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/b")
     print(f"실험 ID: {experiment_id} / 설정 {len(args.settings)}개 / 질문 {len(cases)}건 / 임베딩할 질문 {len(missing)}건")
     for start in range(0, len(missing), 64):
         embed_texts(missing[start:start + 64], client, model)
@@ -160,7 +160,7 @@ def main():
         rerank_device = retrieval._cross_encoders[model_name][2]
 
     # 질문 재작성 결과(cache·api·fallback-*)를 설정마다 세어, 재작성이 실제로 쓰였는지 보고서에 남깁니다.
-    import query_rewrite
+    import b_query_rewrite as query_rewrite
     rewrite_status = Counter()
     rewrite_original = query_rewrite.rewrite_question
 

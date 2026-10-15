@@ -6,7 +6,7 @@
 import json
 import re
 
-from observability import observed, model_call
+from legacy.observability import observed, model_call
 
 NO_HITS_ANSWER = ("질문과 관련된 RFP 문서가 없어 답변할 수 없습니다. "
                   "사업명이나 발주 기관을 넣거나 검색 조건을 바꿔 다시 질문해 주세요.")
@@ -87,7 +87,7 @@ def _finish(question, sources, model, text, truncated):
 @observed("generate-answer")
 def generate_answer(question, hits, client, model="gpt-5-mini"):
     """질문과 검색 결과로 답변을 만듭니다. sources에는 번호(citation)를 붙인 전체 검색 결과가 들어갑니다(평가가 사용)."""
-    from scenario_a import ScenarioAClient
+    from legacy.scenario_a import ScenarioAClient
     if isinstance(client, ScenarioAClient):
         return client.generate_answer(question, hits, model)
     sources = [{"citation": i, **hit} for i, hit in enumerate(hits, 1)]

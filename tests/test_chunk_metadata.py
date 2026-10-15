@@ -9,11 +9,11 @@ import unittest
 from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 from unittest.mock import Mock, patch
 
-from embedding import build_index, chunk_documents, load_index
-from generation import generate_answer
-from observability import Trace
-from parsing import _number_tables, _render_table, _sections, read_json, section_of, write_json
-from retrieval import retrieve
+from b_embedding import build_index, chunk_documents, load_index
+from b_generation import generate_answer
+from b_observability import Trace
+from b_parsing import _number_tables, _render_table, _sections, read_json, section_of, write_json
+from b_retrieval import retrieve
 from test_observability import FakeLangfuse
 from test_pipeline import FakeClient
 
@@ -26,7 +26,7 @@ class SectionMetadataTests(unittest.TestCase):
         self.assertGreaterEqual(len(doc["sections"]), 2)
         for strategy in ("fixed", "boundary", "structured"):
             with self.subTest(strategy=strategy), patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": strategy}), \
-                    patch("embedding.section_of", wraps=section_of) as helper:
+                    patch("b_embedding.section_of", wraps=section_of) as helper:
                 chunks = chunk_documents([doc], 60, 15)
                 self.assertEqual(helper.call_count, len(chunks))
                 for chunk, call in zip(chunks, helper.call_args_list):

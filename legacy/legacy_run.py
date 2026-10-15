@@ -14,16 +14,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
-from embedding import build_index, load_index
-from evaluation import JUDGE_MODELS, evaluate, make_llm_judge
-from experiment_ids import next_experiment_id, owner_initials
-from experiment_reports import file_hash, save_report, text_file_hash, text_hash
-from generation import generate_answer
-from observability import Trace, code_version, observed
-from parsing import parse_documents, read_json, write_json
-from retrieval import retrieve
+from legacy.embedding import build_index, load_index
+from legacy.evaluation import JUDGE_MODELS, evaluate, make_llm_judge
+from legacy.experiment_ids import next_experiment_id, owner_initials
+from legacy.experiment_reports import file_hash, save_report, text_file_hash, text_hash
+from legacy.generation import generate_answer
+from legacy.observability import Trace, code_version, observed
+from legacy.parsing import parse_documents, read_json, write_json
+from legacy.retrieval import retrieve
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 # 팀 공용 모델 기본 경로. A 모델 설정값은 이 경로 아래의 하위 폴더 이름입니다.
 A_GENERATION_MODEL_DIR = Path("/home/spai1313/models/generate")
@@ -57,7 +57,7 @@ def check_index_documents(args, parser):
     """저장된 인덱스가 현재 전처리 문서로 생성됐는지 API 호출 전에 검사합니다."""
     documents_path = args.processed_dir / "documents.json"
     config_path = args.index_dir / "config.json"
-    rebuild = shlex.join([sys.executable, str(ROOT / "run.py"), "build",
+    rebuild = shlex.join([sys.executable, str(ROOT / "legacy/legacy_run.py"), "build",
                           "--processed-dir", str(args.processed_dir),
                           "--index-dir", str(args.index_dir)])
     if args.owner:
@@ -199,7 +199,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
 
     settings = getattr(args, "scenario_settings", {"scenario": "B"})
     if settings["scenario"] == "A":
-        from scenario_a import ScenarioAClient
+        from legacy.scenario_a import ScenarioAClient
         if os.getenv("RETRIEVAL_REWRITE", "off").strip().lower() not in {"", "off"}:
             parser.error("시나리오 A에서는 OpenAI 질문 재작성을 끄세요: RETRIEVAL_REWRITE=off")
         try:

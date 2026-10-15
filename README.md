@@ -33,8 +33,11 @@ rag-b/bin/python b_run.py all --limit 1 --question "질문 내용"
 기존 인덱스는 자동 이전하지 않으므로 새 경로에서 구축하고, 직접 지정하는 출력 경로도 시나리오별로 구분하세요.
 
 `run.py`는 `.env`/환경 변수의 `RFP_SCENARIO`로 실행 함수를 선택하며 가상환경은 자동 전환하지 않습니다.
-기존 무접두사 모듈과 `scenario_a*.py`, 기존 실행 구현 `legacy_run.py`는 보존했습니다.
-아래 기존 구조·담당 파일·실행 설명보다 이 절의 분리 경로와 실행법을 우선 적용하세요.
+기존 무접두사 모듈과 `scenario_a*.py`, `legacy_run.py`는 `legacy/`에 보관했습니다.
+테스트는 `python -m unittest discover -s tests -v`로 실행합니다. 공통 계약은 A·B 각각 검증하고,
+이전 코드 전용 테스트는 `legacy/tests/`에 보관합니다. `experiments/a_embedding_chy.py`는 A 모듈·경로,
+기존 OpenAI 검색 실험은 B 모듈·경로와 `.env.b`를 사용합니다. 직접 지정하는 경로도 시나리오별로 구분하세요.
+아래 기존 실행 예시보다 이 절의 시나리오별 환경·실행법을 우선 적용하세요.
 실험은 최신 dev 기반 작업 브랜치에서 진행하고, 성능 개선은 같은 평가 기준으로 검증한 뒤 dev에 반영합니다.
 오류 수정·안정화는 점수 상승과 별도로 회귀 검증할 수 있습니다.
 
@@ -92,37 +95,29 @@ rag-b/bin/python b_run.py all --limit 1 --question "질문 내용"
 
 ### 프로젝트 구조
 
-`dev`는 시나리오 A/B를 함께 개발하는 통합 브랜치입니다. 기존 파이프라인과 입출력 형식을 유지하며, `.env`의 `RFP_SCENARIO`에 따라 사용할 모델 구현을 연결합니다. B의 OpenAI 호출과 A/B 연결 코드는 구현되어 있고, 실제 A 생성·임베딩 모듈은 각 담당자가 구현해야 합니다.
+`dev`에서 A/B를 함께 관리하되, 각 시나리오는 같은 접두사의 모듈과 별도 환경·산출물을 사용합니다.
 
 ```text
 rfp-rag/
-├── data/
-│   ├── raw/                     # 원본 RFP 문서(HWP·PDF) 및 메타데이터
-│   └── processed/               # 파싱·전처리 결과 (A/B 공유 가능)
-├── indexes/                     # B 기본 인덱스
-│   └── scenario-a/              # A 기본 인덱스
-├── results/                     # B 기본 실행 결과
-│   ├── reports/                 # B 평가 요약
-│   └── scenario-a/              # A 기본 실행 결과
-│       └── reports/             # A 평가 요약
-├── run.py                       # 김도영: 설정·A/B 선택·경로·전체 실행 흐름
-├── scenario_a.py                # 김도영: A 담당 모듈 로딩·호출 연결·모델 객체 재사용
-├── parsing.py                   # 나상훈: HWP·PDF 추출, 정제, 메타데이터 결합
-├── embedding.py                 # 유찬혁: 공통 청킹·벡터 검증/정규화·FAISS 구축, B 임베딩 호출
-├── scenario_a_embedding.py      # 유찬혁: A 임베딩 모델 로딩·추론 (구현 예정)
-├── retrieval.py                 # 김연주: 벡터·하이브리드 검색, 필터링, 리랭킹
-├── query_rewrite.py             # 김연주: 질문 재작성 (현재 OpenAI 의존)
-├── generation.py                # 박단비: B 프롬프트·생성, A 생성 호출 전달
-├── scenario_a_generation.py     # 박단비: A 생성 모델 로딩·프롬프트·추론 (구현 예정)
-├── evaluation.py                # 김시현: 평가 데이터 검증 및 검색·답변·지연 평가
-├── tests/                       # 오프라인 설정·연결·오류 처리·B 회귀 테스트
-├── .env                         # 시나리오·모델 폴더 이름·API 키 등 (Git 제외)
-├── .env.example                 # 환경 변수 설정 예시
-├── requirements.txt             # 팀 공통 패키지 목록
+├── a_run.py / a_*.py            # A 실행·전처리·임베딩·검색·생성·평가
+├── a_client.py                  # A 로컬 임베딩·생성 모델 연결
+├── a_local_embedding.py         # A 임베딩 모델 로더
+├── a_local_generation.py        # A 생성 모델 로더
+├── b_run.py / b_*.py            # B 실행·전처리·임베딩·검색·생성·평가
+├── run.py                       # A/B 선택 진입점 (가상환경 자동 전환 없음)
+├── tests/                       # 현재 A/B 테스트, 공통 계약은 양쪽 검증
+├── experiments/                 # A 로컬 임베딩 실험·B OpenAI 검색 실험
+├── legacy/                      # 분리 전 무접두사 모듈·scenario_a*·legacy_run.py
+│   └── tests/                   # 이전 통합 설정 선택 방식의 회귀 테스트
+├── data/raw/                    # 공용 원본
+├── data/processed/a|b/          # 시나리오별 전처리 결과
+├── indexes/a|b/                 # 시나리오별 인덱스
+├── results/a|b/                 # 시나리오별 결과·캐시·reports/
+├── .env.a.example / .env.b.example
 └── README.md
 ```
 
-`scenario_a_embedding.py`와 `scenario_a_generation.py`는 연결 코드에서 사용하는 모듈 이름이며, 아직 저장소에 없는 구현 예정 파일입니다. 모델 파일은 저장소 밖의 공용 경로에 저장합니다.
+기존 코드는 [legacy 보관 안내](legacy/README.md)를 참고하세요. 모델 파일은 저장소 밖의 공용 경로에 저장합니다.
 
 ```text
 /home/spai1313/models/
@@ -154,7 +149,7 @@ feature/a-embedding  ──┤
 
 각 팀은 해당 시나리오의 전처리·청킹·임베딩·검색·생성·평가 파이프라인 전체를 담당합니다.
 A는 `a_run.py`, B는 `b_run.py`에서 같은 접두사의 모듈을 연결합니다.
-`run.py`는 A/B 선택 진입점이며, 기존 무접두사 파일은 호환용으로 보존합니다.
+`run.py`는 A/B 선택 진입점이며, 기존 무접두사 파일은 `legacy/`에 보관합니다.
 
 A 로컬 모델은 `a_client.py`가 아래 모듈의 `load_model`을 호출해 로딩하고 실행 중 재사용합니다.
 모델 다운로드는 별도로 준비합니다.

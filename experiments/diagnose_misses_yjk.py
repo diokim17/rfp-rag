@@ -3,7 +3,7 @@
   python experiments/diagnose_misses_yjk.py --eval-file data/eval_retrieval_yjk.json
 
 기준 설정은 lexical 리랭킹 후보 100, top-k 5입니다 (--rerank, --candidates, --top-k로 변경).
-질문 임베딩은 results/cache/query_embeddings.json 캐시만 쓰며, 캐시에 없으면 멈춥니다.
+질문 임베딩은 results/b/cache/query_embeddings.json 캐시만 쓰며, 캐시에 없으면 멈춥니다.
 
 단계 구분: 필터를 적용한 코사인 순위에서 정답 문서의 첫 청크 순위가
   후보 수 이내 → 리랭킹 문제 (후보에는 있었으나 리랭킹 뒤 top-k 밖으로 밀림)
@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from parsing import read_json, write_json  # noqa: E402
+from b_parsing import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import ASPECTS, CachedEmbeddingClient  # noqa: E402
 
 # 평가셋 그룹 → 사업명 포함 여부
@@ -114,17 +114,17 @@ def classify(case, gold_doc, top_doc, chunks_by_doc, grams_by_doc, bigrams_fn):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/parsing-v2-yjk")
-    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/cache/query_embeddings.json")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/parsing-v2-yjk")
+    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/b/cache/query_embeddings.json")
     parser.add_argument("--rerank", default="lexical")
     parser.add_argument("--candidates", type=int, default=100)
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
     args = parser.parse_args()
 
-    from embedding import embed_texts, load_index
-    from retrieval import _bigrams, retrieve
+    from b_embedding import embed_texts, load_index
+    from b_retrieval import _bigrams, retrieve
 
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)
