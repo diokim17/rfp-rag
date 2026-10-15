@@ -147,21 +147,22 @@ feature/a-embedding  ──┤
 
 ### A/B 담당 파일과 연결 방식
 
-| 담당자 | 주요 파일 | 맡을 작업 |
+| 시나리오 | 담당자 | 담당 파일 |
 | --- | --- | --- |
-| 김도영 | `run.py`, `scenario_a.py`, `.env.example` | 설정·경로·A/B 연결, 실행 환경 조율, 통합 검증 |
-| 박단비 | `scenario_a_generation.py`, `generation.py` | A 생성 모델 선정·다운로드·로딩·프롬프트·답변 생성, 기존 답변 형식 유지 |
-| 유찬혁 | `scenario_a_embedding.py`, `embedding.py` | A 임베딩 모델 선정·다운로드·로딩·텍스트 벡터화, 청킹·인덱스 구축 |
-| 김연주 | `retrieval.py`, `query_rewrite.py` | 검색·하이브리드·리랭킹 연결, A 질문 재작성 의존성 정리 |
-| 김시현 | `evaluation.py`, 평가 데이터·실험 코드 | 동일 평가셋을 이용한 A/B 품질·지연 비교 |
-| 나상훈 | `parsing.py` | A/B에서 공유할 문서 추출·정제·메타데이터 유지 |
+| A: 서버 모델 직접 실행 | 김연주, 박단비, 유찬혁 | `a_run.py`, `a_*.py`, `.env.a.example` |
+| B: OpenAI API | 김도영, 김시현, 나상훈 | `b_run.py`, `b_*.py`, `.env.b.example` |
 
-각 A 담당 모듈은 아래 접점으로 연결합니다. 모델 다운로드는 별도로 준비하고, `load_model`은 전달된 로컬 모델 경로를 로딩해 실행 중 재사용할 객체를 반환합니다.
+각 팀은 해당 시나리오의 전처리·청킹·임베딩·검색·생성·평가 파이프라인 전체를 담당합니다.
+A는 `a_run.py`, B는 `b_run.py`에서 같은 접두사의 모듈을 연결합니다.
+`run.py`는 A/B 선택 진입점이며, 기존 무접두사 파일은 호환용으로 보존합니다.
 
-| 담당 모듈 | 로딩 접점 | 반환 객체의 메서드 | 추론 반환값 |
+A 로컬 모델은 `a_client.py`가 아래 모듈의 `load_model`을 호출해 로딩하고 실행 중 재사용합니다.
+모델 다운로드는 별도로 준비합니다.
+
+| A 모델 모듈 | 로딩 접점 | 반환 객체의 메서드 | 추론 반환값 |
 | --- | --- | --- | --- |
-| `scenario_a_embedding.py` | `load_model(model_path: Path)` | `embed_texts(texts)` | 입력 순서의 2차원 숫자 벡터. 공통 `embedding.py`에서 float32 변환·검증·L2 정규화 |
-| `scenario_a_generation.py` | `load_model(model_path: Path)` | `generate_answer(question, hits, model)` | 기존 답변 dict: `question`, `answer`, `sources`, `model`, `status` 등 |
+| `a_local_embedding.py` | `load_model(model_path: Path)` | `embed_texts(texts)` | 입력 순서의 2차원 숫자 벡터. `a_embedding.py`에서 float32 변환·검증·L2 정규화 |
+| `a_local_generation.py` | `load_model(model_path: Path)` | `generate_answer(question, hits, model)` | 기존 답변 dict: `question`, `answer`, `sources`, `model`, `status` 등 |
 
 생성 결과의 `sources`는 기존처럼 검색 근거와 `citation` 번호를 포함해야 합니다. 모델별 입력 접두어·토크나이저·길이 제한·장치 배치는 담당 모듈에서 처리합니다. 문서와 검색 질문에는 동일한 임베딩 모델을 사용합니다.
 
