@@ -365,7 +365,7 @@ class JudgeTests(unittest.TestCase):
             self.assertEqual(make_llm_judge(client, cache_path=path)(case, "PRIVATE_ANSWER"), "correct")
             self.assertEqual(len(calls), 1)
             self.assertNotIn("PRIVATE", path.read_text(encoding="utf-8"))
-        self.assertEqual((calls[0]["model"], calls[0]["store"], calls[0]["reasoning"]), ("gpt-5-nano", False, {"effort": "minimal"}))
+        self.assertEqual((calls[0]["model"], calls[0]["store"], calls[0]["reasoning"]), ("gpt-5-nano", False, {"effort": "low"}))
 
     def test_bad_judge_output_fails(self):
         client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kw: SimpleNamespace(output_text="모름", usage=None)))
