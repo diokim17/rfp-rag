@@ -1,70 +1,42 @@
-## A·B 독립 개발 실행 (현재 권장)
-
-A는 `a_run.py`, B는 `b_run.py`를 사용합니다. 각 실행 파일이 참조하는 프로젝트 모듈도
-`a_*.py`, `b_*.py`로 복사하여 독립적으로 관리합니다. 알고리즘·모델·프롬프트는 분리 시점의 동작을 유지합니다.
-
-```bash
-cp .env.a.example .env.a
-cp .env.b.example .env.b
-# 각 파일에 담당자·모델 이름·필요한 인증을 설정한 뒤
-python a_run.py check-config
-python b_run.py check-config
-python a_run.py all --owner chy --limit 1 --question "사업 예산은 얼마인가요?"
-python b_run.py all --owner yjk --limit 1 --question "사업 예산은 얼마인가요?"
-python a_run.py evaluate --owner chy --eval-file data/evaluation/eval_v4.json
-```
-
-| 구분 | A | B |
-| --- | --- | --- |
-| 설정 파일 | `.env.a` | `.env.b` |
-| 전처리 | `data/processed/a` | `data/processed/b` |
-| 인덱스 | `indexes/a` | `indexes/b` |
-| 실행 결과 | `results/a` | `results/b` |
-| 평가 요약 | `results/a/reports` | `results/b/reports` |
-| 실험 번호 DB | `.experiment-state/a` | `.experiment-state/b` |
-
-원본 `data/raw`와 평가 데이터·평가 기준은 함께 사용할 수 있습니다. 평가 구현은 각각 복사하되
-비교 실험에서는 동일한 평가 파일과 기준을 사용하세요. 환경 변수는 각 설정 파일보다 우선합니다.
-같은 Python 프로세스에서 두 CLI를 연속 실행하지 말고 각각 별도 프로세스로 실행하세요.
-`--processed-dir`, `--index-dir`, `--results-dir`, `--reports-dir`, `--judge-cache`로 지정한 경로는
-사용자가 관리하므로 상대 시나리오나 기존 산출물 경로를 지정하지 마세요.
-기존 데이터·인덱스는 자동 이전하거나 덮어쓰지 않습니다. 새 경로에서 parse/build한 뒤 ask/evaluate하세요.
-
-`a_embedding.py`는 청킹·FAISS 인덱스, `a_local_embedding.py`는 A 로컬 임베딩 모델 로더입니다.
-`a_client.py`가 `a_local_embedding.py`와 `a_local_generation.py`를 연결합니다.
-A 프롬프트·결과 형식은 `a_generation.py`에서만 가져오며 B 변경에 영향을 받지 않습니다.
-B 실행은 A 모델 로더나 PyTorch를 기본 import하지 않습니다(선택한 재순위 모델의 의존성은 별도).
-기존 무접두사 모듈과 `scenario_a*.py`, `legacy_run.py`는 이전 Python 호출·실험의 호환용으로 보존합니다.
-신규 개발에서는 해당 파일 대신 각 시나리오 접두사 모듈을 수정하세요.
-
-`run.py`는 `.env` 또는 환경 변수의 `RFP_SCENARIO`(기본 B)를 읽고 두 실행 함수 중 하나를 호출하는
-얇은 선택 진입점입니다. 이후 설정·저장 경로는 선택한 실행 파일의 위 규칙을 따릅니다.
-기존 CLI 명령·옵션은 유지하지만 기존 공유 저장 경로를 자동 사용하지 않습니다.
-아래의 기존 설명에서 `.env`, `run.py`, 공유 산출물 경로는 과거 구조 설명이며 위 표를 우선하세요.
-
-실험·고도화는 최신 dev 기반 작업 브랜치에서 진행하세요. 성능 개선은 동일한 비교용 평가 데이터와
-기준선으로 검증한 후 dev에 반영합니다. 오류 수정·안정화는 재현 테스트와 회귀 검증으로 별도로
-판단할 수 있으며 점수 상승을 필수 조건으로 삼지 않습니다. 이번 분리 브랜치에서는 dev에 병합하지 않습니다.
-
-서버 검증 결과 (2026-10-15): `rag-b` 환경에서 전체 회귀 테스트를 실행했습니다.
-B는 합성 문서 1건으로 실제 API 임베딩 → FAISS 구축 → 검색 → 생성(`status=ok`, 출처 1건)을 확인했습니다.
-A·B의 FAISS 구축/검색과 저장 경로·import·Trace 분리는 오프라인 테스트로 검증했습니다.
-A 로컬 로더는 임베딩·생성 모두 공용 모델 폴더 접근 시 `PermissionError`로 중단되어
-실제 모델 로딩·임베딩·GPU 검색/생성은 미검증입니다. 기본 `.venv`에는 torch가 없고,
-`rag-b`에는 sentence-transformers가 없어 A 의존성 준비도 필요합니다.
-모델 소유자가 접근 권한을 부여하고 A 전용 환경을 준비한 뒤 소규모 실행을 재검증하세요.
-기존 원본·전처리·인덱스에는 쓰지 않았으며 실제 API 검증 산출물은 임시 디렉터리를 사용했습니다.
-
-검증: 서버 가상환경에서 `python -m unittest discover -s tests -v`를 실행합니다.
-새 파이프라인 검증은 `tests/test_split_pipelines.py`, 기존 호환 회귀는 `legacy_run.py`를 대상으로 합니다.
-
----
-
 # RFP-RAG
 
 > 코드잇 AI 중급 프로젝트 · 3팀
 >
 > RFP(제안요청서) 문서 기반 정보 검색·요약 및 질의응답 시스템
+
+## A·B 독립 파이프라인 사용
+
+A는 `a_*.py`, B는 `b_*.py`에서 독립적으로 개발하며 각각의 가상환경에서 실행합니다.
+환경 설정은 최상위 [A 설정](setup_scenario_a.txt)·[A 잠금 파일](setup_scenario_a_lock.txt)·[B 설정](requirements-b-venv.txt)을 사용합니다.
+기존 최상위 환경 파일은 `docs/environment_archive/`에 임시 보관했고, 실험별 설정은 `experiments/`에 유지합니다.
+`requirements.txt`는 첨부 A 설정의 참조를 유지하기 위한 연결 파일입니다.
+
+```bash
+# 최초 환경 준비 (A 잠금 파일 대신 setup_scenario_a.txt도 사용 가능)
+python3.12 -m venv .venv-a
+.venv-a/bin/python -m pip install -r setup_scenario_a_lock.txt
+python3.12 -m venv rag-b
+rag-b/bin/python -m pip install -r requirements-b-venv.txt
+cp .env.a.example .env.a
+cp .env.b.example .env.b
+# .env.a에 모델 폴더명, .env.b에 API 키, 각각 EXPERIMENT_OWNER를 설정
+.venv-a/bin/python a_run.py check-config
+rag-b/bin/python b_run.py check-config
+.venv-a/bin/python a_run.py all --limit 1 --question "질문 내용"
+rag-b/bin/python b_run.py all --limit 1 --question "질문 내용"
+```
+
+두 실행 파일 모두 `parse`, `build`, `ask`, `evaluate`를 지원합니다. 평가 예:
+`rag-b/bin/python b_run.py evaluate --eval-file data/eval.json --judge-model gpt-5-nano --judge-cache results/b/judge-cache.jsonl`.
+설정은 `.env.a`·`.env.b`, 산출물은 `data/processed/a|b`, `indexes/a|b`, `results/a|b`(보고서: `reports/`),
+실험 번호는 `.experiment-state/a|b`에 나뉩니다. 원본과 비교용 평가 데이터는 함께 사용합니다.
+기존 인덱스는 자동 이전하지 않으므로 새 경로에서 구축하고, 직접 지정하는 출력 경로도 시나리오별로 구분하세요.
+
+`run.py`는 `.env`/환경 변수의 `RFP_SCENARIO`로 실행 함수를 선택하며 가상환경은 자동 전환하지 않습니다.
+기존 무접두사 모듈과 `scenario_a*.py`, 기존 실행 구현 `legacy_run.py`는 보존했습니다.
+아래 기존 구조·담당 파일·실행 설명보다 이 절의 분리 경로와 실행법을 우선 적용하세요.
+실험은 최신 dev 기반 작업 브랜치에서 진행하고, 성능 개선은 같은 평가 기준으로 검증한 뒤 dev에 반영합니다.
+오류 수정·안정화는 점수 상승과 별도로 회귀 검증할 수 있습니다.
 
 ## 일정
 
@@ -301,13 +273,13 @@ A와 B는 별도 venv를 사용합니다. B는 Python 3.12 / Linux NVIDIA 환경
 ```bash
 python3.12 -m venv rag-b
 source rag-b/bin/activate
-python -m pip install -r requirements-b.txt
+python -m pip install -r requirements-b-venv.txt
 python -m pip check
 ```
 
 B는 `torch==2.14.1+cu126`, `transformers==4.57.1`을 사용합니다. CUDA 12.6 다운로드 경로는 설치 파일에 명시되어 있습니다.
 B 환경에는 torch 2.8.0을 지정한 `experiments/requirements-rerank.txt`나 A 임베딩 설치 파일을 설치하지 마세요.
-`requirements-b.txt`는 B 직접 의존성 목록이며, 팀원이 제공한 전체 환경 스냅샷과는 구분됩니다.
+`requirements-b-venv.txt`는 팀원이 제공한 B 전체 환경 스냅샷입니다. 기존 직접 의존성 목록은 `docs/environment_archive/requirements-b.txt`에 보관했습니다.
 
 `evaluate --judge-model gpt-5-nano` 또는 `--judge-model gpt-5-mini`로 기존 LLM 판정기를 연결합니다.
 판정에는 추가 OpenAI API 비용이 발생합니다. `--judge-cache results/judge-cache.jsonl`을 함께 지정하면 동일 입력의 판정을 재사용합니다.
