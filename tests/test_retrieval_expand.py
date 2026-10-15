@@ -104,3 +104,26 @@ class ExpandTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AspectTests(unittest.TestCase):
+    """여러 문장 질문: 찾은 청크와 덜 겹치는 문장(묻는 항목)으로 1위 문서의 청크 순서를 다시 정합니다."""
+
+    QUESTION = "다음 내용의 사업에서 입찰 참가 자격은 무엇인가요? 학사포털 파일 암호화 모듈 적용"
+
+    def test_aspect_sentence(self):
+        self.assertEqual(retrieval._aspect_sentence(self.QUESTION, "학사포털 파일 암호화 모듈 적용 배경"),
+                         "다음 내용의 사업에서 입찰 참가 자격은 무엇인가요?")
+        self.assertIsNone(retrieval._aspect_sentence("입찰 참가 자격은 무엇인가요?", "아무 내용"))
+
+    def test_aspect_slot_reorders_top_doc_only(self):
+        ranked = [chunk("a:0", "학사포털 파일 암호화 모듈 적용 배경", PROJECT),
+                  chunk("a:1", "학사포털 암호화 추진 목적", PROJECT),
+                  chunk("b:0", "다른 사업의 입찰 참가 자격", OTHER),
+                  chunk("a:2", "입찰 참가 자격: 소프트웨어사업자", PROJECT)]
+        scores = lambda question, passages, model: [2. if "자격" in p else 1. for p in passages]
+        with patch.object(retrieval, "_cross_encoder_scores", side_effect=scores):
+            result = retrieval._aspect_slot(self.QUESTION, ranked, "cross-encoder")
+            self.assertEqual([h["chunk_id"] for h in result], ["a:2", "a:0", "a:1", "b:0"])
+            single = retrieval._aspect_slot("입찰 참가 자격은?", ranked, "cross-encoder")
+        self.assertEqual(single, ranked)

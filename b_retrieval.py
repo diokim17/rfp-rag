@@ -421,6 +421,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
                                   lambda number: float(index.reconstruct(number) @ vector[0]))
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
         ranked = observed(f"rerank-{mode}")(_rerank)(question, hits, mode)
+        ranked = _aspect_slot(question, ranked, mode)
         take = _selector(chunks, options)
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return _finish(question, hits, client, index, chunks, config, eligible, options)
@@ -458,6 +459,34 @@ def _residual_question(question, metadata):
     return " ".join(kept) or question
 
 
+def _aspect_sentence(question, matched_text):
+    """여러 문장 질문에서 이미 찾은 청크와 가장 덜 겹치는 문장(묻는 항목). 한 문장이면 None.
+
+    예: '다음 내용의 사업에서 입찰 참가 자격은 무엇인가요? <사업 설명>'에서 사업 설명은 찾은 청크와 겹치므로
+    '…입찰 참가 자격은 무엇인가요?'를 고릅니다.
+    """
+    sentences = [s.strip() for s in re.split(r"(?<=[?？.!])\s+|\n+", unicodedata.normalize("NFC", question)) if s.strip()]
+    if len(sentences) < 2:
+        return None
+    grams = set(_bigrams(matched_text))
+    return min(sentences, key=lambda s: sum(g in grams for g in _bigrams(s)) / max(len(_bigrams(s)), 1))
+
+
+def _aspect_slot(question, ranked, mode):
+    """여러 문장 질문에서 1위 문서의 후보를 묻는 문장(_aspect_sentence)으로 다시 재정렬해 그 순서로 맨 앞에 둡니다.
+
+    사업 설명이 질문 대부분이면 재정렬이 설명과 닮은 개요 청크만 올려 문서당 상한을 채우므로,
+    1위 문서의 청크는 묻는 항목에 맞는 순서로 바꿉니다(사업명은 메타데이터로 함께 전달됨). 다른 문서 순서와 한 문장 질문은 그대로입니다.
+    """
+    aspect = _aspect_sentence(question, ranked[0]["text"]) if ranked else None
+    if not aspect:
+        return ranked
+    same = [hit for hit in ranked if hit["doc_id"] == ranked[0]["doc_id"]]
+    order = [hit["chunk_id"] for hit in _rerank(aspect, same, mode)]
+    by_id = {hit["chunk_id"]: hit for hit in same}
+    return [*(by_id[c] for c in order), *(hit for hit in ranked if hit["doc_id"] != ranked[0]["doc_id"])]
+
+
 def _expand_candidates(question, hits, chunks, eligible, count, score_of):
     """재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문의 문서 안 BM25 상위 count개를 더합니다.
 
@@ -471,7 +500,8 @@ def _expand_candidates(question, hits, chunks, eligible, count, score_of):
     extra = []
     for doc_id in list(dict.fromkeys(hit["doc_id"] for hit in hits))[:EXPAND_DOCS]:
         ids = [number for number in members.get(doc_id, []) if number in eligible]
-        rest = _residual_question(question, chunks[ids[0]]["metadata"])
+        first = next(hit for hit in hits if hit["doc_id"] == doc_id)
+        rest = _aspect_sentence(question, first["text"]) or _residual_question(question, chunks[ids[0]]["metadata"])
         added = 0
         for number in _bm25_ranking(rest, chunks, set(ids), len(ids)):
             if added == count:
@@ -561,6 +591,7 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
     if mode != "none":
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"], lambda number: cosine[number])
         ranked = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode)
+        ranked = _aspect_slot(question, ranked, mode)
         take = _selector(chunks, options)
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return hits
