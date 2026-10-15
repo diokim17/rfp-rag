@@ -95,6 +95,14 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(result["sources"], [{"citation": i, **h} for i, h in enumerate(hits, 1)])  # 결과는 전체 그대로
 
 
+    def test_filters_in_prompt(self):
+        client = FakeClient()
+        generate_answer("이 기관 사업은?", [hit("a", "본문")], client, filters={"발주 기관": "인천광역시"})
+        self.assertIn("검색 조건: 발주 기관 = 인천광역시", client.requests[-1]["input"])
+        generate_answer("질문", [hit("a", "본문")], client)
+        self.assertNotIn("검색 조건", client.requests[-1]["input"])
+
+
 class StatusTests(unittest.TestCase):
     """정상 답변은 출처 괄호를 [n]으로 바꾸고, 빈 답변·잘린 답변은 안내 문구와 status를 돌려줌."""
 
