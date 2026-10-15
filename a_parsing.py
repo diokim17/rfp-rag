@@ -1,5 +1,3 @@
-"""나상훈: 원본 파일 → Document 목록. CSV 열 이름은 metadata에 유지합니다."""
-
 import bisect
 import csv
 import hashlib

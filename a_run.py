@@ -1,5 +1,3 @@
-"""김도영: 전처리 → 인덱스 → 검색 → 생성 → 평가 연결."""
-
 import argparse
 import hashlib
 import json

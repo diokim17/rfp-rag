@@ -1,5 +1,3 @@
-"""유찬혁: Document → Chunk → OpenAI 임베딩 → FAISS 인덱스."""
-
 from bisect import bisect_right
 import os
 from pathlib import Path

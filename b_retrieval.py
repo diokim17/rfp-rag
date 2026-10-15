@@ -1,5 +1,4 @@
-"""김연주: 질문 → 하이브리드 검색(벡터 + BM25 사업명 접두, RRF) → 재정렬 후보 확장 → cross-encoder 리랭킹 → 문서당 청크 상한.
-
+"""
 기본값은 eval_team_v1(yjk-0017)·eval_v2(yjk-0021, yjk-0025)·새 질문 19개(yjk-0024) 측정에서 가장 좋았던 조합이며,
 인자나 환경 변수로 끌 수 있습니다. 설정 근거는 results/reports/b_retrieval_settings_yjk.md.
 """
