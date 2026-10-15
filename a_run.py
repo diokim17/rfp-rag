@@ -12,6 +12,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
+# GPU 메모리를 조각내지 않고 늘려 가며 쓰게 해서, 세 모델(임베딩·리랭커·EXAONE)을 함께 올릴 때 메모리 부족을 줄입니다.
+# (eval_v4 50문항: 메모리 부족 경고 1회→0회, GPU 최대 22.4→21.5GB, 점수·속도 같음)
+# torch를 불러오기 전에 정해야 해서 여기서 설정하고, 이미 값을 지정했으면 그대로 둡니다.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 from a_embedding import build_index, load_index
 from a_evaluation import JUDGE_MODELS, evaluate, make_llm_judge
 from a_experiment_ids import next_experiment_id, owner_initials
@@ -137,8 +142,6 @@ def main():
         settings = read_scenario_settings(ROOT / ".env.a")
     except ValueError as exc:
         parser.error(str(exc))
-    if settings["scenario"] != "B" and args.judge_model:
-        parser.error("--judge-model은 시나리오 B에서만 지원합니다.")
     if args.command == "check-config":
         print(json.dumps(settings, ensure_ascii=False, indent=2))
         return
@@ -251,7 +254,9 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         cases = read_json(args.eval_file)
         judge_model = getattr(args, "judge_model", None)
         judge_cache = getattr(args, "judge_cache", None)
-        judge = make_llm_judge(client, model=judge_model, cache_path=judge_cache) if judge_model else None
+        # A 답변은 로컬 모델(client)이 만들지만, A/B를 같은 기준으로 채점하려고 판정은 B와 같은 OpenAI 판정기를 씁니다.
+        judge = (make_llm_judge(OpenAI(timeout=60.0, max_retries=2), model=judge_model, cache_path=judge_cache)
+                 if judge_model else None)
         ungraded = sum(case.get("grading") == "llm" for case in cases) if judge is None else 0
         if ungraded:
             print(f"경고: 판정기가 없어 LLM {ungraded}문항은 미채점됩니다. --judge-model로 판정기를 지정하세요.",
