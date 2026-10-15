@@ -104,7 +104,7 @@ class ObservabilityTests(unittest.TestCase):
     def test_evaluate_cli_writes_local_result_and_share_report(self):
         from embedding import build_index
         from test_pipeline import FakeClient
-        import run
+        import legacy_run as run
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -118,12 +118,12 @@ class ObservabilityTests(unittest.TestCase):
             eval_file.write_text(json.dumps([{"question": "예산 PRIVATE_QUESTION",
                                               "expected_doc_ids": ["a"],
                                               "expected_keywords": ["100원"]}]))
-            argv = ["run.py", "evaluate", "--eval-file", str(eval_file),
+            argv = ["legacy_run.py", "evaluate", "--eval-file", str(eval_file),
                     "--index-dir", str(root / "index"), "--results-dir", str(root / "results"),
                     "--reports-dir", str(root / "reports"), "--owner", "tester"]
             with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "LANGFUSE_ENABLED": "false"}, clear=True), \
-                    patch("sys.argv", argv), patch("run.load_dotenv"), \
-                    patch("run.OpenAI", return_value=client), patch.object(run, "ROOT", root):
+                    patch("sys.argv", argv), patch("legacy_run.load_dotenv"), \
+                    patch("legacy_run.OpenAI", return_value=client), patch.object(run, "ROOT", root):
                 run.main()
             result = json.loads(next((root / "results").glob("evaluate_*.json")).read_text())
             self.assertEqual(result["summary"]["recall_at_k"], 1)

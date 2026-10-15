@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-import run
+import legacy_run as run
 from observability import Trace
 
 
@@ -35,9 +35,9 @@ class ScenarioErrorsTests(unittest.TestCase):
                 patch.object(run, 'A_GENERATION_MODEL_DIR', self.gen), \
                 patch.object(run, 'A_EMBEDDING_MODEL_DIR', self.emb), \
                 patch.dict('sys.modules', self.modules), \
-                patch('run.check_index_documents'), patch('run.OpenAI') as client, \
-                patch('run.build_index') as build, patch('run.retrieve') as retrieve, \
-                patch('run.generate_answer') as generate, \
+                patch('legacy_run.check_index_documents'), patch('legacy_run.OpenAI') as client, \
+                patch('legacy_run.build_index') as build, patch('legacy_run.retrieve') as retrieve, \
+                patch('legacy_run.generate_answer') as generate, \
                 redirect_stderr(output), self.assertRaises(SystemExit) as error:
             run.run_pipeline(self.args, argparse.ArgumentParser(), {}, {}, Trace({}), 'test')
         self.assertEqual(error.exception.code, 2)

@@ -7,7 +7,7 @@ import tempfile
 from unittest import TestCase
 from unittest.mock import patch
 
-import run
+import legacy_run as run
 from observability import Trace
 from test_pipeline import FakeClient
 
@@ -19,10 +19,10 @@ class ScenarioBTests(TestCase):
                 root = Path(directory)
                 (root/'.env').write_text(scenario)
                 with patch.dict(os.environ, {}, clear=True), patch.object(run, 'ROOT', root), \
-                        patch('sys.argv', ['run.py','build']), \
-                        patch('run.owner_initials', return_value='test'), \
-                        patch('run.next_experiment_id', return_value='test-0001'), \
-                        patch('run.run_pipeline') as pipeline, redirect_stdout(io.StringIO()):
+                        patch('sys.argv', ['legacy_run.py','build']), \
+                        patch('legacy_run.owner_initials', return_value='test'), \
+                        patch('legacy_run.next_experiment_id', return_value='test-0001'), \
+                        patch('legacy_run.run_pipeline') as pipeline, redirect_stdout(io.StringIO()):
                     run.main()
                 args = pipeline.call_args.args[0]
                 self.assertEqual(args.scenario_settings['scenario'], 'B')
@@ -46,7 +46,7 @@ class ScenarioBTests(TestCase):
             with patch.dict(os.environ, {'OPENAI_API_KEY':'fake', 'OPENAI_GENERATION_MODEL':'gpt-5-nano',
                     'OPENAI_EMBEDDING_MODEL':'test-embedding', 'RETRIEVAL_RERANK':'none',
                     'RETRIEVAL_HYBRID':'false', 'RETRIEVAL_REWRITE':'off'}, clear=True), \
-                    patch('run.OpenAI', return_value=fake) as client, \
+                    patch('legacy_run.OpenAI', return_value=fake) as client, \
                     patch('scenario_a.load_component') as a_loader, redirect_stdout(io.StringIO()):
                 for command in ('build','ask','evaluate'):
                     args.command = command

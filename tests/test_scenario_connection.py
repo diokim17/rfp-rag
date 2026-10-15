@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import numpy as np
-import run
+import legacy_run as run
 from observability import Trace
 from scenario_a import ScenarioAClient
 
@@ -45,8 +45,8 @@ class ScenarioConnectionTests(unittest.TestCase):
                     patch.dict('sys.modules', modules), \
                     patch.object(run, 'A_GENERATION_MODEL_DIR', gen), \
                     patch.object(run, 'A_EMBEDDING_MODEL_DIR', emb), \
-                    patch('run.parse_documents', side_effect=parse), \
-                    patch('run.OpenAI') as openai, redirect_stdout(io.StringIO()):
+                    patch('legacy_run.parse_documents', side_effect=parse), \
+                    patch('legacy_run.OpenAI') as openai, redirect_stdout(io.StringIO()):
                 run.run_pipeline(args, run.argparse.ArgumentParser(), {}, {'experiment_id':'test-0001'}, Trace({}), 'test')
                 emb_factory.assert_called_once_with(emb/'emb')
                 gen_factory.assert_called_once_with(gen/'gen')
@@ -71,13 +71,13 @@ class ScenarioConnectionTests(unittest.TestCase):
             with self.subTest(explicit=explicit), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 (root/'.env').write_text('RFP_SCENARIO=A\nA_GENERATION_MODEL=gen\nA_EMBEDDING_MODEL=emb\n')
-                argv = ['run.py', 'build']
+                argv = ['legacy_run.py', 'build']
                 if explicit:
                     argv += ['--index-dir', str(root/'custom'), '--results-dir='+str(root/'output')]
                 with patch.dict(os.environ, {}, clear=True), patch.object(run, 'ROOT', root), \
-                        patch('sys.argv', argv), patch('run.owner_initials', return_value='test'), \
-                        patch('run.next_experiment_id', return_value='test-0001'), \
-                        patch('run.run_pipeline') as pipeline, redirect_stdout(io.StringIO()):
+                        patch('sys.argv', argv), patch('legacy_run.owner_initials', return_value='test'), \
+                        patch('legacy_run.next_experiment_id', return_value='test-0001'), \
+                        patch('legacy_run.run_pipeline') as pipeline, redirect_stdout(io.StringIO()):
                     run.main()
                 args = pipeline.call_args.args[0]
                 self.assertEqual(args.index_dir, root/('custom' if explicit else 'indexes/scenario-a'))

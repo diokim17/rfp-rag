@@ -8,7 +8,7 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-import run
+import legacy_run as run
 
 
 class ScenarioSettingsTests(unittest.TestCase):
@@ -58,9 +58,9 @@ class ScenarioSettingsTests(unittest.TestCase):
             (root / '.env').write_text('RFP_SCENARIO=A\nA_GENERATION_MODEL=gen\nA_EMBEDDING_MODEL=emb\nOPENAI_API_KEY=SECRET_TEST_VALUE\n')
             output = io.StringIO()
             with patch.dict(os.environ, {}, clear=True), patch.object(run, 'ROOT', root), \
-                    patch('sys.argv', ['run.py', 'check-config']), \
-                    patch('run.run_pipeline') as pipeline, patch('run.next_experiment_id') as experiment, \
-                    patch('run.OpenAI') as client, redirect_stdout(output):
+                    patch('sys.argv', ['legacy_run.py', 'check-config']), \
+                    patch('legacy_run.run_pipeline') as pipeline, patch('legacy_run.next_experiment_id') as experiment, \
+                    patch('legacy_run.OpenAI') as client, redirect_stdout(output):
                 run.main()
             self.assertEqual(json.loads(output.getvalue())['scenario'], 'A')
             self.assertNotIn('SECRET_TEST_VALUE', output.getvalue())

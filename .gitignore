@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+!.env.a.example
+!.env.b.example
 
 # Markdown은 README와 아래의 공유용 보고서만 허용
 *.[mM][dD]

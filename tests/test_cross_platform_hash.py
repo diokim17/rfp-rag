@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import run
+import legacy_run as run
 from experiment_reports import file_hash, text_file_hash, text_hash
 from observability import Trace
 from parsing import read_json, write_json
@@ -93,7 +93,7 @@ class IndexAcrossPlatformsTests(unittest.TestCase):
 
         experiment = {"experiment_id": "tester-0001"}
         with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "OPENAI_GENERATION_MODEL": "gpt-5-mini"}), \
-                patch("run.OpenAI"), patch("run.build_index", side_effect=build), redirect_stdout(io.StringIO()):
+                patch("legacy_run.OpenAI"), patch("legacy_run.build_index", side_effect=build), redirect_stdout(io.StringIO()):
             run.run_pipeline(self.args, argparse.ArgumentParser(), {}, experiment, Trace({}), "test")
         self.assertEqual(stored["hash"], self.lf_hash)
         self.assertEqual(experiment["documents_sha256"], self.lf_hash)

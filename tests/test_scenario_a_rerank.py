@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import Mock, patch
 import warnings
 
-import run
+import legacy_run as run
 import retrieval
 from observability import Trace
 
@@ -96,8 +96,8 @@ class ScenarioARerankTests(unittest.TestCase):
                 patch.object(retrieval, "A_RERANK_MODEL_DIR", self.rerank), \
                 patch.object(run, "A_GENERATION_MODEL_DIR", self.gen), \
                 patch.object(run, "A_EMBEDDING_MODEL_DIR", self.emb), \
-                patch("run.parse_documents", side_effect=parse), \
-                patch("run.OpenAI") as openai, redirect_stdout(io.StringIO()):
+                patch("legacy_run.parse_documents", side_effect=parse), \
+                patch("legacy_run.OpenAI") as openai, redirect_stdout(io.StringIO()):
             run.run_pipeline(self.args, run.argparse.ArgumentParser(), {}, {"experiment_id": "test-0001"},
                              Trace({}), "test")
         openai.assert_not_called()
