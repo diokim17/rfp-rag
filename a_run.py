@@ -137,8 +137,6 @@ def main():
         settings = read_scenario_settings(ROOT / ".env.a")
     except ValueError as exc:
         parser.error(str(exc))
-    if settings["scenario"] != "B" and args.judge_model:
-        parser.error("--judge-model은 시나리오 B에서만 지원합니다.")
     if args.command == "check-config":
         print(json.dumps(settings, ensure_ascii=False, indent=2))
         return
@@ -251,7 +249,9 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         cases = read_json(args.eval_file)
         judge_model = getattr(args, "judge_model", None)
         judge_cache = getattr(args, "judge_cache", None)
-        judge = make_llm_judge(client, model=judge_model, cache_path=judge_cache) if judge_model else None
+        # A 답변은 로컬 모델(client)이 만들지만, A/B를 같은 기준으로 채점하려고 판정은 B와 같은 OpenAI 판정기를 씁니다.
+        judge = (make_llm_judge(OpenAI(timeout=60.0, max_retries=2), model=judge_model, cache_path=judge_cache)
+                 if judge_model else None)
         ungraded = sum(case.get("grading") == "llm" for case in cases) if judge is None else 0
         if ungraded:
             print(f"경고: 판정기가 없어 LLM {ungraded}문항은 미채점됩니다. --judge-model로 판정기를 지정하세요.",
