@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 import tempfile
 import unittest
 
-from experiment_ids import next_experiment_id, owner_initials
+from b_experiment_ids import next_experiment_id, owner_initials
 
 
 class ExperimentIdTests(unittest.TestCase):

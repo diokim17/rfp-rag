@@ -1,6 +1,6 @@
 """김연주: 범위 밖 질문 차단 기준(RETRIEVAL_MIN_SCORE)을 정하기 위해 질문과 가장 가까운 청크의 코사인을 잽니다.
 
-  python experiments/offtopic_threshold_yjk.py --index-dir indexes/eval-v2-structured-yjk --eval-file data/eval_v2.json
+  python experiments/offtopic_threshold_yjk.py --index-dir indexes/b/eval-v2-structured-yjk --eval-file data/eval_v2.json
 
 임베딩 API를 한 번 호출합니다(평가셋 질문 + 아래 범위 밖 질문 30개, text-embedding-3-small 기준 $0.001 미만). 생성 호출은 없습니다.
 - 정상: 평가셋 질문. 하나라도 막히면 안 되므로 기준은 이 최솟값보다 충분히 낮아야 합니다.
@@ -18,8 +18,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from embedding import embed_texts, load_index
-from parsing import read_json
+from b_embedding import embed_texts, load_index
+from b_parsing import read_json
 
 OFF_TOPIC = ["오늘 서울 날씨 어때?", "점심 메뉴 추천해줘", "강남역 근처 맛집 알려줘", "주말에 볼만한 영화 뭐 있어?",
              "프랑스의 수도는 어디야?", "임진왜란은 몇 년에 일어났어?", "광합성 원리를 설명해줘", "1부터 100까지 더하면 얼마야?",
@@ -34,9 +34,9 @@ BORDER = ["RFP가 뭐야?", "제안서 잘 쓰는 방법 알려줘", "공공기�
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--index-dir", default="indexes/eval-v2-structured-yjk")  # Windows FAISS는 한글 절대 경로를 못 열어 상대 경로
+    parser.add_argument("--index-dir", default="indexes/b/eval-v2-structured-yjk")  # Windows FAISS는 한글 절대 경로를 못 열어 상대 경로
     parser.add_argument("--eval-file", type=Path, default=ROOT / "data/eval_v2.json")
-    parser.add_argument("--env-file", type=Path, default=ROOT / ".env")
+    parser.add_argument("--env-file", type=Path, default=ROOT / ".env.b")
     args = parser.parse_args()
 
     from dotenv import load_dotenv

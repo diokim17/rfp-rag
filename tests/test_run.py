@@ -14,9 +14,9 @@ import unittest
 from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 from unittest.mock import patch
 
-import legacy_run as run
-from observability import Trace
-from parsing import read_json, write_json
+import b_run as run
+from b_observability import Trace
+from b_parsing import read_json, write_json
 from test_pipeline import FakeClient
 
 
@@ -42,7 +42,7 @@ class IndexFreshnessTests(unittest.TestCase):
 
     def assert_rejected(self, message):
         output = io.StringIO()
-        with patch("legacy_run.OpenAI") as client, patch("legacy_run.retrieve") as retrieve, \
+        with patch("b_run.OpenAI") as client, patch("b_run.retrieve") as retrieve, \
                 redirect_stderr(output), self.assertRaises(SystemExit) as error:
             self.pipeline()
         self.assertEqual(error.exception.code, 2)
@@ -53,9 +53,9 @@ class IndexFreshnessTests(unittest.TestCase):
 
     def test_matching_hash_continues_to_answer_with_fake_client(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "OPENAI_GENERATION_MODEL": "gpt-5-mini"}), \
-                patch("legacy_run.OpenAI"), patch("legacy_run.load_index", return_value=(object(), [], self.config)), \
-                patch("legacy_run.retrieve", return_value=[]) as retrieve, \
-                patch("legacy_run.generate_answer", return_value={"answer": "근거 없음", "sources": []}), \
+                patch("b_run.OpenAI"), patch("b_run.load_index", return_value=(object(), [], self.config)), \
+                patch("b_run.retrieve", return_value=[]) as retrieve, \
+                patch("b_run.generate_answer", return_value={"answer": "근거 없음", "sources": []}), \
                 redirect_stdout(io.StringIO()):
             self.pipeline()
         retrieve.assert_called_once()
@@ -100,11 +100,11 @@ class IndexFreshnessTests(unittest.TestCase):
                     return self.config
 
                 with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "OPENAI_GENERATION_MODEL": "gpt-5-mini"}), \
-                        patch("legacy_run.OpenAI"), patch("legacy_run.parse_documents", return_value=self.documents), \
-                        patch("legacy_run.build_index", side_effect=build) as builder, \
-                        patch("legacy_run.load_index", return_value=(object(), [], self.config)), \
-                        patch("legacy_run.retrieve", return_value=[]) as retrieve, \
-                        patch("legacy_run.generate_answer", return_value={"answer": "근거 없음", "sources": []}), \
+                        patch("b_run.OpenAI"), patch("b_run.parse_documents", return_value=self.documents), \
+                        patch("b_run.build_index", side_effect=build) as builder, \
+                        patch("b_run.load_index", return_value=(object(), [], self.config)), \
+                        patch("b_run.retrieve", return_value=[]) as retrieve, \
+                        patch("b_run.generate_answer", return_value={"answer": "근거 없음", "sources": []}), \
                         redirect_stdout(io.StringIO()):
                     self.pipeline()
                 builder.assert_called_once()
@@ -116,7 +116,7 @@ class IndexFreshnessTests(unittest.TestCase):
                                      "OPENAI_GENERATION_MODEL": "gpt-5-mini",
                                      "RFP_CHUNKING_STRATEGY": "fixed",
                                      "RFP_EMBEDDING_CONTEXT": "none"}), \
-                patch("legacy_run.OpenAI", return_value=FakeClient()), redirect_stdout(io.StringIO()):
+                patch("b_run.OpenAI", return_value=FakeClient()), redirect_stdout(io.StringIO()):
             self.pipeline()
             _, chunks, config = run.load_index(self.args.index_dir)
             self.assertEqual(config["documents_sha256"], self.digest)
@@ -146,8 +146,8 @@ class IndexFreshnessTests(unittest.TestCase):
                                      "OPENAI_GENERATION_MODEL": "gpt-5-mini",
                                      "RFP_CHUNKING_STRATEGY": "fixed",
                                      "RFP_EMBEDDING_CONTEXT": "none"}), \
-                patch("legacy_run.OpenAI", return_value=FakeClient()), \
-                patch("legacy_run.parse_documents", side_effect=parse), \
+                patch("b_run.OpenAI", return_value=FakeClient()), \
+                patch("b_run.parse_documents", side_effect=parse), \
                 redirect_stdout(io.StringIO()), trace.run("offline-test"):
             run.run_pipeline(self.args, self.parser, {}, experiment, trace, "test")
         digest = run.file_hash(self.args.processed_dir / "documents.json")
@@ -174,9 +174,9 @@ class IndexFreshnessTests(unittest.TestCase):
         write_json(self.args.processed_dir / "parsing_errors.json", [])
         write_json(self.args.index_dir / "config.json", {"chunk_count": 1})
         with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "OPENAI_GENERATION_MODEL": "gpt-5-mini"}), \
-                patch("legacy_run.OpenAI"), patch("legacy_run.parse_documents", return_value=self.documents), \
-                patch("legacy_run.build_index", return_value={"chunk_count": 1}), \
-                patch("legacy_run.retrieve") as retrieve, redirect_stdout(io.StringIO()), \
+                patch("b_run.OpenAI"), patch("b_run.parse_documents", return_value=self.documents), \
+                patch("b_run.build_index", return_value={"chunk_count": 1}), \
+                patch("b_run.retrieve") as retrieve, redirect_stdout(io.StringIO()), \
                 redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             self.pipeline()
         retrieve.assert_not_called()
@@ -201,11 +201,11 @@ class BJudgePipelineTests(unittest.TestCase):
                 self.args.judge_cache = self.args.results_dir / "judge.jsonl" if model else None
                 output = io.StringIO()
                 with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "OPENAI_GENERATION_MODEL": "gpt-5-mini"}), \
-                        patch("legacy_run.OpenAI") as client, \
-                        patch("legacy_run.load_index", return_value=(object(), [], self.config)), \
-                        patch("legacy_run.make_llm_judge") as factory, \
-                        patch("legacy_run.evaluate", return_value={"summary": {}}) as evaluate, \
-                        patch("legacy_run.save_report"), redirect_stdout(io.StringIO()), redirect_stderr(output):
+                        patch("b_run.OpenAI") as client, \
+                        patch("b_run.load_index", return_value=(object(), [], self.config)), \
+                        patch("b_run.make_llm_judge") as factory, \
+                        patch("b_run.evaluate", return_value={"summary": {}}) as evaluate, \
+                        patch("b_run.save_report"), redirect_stdout(io.StringIO()), redirect_stderr(output):
                     self.pipeline()
                 if model:
                     factory.assert_called_once_with(client.return_value, model=model, cache_path=self.args.judge_cache)

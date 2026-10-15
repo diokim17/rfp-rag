@@ -18,8 +18,8 @@ import time
 import unicodedata
 from collections import Counter, defaultdict
 
-import observability
-from observability import observed
+import legacy.observability as observability
+from legacy.observability import observed
 
 STATUSES = ("ok", "no_hits", "empty", "truncated", "api_error")
 GRADINGS = {"numeric", "keyword", "llm", "refusal"}

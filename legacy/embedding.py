@@ -9,8 +9,8 @@ import unicodedata
 import faiss
 import numpy as np
 
-from parsing import read_json, section_of, write_json
-from observability import observed, model_call
+from legacy.parsing import read_json, section_of, write_json
+from legacy.observability import observed, model_call
 
 
 _BOUNDARIES = tuple(re.compile(pattern) for pattern in (
@@ -317,7 +317,7 @@ def embed_texts(texts, client, model):
     """문서·질문에 공통으로 사용하는 정규화된 float32 벡터."""
     if not texts:
         raise ValueError("임베딩할 텍스트가 없습니다.")
-    from scenario_a import ScenarioAClient
+    from legacy.scenario_a import ScenarioAClient
     if isinstance(client, ScenarioAClient):
         raw_vectors = client.embed_texts(texts, model)
     else:

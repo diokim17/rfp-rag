@@ -14,7 +14,7 @@ from pathlib import Path
 import olefile
 import pymupdf
 
-from observability import observed
+from legacy.observability import observed
 
 
 def write_json(path, value):

@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # discover 외 실행에서도 테스트 보조 모듈을 찾음
 
-from evaluation import amounts, citations, evaluate, is_refusal, make_llm_judge, periods
-from observability import Trace, model_call
+from b_evaluation import amounts, citations, evaluate, is_refusal, make_llm_judge, periods
+from b_observability import Trace, model_call
 from test_observability import FakeLangfuse
 
 
@@ -365,7 +365,7 @@ class JudgeTests(unittest.TestCase):
             self.assertEqual(make_llm_judge(client, cache_path=path)(case, "PRIVATE_ANSWER"), "correct")
             self.assertEqual(len(calls), 1)
             self.assertNotIn("PRIVATE", path.read_text(encoding="utf-8"))
-        self.assertEqual((calls[0]["model"], calls[0]["store"], calls[0]["reasoning"]), ("gpt-5-nano", False, {"effort": "minimal"}))
+        self.assertEqual((calls[0]["model"], calls[0]["store"], calls[0]["reasoning"]), ("gpt-5-nano", False, {"effort": "low"}))
 
     def test_bad_judge_output_fails(self):
         client = SimpleNamespace(responses=SimpleNamespace(create=lambda **kw: SimpleNamespace(output_text="모름", usage=None)))

@@ -8,13 +8,15 @@ torch 설치 여부에 따라 결과가 달라지지 않도록 모듈 상수를 
 import unittest
 from unittest.mock import patch
 
-import retrieval
+import a_retrieval
+import b_retrieval
 
 BASELINE = {"DEFAULT_RERANK": "none", "DEFAULT_HYBRID": False, "DEFAULT_MAX_PER_DOC": None, "DEFAULT_BM25_PREFIX": False,
             "DEFAULT_EXPAND": 0, "DEFAULT_MIN_SCORE": None}
 
 
 def setUpModule():
-    patcher = patch.multiple(retrieval, **BASELINE)
-    patcher.start()
-    unittest.addModuleCleanup(patcher.stop)
+    for module in (a_retrieval, b_retrieval):
+        patcher = patch.multiple(module, **BASELINE)
+        patcher.start()
+        unittest.addModuleCleanup(patcher.stop)

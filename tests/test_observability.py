@@ -11,8 +11,8 @@ import unittest
 from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 from unittest.mock import patch
 
-from experiment_reports import save_report
-from observability import Trace, model_call, observed
+from b_experiment_reports import save_report
+from b_observability import Trace, model_call, observed
 
 
 class FakeObservation:
@@ -102,9 +102,9 @@ class ObservabilityTests(unittest.TestCase):
             self.assertIn("recall_at_k", text)
 
     def test_evaluate_cli_writes_local_result_and_share_report(self):
-        from embedding import build_index
+        from b_embedding import build_index
         from test_pipeline import FakeClient
-        import legacy_run as run
+        import b_run as run
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -118,12 +118,12 @@ class ObservabilityTests(unittest.TestCase):
             eval_file.write_text(json.dumps([{"question": "예산 PRIVATE_QUESTION",
                                               "expected_doc_ids": ["a"],
                                               "expected_keywords": ["100원"]}]))
-            argv = ["legacy_run.py", "evaluate", "--eval-file", str(eval_file),
-                    "--index-dir", str(root / "index"), "--results-dir", str(root / "results"),
+            argv = ["b_run.py", "evaluate", "--eval-file", str(eval_file),
+                    "--processed-dir", str(root / "data/processed"), "--index-dir", str(root / "index"), "--results-dir", str(root / "results"),
                     "--reports-dir", str(root / "reports"), "--owner", "tester"]
             with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "LANGFUSE_ENABLED": "false"}, clear=True), \
-                    patch("sys.argv", argv), patch("legacy_run.load_dotenv"), \
-                    patch("legacy_run.OpenAI", return_value=client), patch.object(run, "ROOT", root):
+                    patch("sys.argv", argv), patch("b_run.load_dotenv"), \
+                    patch("b_run.OpenAI", return_value=client), patch.object(run, "ROOT", root):
                 run.main()
             result = json.loads(next((root / "results").glob("evaluate_*.json")).read_text())
             self.assertEqual(result["summary"]["recall_at_k"], 1)
