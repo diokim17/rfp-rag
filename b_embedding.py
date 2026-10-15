@@ -26,7 +26,7 @@ _PROJECT_CONTEXT_WEIGHT = 0.2
 
 
 def _chunking_strategy():
-    strategy = os.getenv("RFP_CHUNKING_STRATEGY", "fixed")
+    strategy = os.getenv("RFP_CHUNKING_STRATEGY", "structured")
     if strategy not in {"fixed", "boundary", "structured"}:
         raise ValueError("RFP_CHUNKING_STRATEGY는 fixed, boundary 또는 structured여야 합니다.")
     return strategy
@@ -263,7 +263,7 @@ def _boundary_end(text, start, end, chunk_size, chunk_overlap):
 def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
     """문자 기준 청킹. boundary는 문장, structured는 섹션/표 경계를 우선.
 
-    structured의 실제 중복은 chunk_overlap 이하입니다. 원문 위치/기본 fixed 유지.
+    structured의 실제 중복은 chunk_overlap 이하입니다. 원문 위치 유지.
     반환: Chunk dict 목록.
     """
     if not 0 <= chunk_overlap < chunk_size:
