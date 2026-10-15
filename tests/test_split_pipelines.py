@@ -108,7 +108,7 @@ class SplitPipelineTests(unittest.TestCase):
         import b_retrieval
         with patch.dict(os.environ, {'RFP_SCENARIO': 'B', 'A_RERANK_MODEL': ''}, clear=True), \
                 patch.object(a_retrieval, '_cross_encoder_available', return_value=True):
-            self.assertIsNone(a_retrieval._min_score(None))
+            self.assertEqual(a_retrieval._min_score(None), a_retrieval.DEFAULT_MIN_SCORE_A)
             with self.assertWarns(RuntimeWarning):
                 self.assertEqual(a_retrieval.retrieval_options()['rerank'], 'lexical')
         with patch.dict(os.environ, {'RFP_SCENARIO': 'A'}, clear=True):
