@@ -22,7 +22,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from parsing import read_json, write_json  # noqa: E402
+from b_parsing import read_json, write_json  # noqa: E402
 
 ASPECTS = ["사업 예산은 얼마인가요?", "사업 기간은 어떻게 되나요?", "입찰 참가 자격은 무엇인가요?",
            "제안서 평가 방법은 어떻게 되나요?", "주요 요구사항은 무엇인가요?", "추진 배경과 목적은 무엇인가요?"]
@@ -87,7 +87,7 @@ class CachedEmbeddingClient:
         if self.real is None:
             from dotenv import load_dotenv
             from openai import OpenAI
-            load_dotenv(ROOT / ".env", override=False)
+            load_dotenv(ROOT / ".env.b", override=False)
             self.real = OpenAI(timeout=60.0, max_retries=2)
         return self.real
 
@@ -107,8 +107,8 @@ class CachedEmbeddingClient:
 
 
 def run(index_dir, eval_file, results_dir, reports_dir, label, top_k):
-    from embedding import embed_texts, load_index
-    from retrieval import retrieve
+    from b_embedding import embed_texts, load_index
+    from b_retrieval import retrieve
 
     cases = read_json(eval_file)
     index, chunks, config = load_index(index_dir)
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("--index-dir", type=Path)
     parser.add_argument("--eval-file", type=Path, required=True)
     parser.add_argument("--results-dir", type=Path)
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
     parser.add_argument("--label", default="baseline")
     parser.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args()

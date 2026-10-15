@@ -12,9 +12,9 @@ import unittest
 from unittest.mock import Mock, patch
 import warnings
 
-import legacy_run as run
-import retrieval
-from observability import Trace
+import a_run as run
+import a_retrieval as retrieval
+from a_observability import Trace
 
 QUESTION = "예산은 얼마인가요?"
 # 코사인은 first가 높고(질문과 같은 벡터), 가짜 리랭커는 '정답'이 든 second를 위로 올립니다.
@@ -74,8 +74,8 @@ class ScenarioARerankTests(unittest.TestCase):
                     "sources": [{"citation": i, **hit} for i, hit in enumerate(hits, 1)]}
         self.generation = SimpleNamespace(generate_answer=Mock(side_effect=answer))
         self.modules = {
-            "scenario_a_embedding": SimpleNamespace(load_model=Mock(return_value=embedding)),
-            "scenario_a_generation": SimpleNamespace(load_model=Mock(return_value=self.generation)),
+            "a_local_embedding": SimpleNamespace(load_model=Mock(return_value=embedding)),
+            "a_local_generation": SimpleNamespace(load_model=Mock(return_value=self.generation)),
         }
         self.args = SimpleNamespace(
             command="all", raw_dir=root / "raw", processed_dir=root / "processed", index_dir=root / "index",
@@ -96,8 +96,8 @@ class ScenarioARerankTests(unittest.TestCase):
                 patch.object(retrieval, "A_RERANK_MODEL_DIR", self.rerank), \
                 patch.object(run, "A_GENERATION_MODEL_DIR", self.gen), \
                 patch.object(run, "A_EMBEDDING_MODEL_DIR", self.emb), \
-                patch("legacy_run.parse_documents", side_effect=parse), \
-                patch("legacy_run.OpenAI") as openai, redirect_stdout(io.StringIO()):
+                patch("a_run.parse_documents", side_effect=parse), \
+                patch("a_run.OpenAI") as openai, redirect_stdout(io.StringIO()):
             run.run_pipeline(self.args, run.argparse.ArgumentParser(), {}, {"experiment_id": "test-0001"},
                              Trace({}), "test")
         openai.assert_not_called()

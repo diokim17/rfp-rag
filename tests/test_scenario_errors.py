@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-import legacy_run as run
-from observability import Trace
+import a_run as run
+from a_observability import Trace
 
 
 class ScenarioErrorsTests(unittest.TestCase):
@@ -25,8 +25,8 @@ class ScenarioErrorsTests(unittest.TestCase):
         self.args = SimpleNamespace(command='ask', scenario_settings={
             'scenario':'A', 'A_GENERATION_MODEL':'gen', 'A_EMBEDDING_MODEL':'emb'})
         self.modules = {
-            'scenario_a_embedding': SimpleNamespace(load_model=Mock(return_value=SimpleNamespace(embed_texts=Mock()))),
-            'scenario_a_generation': SimpleNamespace(load_model=Mock(return_value=SimpleNamespace(generate_answer=Mock()))),
+            'a_local_embedding': SimpleNamespace(load_model=Mock(return_value=SimpleNamespace(embed_texts=Mock()))),
+            'a_local_generation': SimpleNamespace(load_model=Mock(return_value=SimpleNamespace(generate_answer=Mock()))),
         }
 
     def reject(self, message, rewrite='off'):
@@ -35,9 +35,9 @@ class ScenarioErrorsTests(unittest.TestCase):
                 patch.object(run, 'A_GENERATION_MODEL_DIR', self.gen), \
                 patch.object(run, 'A_EMBEDDING_MODEL_DIR', self.emb), \
                 patch.dict('sys.modules', self.modules), \
-                patch('legacy_run.check_index_documents'), patch('legacy_run.OpenAI') as client, \
-                patch('legacy_run.build_index') as build, patch('legacy_run.retrieve') as retrieve, \
-                patch('legacy_run.generate_answer') as generate, \
+                patch('a_run.check_index_documents'), patch('a_run.OpenAI') as client, \
+                patch('a_run.build_index') as build, patch('a_run.retrieve') as retrieve, \
+                patch('a_run.generate_answer') as generate, \
                 redirect_stderr(output), self.assertRaises(SystemExit) as error:
             run.run_pipeline(self.args, argparse.ArgumentParser(), {}, {}, Trace({}), 'test')
         self.assertEqual(error.exception.code, 2)
@@ -55,7 +55,7 @@ class ScenarioErrorsTests(unittest.TestCase):
     def test_missing_each_module(self):
         for name in self.modules:
             with self.subTest(name=name):
-                with patch('scenario_a.import_module', side_effect=lambda n: self.modules[n] if n != name else self.missing(n)):
+                with patch('a_client.import_module', side_effect=lambda n: self.modules[n] if n != name else self.missing(n)):
                     self.reject(name)
 
     @staticmethod
@@ -63,11 +63,11 @@ class ScenarioErrorsTests(unittest.TestCase):
         raise ModuleNotFoundError(f'No module named {name}', name=name)
 
     def test_missing_dependency_identified(self):
-        with patch('scenario_a.import_module', side_effect=ModuleNotFoundError('missing torch', name='torch')):
+        with patch('a_client.import_module', side_effect=ModuleNotFoundError('missing torch', name='torch')):
             self.reject('torch')
 
     def test_missing_factory_and_method(self):
-        for name, method in (('scenario_a_embedding', 'embed_texts'), ('scenario_a_generation', 'generate_answer')):
+        for name, method in (('a_local_embedding', 'embed_texts'), ('a_local_generation', 'generate_answer')):
             original = self.modules[name]
             for module, message in ((SimpleNamespace(), 'load_model'),
                                     (SimpleNamespace(load_model=Mock(return_value=object())), method)):

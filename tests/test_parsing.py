@@ -3,7 +3,7 @@
 import struct
 import unittest
 
-from parsing import (_cell_text, _clean_text, _drop_toc, _fields, _merge_pages, _number_tables, _reading_order,
+from b_parsing import (_cell_text, _clean_text, _drop_toc, _fields, _merge_pages, _number_tables, _reading_order,
                      _render_table, _section_text, _sections, _won, section_of)
 
 
@@ -224,7 +224,7 @@ class ParseDocumentsTest(unittest.TestCase):
         from pathlib import Path
         from unittest.mock import patch
 
-        import parsing
+        import b_parsing as parsing
 
         rows = [("가_사업.hwp", ""), ("나_사업.hwp", "20240001"), ("다_사업.hwp", "")]
         texts = {"가_사업.hwp": "같은 본문", "나_사업.hwp": "같은 본문", "다_사업.hwp": "다른 본문"}

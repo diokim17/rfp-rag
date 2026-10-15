@@ -75,8 +75,8 @@ def main():
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--max-per-doc", type=int, nargs="*", default=[],
                         help="비교할 문서당 최대 청크 수 (기준선은 항상 포함)")
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/parsing-v2-yjk")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/parsing-v2-yjk")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
     args = parser.parse_args()
     # API를 호출하기 전에 입력을 먼저 확인합니다. (기준선을 돌린 뒤에 실패하면 비용만 듭니다.)
     if args.top_k < 1 or any(limit < 1 for limit in args.max_per_doc):
@@ -89,10 +89,10 @@ def main():
 
     from dotenv import load_dotenv
     from openai import OpenAI
-    from embedding import load_index
-    from retrieval import retrieve
+    from b_embedding import load_index
+    from b_retrieval import retrieve
 
-    load_dotenv(ROOT / ".env", override=False)  # 키는 이 컴퓨터의 .env에서만 읽습니다.
+    load_dotenv(ROOT / ".env.b", override=False)  # 키는 이 컴퓨터의 .env에서만 읽습니다.
     if not os.getenv("OPENAI_API_KEY"):
         parser.error(".env 또는 환경 변수에 OPENAI_API_KEY를 설정하세요.")
     client = OpenAI(timeout=60.0, max_retries=2)
@@ -122,7 +122,7 @@ def main():
     settings = {**config, "index_dir": str(args.index_dir),
                 **{key: os.getenv(key) for key in ("RETRIEVAL_RERANK", "RETRIEVAL_CANDIDATES", "RETRIEVAL_RERANK_MODEL")}}
     output.write_text(json.dumps({"eval_file": str(args.eval_file), "top_k": args.top_k, "settings": settings,
-                                  "results": results}, ensure_ascii=False, indent=2),
+                                  "results/b": results}, ensure_ascii=False, indent=2),
                       encoding="utf-8")
     print(f"결과 저장: {output}")
 

@@ -13,7 +13,7 @@ import math
 import re
 from pathlib import Path
 
-from observability import model_call
+from legacy.observability import model_call
 
 # 캐시 키에 들어가는 프롬프트 버전. 아래 INSTRUCTIONS를 바꾸면 이 숫자를 올려야 예전 재작성 결과를 다시 쓰지 않습니다.
 # (tests/test_query_rewrite.py가 지시문이 바뀌었는데 버전이 그대로면 실패합니다)

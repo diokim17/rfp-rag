@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from parsing import read_json, write_json  # noqa: E402
+from b_parsing import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from team_eval_yjk import file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
 
@@ -117,19 +117,26 @@ def main():
     parser.add_argument("--eval-file", type=Path, required=True)
     parser.add_argument("--index-dir", type=Path, required=True)
     parser.add_argument("--settings", nargs="+", choices=list(SETTINGS), default=list(SETTINGS))
-    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/cache/query_embeddings.json")
+    parser.add_argument("--cache-file", type=Path, default=None)
     parser.add_argument("--top-k", type=int, default=5, help="반환 청크 수이자 지표를 세는 순위 범위(팀 기준 5로 고정)")
-    parser.add_argument("--ce-cache-file", type=Path, default=ROOT / "results/cache/cross_encoder_scores.json")
+    parser.add_argument("--ce-cache-file", type=Path, default=None)
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문 임베딩 API 호출을 허용")
     parser.add_argument("--fresh-query-embeddings", action="store_true",
                         help="질문 임베딩 캐시를 읽지 않고 모두 API로 새로 받습니다(캐시 파일도 갱신하지 않음)")
-    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/cache/query_rewrites.json",
+    parser.add_argument("--rewrite-cache", type=Path, default=None,
                         help="질문 재작성 결과 캐시(같은 질문은 다시 호출하지 않음)")
     parser.add_argument("--allow-cpu-rerank", action="store_true",
                         help="GPU가 없을 때 cross-encoder를 CPU로 돌리는 것을 허용(기본은 중단)")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/reports")
+    parser.add_argument("--results-dir", type=Path)
+    parser.add_argument("--reports-dir", type=Path)
     args = parser.parse_args()
+    # 경로를 주지 않으면 시나리오별 폴더(results/a 또는 results/b) 아래에 캐시·결과·보고서를 둡니다.
+    out = ROOT / "results" / args.scenario.lower()
+    args.cache_file = args.cache_file or out / "cache/query_embeddings.json"
+    args.ce_cache_file = args.ce_cache_file or out / "cache/cross_encoder_scores.json"
+    args.rewrite_cache = args.rewrite_cache or out / "cache/query_rewrites.json"
+    args.results_dir = args.results_dir or out
+    args.reports_dir = args.reports_dir or out / "reports"
 
     from dotenv import load_dotenv
     scenario_a = args.scenario == "A"

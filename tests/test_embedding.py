@@ -14,12 +14,12 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from embedding import build_index, chunk_documents, embed_texts, load_index
-from evaluation import evaluate
-from generation import generate_answer
-from observability import Trace
-from parsing import read_json, write_json
-from retrieval import retrieve
+from b_embedding import build_index, chunk_documents, embed_texts, load_index
+from b_evaluation import evaluate
+from b_generation import generate_answer
+from b_observability import Trace
+from b_parsing import read_json, write_json
+from b_retrieval import retrieve
 from test_observability import FakeLangfuse
 from test_pipeline import FakeClient
 
@@ -132,7 +132,8 @@ class ChunkingTests(unittest.TestCase):
                              [("doc:1", "abcde"), ("doc:2", "fghij"), ("doc:3", "k")])
             explicit = chunk_documents([document("가나다\n\n라마바" * 3)], 10, 2)
             os.environ.pop("RFP_CHUNKING_STRATEGY")
-            self.assertEqual(chunk_documents([document("가나다\n\n라마바" * 3)], 10, 2), explicit)
+            with patch.dict(os.environ, {"RFP_CHUNKING_STRATEGY": "fixed"}):
+                self.assertEqual(chunk_documents([document("가나다\n\n라마바" * 3)], 10, 2), explicit)
 
     def test_invalid_settings_fail(self):
         for size, overlap in ((0, 0), (-1, 0), (5, -1), (5, 5), (5, 6)):
@@ -188,8 +189,8 @@ class IndexContractTests(unittest.TestCase):
         expected = {
             chunk_documents: "(documents, chunk_size=1000, chunk_overlap=150)",
             embed_texts: "(texts, client, model)",
-            build_index: "(documents, client, index_dir='indexes', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
-            load_index: "(index_dir='indexes')",
+            build_index: "(documents, client, index_dir='indexes/b', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
+            load_index: "(index_dir='indexes/b')",
         }
         for fn, signature in expected.items():
             self.assertEqual(str(inspect.signature(fn)), signature)

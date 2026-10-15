@@ -22,7 +22,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from parsing import read_json
+from a_parsing import read_json
 
 OFF_TOPIC = ["오늘 서울 날씨 어때?", "점심 메뉴 추천해줘", "강남역 근처 맛집 알려줘", "주말에 볼만한 영화 뭐 있어?",
              "프랑스의 수도는 어디야?", "임진왜란은 몇 년에 일어났어?", "광합성 원리를 설명해줘", "1부터 100까지 더하면 얼마야?",

@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from retrieval_baseline import setUpModule  # noqa: F401
 from test_pipeline import FakeClient
 
 ROOT = Path(__file__).resolve().parents[1]

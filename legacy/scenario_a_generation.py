@@ -7,7 +7,7 @@ scenario_a.py가 load_model을 한 번 부르고, 돌려받은 객체의 generat
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from generation import INSTRUCTIONS, NO_HITS_ANSWER, _finish, _prompt, _result
+from legacy.generation import INSTRUCTIONS, NO_HITS_ANSWER, _finish, _prompt, _result
 
 MAX_NEW_TOKENS = 1024  # 답변 최대 길이(토큰)
 
