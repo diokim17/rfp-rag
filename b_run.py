@@ -229,10 +229,10 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                 "question_sha256": hashlib.sha256(question.encode()).hexdigest(),
                 "filter_keys": sorted({**filters, **(case_filters or {})})}):
             pass
-        hits = retrieve(question, client, index, chunks, config, args.top_k,
-                        {**filters, **(case_filters or {})}, max_per_doc=max_per_doc)
+        merged = {**filters, **(case_filters or {})}
+        hits = retrieve(question, client, index, chunks, config, args.top_k, merged, max_per_doc=max_per_doc)
         try:
-            return generate_answer(question, hits, client, generation_model)
+            return generate_answer(question, hits, client, generation_model, merged)
         except RateLimitError as exc:
             if re.search(r"RPM\).*?Limit\s+0(?:\D|$)", str(exc)):
                 detail = "분당 요청 한도(RPM)가 0입니다. 대기하거나 질문을 줄여도 해결되지 않습니다."
