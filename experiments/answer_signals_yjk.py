@@ -70,8 +70,10 @@ def excerpt_coverage(excerpt, record):
 def cause(row):
     """정답이 아닌 답할 수 있는 문항의 원인 추정: 문서 누락·청크 누락(검색) / 생성 / 미확인.
 
-    키워드 문항은 키워드가 모두 자료에 있었는지(ctx_kw), LLM 판정 문항은 정답 원문 조각이 절반 이상
-    자료에 있었는지(ctx_ref)로 가릅니다. 둘 다 없으면 미확인.
+    키워드 문항은 키워드가 모두 자료에 있었는지(ctx_kw)로 가릅니다. LLM 판정 문항은 정답 원문 조각이 절반 이상
+    자료에 있었으면(ctx_ref) 생성으로 보고, 그보다 낮으면 미확인으로 둡니다. yjk-0010(A)에서 ctx_ref가 0에 가까운데도
+    정답인 문항이 12개 중 3개(yA004·yB044 0, yC059 0.018) 있어서, 낮은 값만으로 청크 누락이라고 할 수 없었습니다
+    (답에 필요한 부분이 조각의 일부뿐이거나, 조각과 파싱된 청크의 글자가 다를 수 있음).
     """
     if row["label"] in {"correct", "unanswerable", "ungraded"}:
         return "-"
@@ -79,8 +81,8 @@ def cause(row):
         return "문서 누락"
     if row["ctx_kw"] is not None:
         return "청크 누락" if row["ctx_kw"] < 1 else "생성"
-    if row["ctx_ref"] is not None:
-        return "청크 누락" if row["ctx_ref"] < 0.5 else "생성"
+    if row["ctx_ref"] is not None and row["ctx_ref"] >= 0.5:
+        return "생성"
     return "미확인"
 
 
