@@ -258,6 +258,14 @@ class RefusalRuleTests(unittest.TestCase):
         self.assertEqual(amounts("제12조의2에 따라 사업비는 1억 원"), {100_000_000})
         self.assertEqual(amounts("5조 원 규모"), {5_000_000_000_000})  # '제'가 없는 실제 금액은 유지
 
+    def test_not_specified_phrases_are_refusals(self):
+        """'명시되지 않았습니다'·'기재되어 있지 않습니다'도 거절 (shn-0044 u05가 이 표현으로 환각 처리됐음)."""
+        for answer in ("2세대 전자조달시스템 기반구축사업: 제공된 문서들에서는 최종 낙찰 업체가 기재되어 있지 않습니다.",
+                       "해당 사업의 낙찰 업체는 문서에 명시되지 않았습니다."):
+            with self.subTest(answer=answer):
+                self.assertTrue(is_refusal(answer))
+        self.assertFalse(is_refusal("예산은 1억 원이며 기간은 명시되지 않았습니다 [1]."))  # 값을 답한 첫 문장은 거절 아님
+
     def test_trailing_caveat_is_not_a_refusal(self):
         for answer in ("사업 범위는 학사 시스템 고도화입니다 [1]. 단, 세부 일정은 문서에서 확인되지 않습니다.",
                        "사업 범위는 학사 시스템 고도화입니다[1][2]. 다만 세부 일정은 확인되지 않습니다.",
