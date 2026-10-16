@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from statistics import mean
 import sys
+import unicodedata
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -36,6 +37,32 @@ def label(record):
     return "correct" if score == 1 else "partial" if score > 0 else "wrong"
 
 
+def context_coverage(record):
+    """정답 키워드 중 검색 자료(청크 본문 + 모델에 함께 가는 사업 정보)에 있는 비율. 키워드가 없으면 None.
+
+    답변 키워드 포함률(keyword_coverage)과 같은 방식(NFC·대소문자 무시)으로 셉니다.
+    자료에 있는데 답이 틀렸으면 생성 쪽, 자료에 없으면 검색(청크 선택) 쪽 문제로 봅니다.
+    """
+    words = record["expected_keywords"]
+    if not words:
+        return None
+    normalize = lambda text: unicodedata.normalize("NFC", text).casefold()
+    context = normalize(" ".join(hit["text"] + " " + " ".join(map(str, hit["metadata"].values()))
+                                 for hit in record["sources"]))
+    return sum(normalize(word) in context for word in words) / len(words)
+
+
+def cause(row):
+    """정답이 아닌 답할 수 있는 문항의 원인 추정: 문서 누락·청크 누락(검색) / 생성."""
+    if row["label"] in {"correct", "unanswerable", "ungraded"}:
+        return "-"
+    if row["recall"] == 0:
+        return "문서 누락"
+    if row["ctx_kw"] is None:  # 정답 키워드가 없는 문항은 자료만으로 가를 수 없음
+        return "미확인"
+    return "청크 누락" if row["ctx_kw"] < 1 else "생성"
+
+
 def bucket(value, edges):
     if value is None:
         return "없음"
@@ -53,9 +80,12 @@ def main():
         records = json.load(f)["records"]
 
     rows = [{"id": r["case_id"], "label": label(r), "score": r["answer_score"], "recall": r["recall_at_k"],
-             "chunk_hit": r["answer_chunk_hit"], **retrieval_signals(r["sources"])} for r in records]
+             "chunk_hit": r["answer_chunk_hit"], "ctx_kw": context_coverage(r), "ans_kw": r["keyword_coverage"],
+             **retrieval_signals(r["sources"])} for r in records]
+    for row in rows:
+        row["cause"] = cause(row)
 
-    columns = ("id", "label", "score", "recall", "chunk_hit", *SIGNALS)
+    columns = ("id", "label", "cause", "score", "recall", "chunk_hit", "ctx_kw", "ans_kw", *SIGNALS)
     print("| " + " | ".join(columns) + " |")
     print("|" + "---|" * len(columns))
     fmt = lambda v: "-" if v is None else f"{v:.3f}" if isinstance(v, float) else str(v)
@@ -71,6 +101,7 @@ def main():
             groups.setdefault(bucket(row[key], EDGES[key]), []).append(row["score"] or 0)
         print(f"- {key}: " + ", ".join(f"{k}: {mean(v):.3f} ({len(v)}개)" for k, v in sorted(groups.items())))
     print("\n결과별 개수:", dict(Counter(row["label"] for row in rows)))
+    print("정답이 아닌 문항 원인 추정:", dict(Counter(row["cause"] for row in rows if row["cause"] != "-")))
 
 
 if __name__ == "__main__":
