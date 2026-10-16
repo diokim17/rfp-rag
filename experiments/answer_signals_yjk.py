@@ -9,6 +9,7 @@ API·모델 호출 없음. 본문·질문은 출력하지 않고 문항 ID와 �
 import argparse
 from collections import Counter
 import json
+import re
 from pathlib import Path
 from statistics import mean
 import sys
@@ -52,15 +53,35 @@ def context_coverage(record):
     return sum(normalize(word) in context for word in words) / len(words)
 
 
+def excerpt_coverage(excerpt, record):
+    """평가셋의 정답 원문 조각(reference_excerpt, LLM 판정 문항에만 있음)이 검색 청크 본문에 들어간 비율. 없으면 None.
+
+    공백을 지운 뒤 조각을 20자 창(10자 간격)으로 나눠, 청크 본문에 그대로 있는 창의 비율을 셉니다.
+    정답 부분이 검색됐으면 1에 가깝고, 청크 경계에 걸쳐 일부만 들어오면 그 사이 값이 나옵니다.
+    """
+    if not excerpt:
+        return None
+    squeeze = lambda text: re.sub(r"\s+", "", unicodedata.normalize("NFC", text))
+    excerpt, context = squeeze(excerpt), squeeze(" ".join(hit["text"] for hit in record["sources"]))
+    windows = [excerpt[i:i + 20] for i in range(0, max(len(excerpt) - 20, 0) + 1, 10)]
+    return sum(window in context for window in windows) / len(windows)
+
+
 def cause(row):
-    """정답이 아닌 답할 수 있는 문항의 원인 추정: 문서 누락·청크 누락(검색) / 생성."""
+    """정답이 아닌 답할 수 있는 문항의 원인 추정: 문서 누락·청크 누락(검색) / 생성 / 미확인.
+
+    키워드 문항은 키워드가 모두 자료에 있었는지(ctx_kw), LLM 판정 문항은 정답 원문 조각이 절반 이상
+    자료에 있었는지(ctx_ref)로 가릅니다. 둘 다 없으면 미확인.
+    """
     if row["label"] in {"correct", "unanswerable", "ungraded"}:
         return "-"
     if row["recall"] == 0:
         return "문서 누락"
-    if row["ctx_kw"] is None:  # 정답 키워드가 없는 문항은 자료만으로 가를 수 없음
-        return "미확인"
-    return "청크 누락" if row["ctx_kw"] < 1 else "생성"
+    if row["ctx_kw"] is not None:
+        return "청크 누락" if row["ctx_kw"] < 1 else "생성"
+    if row["ctx_ref"] is not None:
+        return "청크 누락" if row["ctx_ref"] < 0.5 else "생성"
+    return "미확인"
 
 
 def bucket(value, edges):
@@ -75,21 +96,28 @@ def bucket(value, edges):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("result_json")
+    parser.add_argument("--eval-file", default=ROOT / "data/eval_v4.json",
+                        help="정답 원문 조각(reference_excerpt)을 읽을 평가셋. 결과 JSON을 만든 평가셋과 같아야 합니다.")
     args = parser.parse_args()
     with open(args.result_json, encoding="utf-8") as f:
         records = json.load(f)["records"]
+    with open(args.eval_file, encoding="utf-8") as f:
+        excerpts = {case["id"]: case.get("reference_excerpt") for case in json.load(f)}
 
     rows = [{"id": r["case_id"], "label": label(r), "score": r["answer_score"], "recall": r["recall_at_k"],
              "chunk_hit": r["answer_chunk_hit"], "ctx_kw": context_coverage(r), "ans_kw": r["keyword_coverage"],
-             **retrieval_signals(r["sources"])} for r in records]
+             "ctx_ref": excerpt_coverage(excerpts[r["case_id"]], r), **retrieval_signals(r["sources"])}
+            for r in records]
     for row in rows:
         row["cause"] = cause(row)
 
-    columns = ("id", "label", "cause", "score", "recall", "chunk_hit", "ctx_kw", "ans_kw", *SIGNALS)
+    columns = ("id", "label", "cause", "score", "recall", "chunk_hit", "ctx_kw", "ans_kw", "ctx_ref", *SIGNALS)
     print("| " + " | ".join(columns) + " |")
     print("|" + "---|" * len(columns))
     fmt = lambda v: "-" if v is None else f"{v:.3f}" if isinstance(v, float) else str(v)
-    for row in sorted(rows, key=lambda row: (row["label"] == "correct", str(row["id"]))):
+    # 정답이 아닌 답할 수 있는 문항 → 정답 → 답 없는 문항 순서 (head로 잘라도 오답이 먼저 보이게)
+    order = lambda row: (row["label"] == "unanswerable", row["label"] == "correct", str(row["id"]))
+    for row in sorted(rows, key=order):
         print("| " + " | ".join(fmt(row[k]) for k in columns) + " |")
 
     # 신호 구간별 평균 점수: 답할 수 있는 문항만 (거절은 0점으로 셈)
