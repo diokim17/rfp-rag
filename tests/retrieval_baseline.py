@@ -17,6 +17,8 @@ BASELINE = {"DEFAULT_RERANK": "none", "DEFAULT_HYBRID": False, "DEFAULT_MAX_PER_
 
 def setUpModule():
     for module in (a_retrieval, b_retrieval):
-        patcher = patch.multiple(module, **BASELINE)
+        # 사업 하나 질문의 상한 해제(B 기본 켬)도 baseline에서는 끕니다.
+        extra = {"DEFAULT_UNCAP_NAMED": False} if hasattr(module, "DEFAULT_UNCAP_NAMED") else {}
+        patcher = patch.multiple(module, **BASELINE, **extra)
         patcher.start()
         unittest.addModuleCleanup(patcher.stop)
