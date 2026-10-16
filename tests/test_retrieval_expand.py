@@ -142,3 +142,31 @@ class AspectTests(unittest.TestCase):
             self.assertEqual([h["chunk_id"] for h in result], ["a:2", "a:0", "a:1", "b:0"])
             single = retrieval._aspect_slot("입찰 참가 자격은?", ranked, "cross-encoder")
         self.assertEqual(single, ranked)
+
+
+class CompareSlotTests(unittest.TestCase):
+    """비교 질문: 이름이 나온 사업 둘 이상의 문서 전체 청크를 재정렬해 문서별로 번갈아 앞에 둡니다."""
+
+    CHUNKS = [chunk("a:0", "고려대학교 포털 구축 사업 개요", PROJECT),
+              chunk("a:1", "제안서 10부 제출", PROJECT),
+              chunk("b:0", "버스정보시스템 구축 개요", OTHER),
+              chunk("b:1", "제안서 7부 제출", OTHER),
+              chunk("c:0", "다른 사업 개요", {"사업명": "용수공급 타당성조사", "발주 기관": "다"})]
+
+    def scores(self, question, passages, model):
+        return [2. if "부 제출" in p else 1. for p in passages]
+
+    def test_two_named_projects_rerank_whole_documents(self):
+        ranked = [{**self.CHUNKS[0], "score": .9}, {**self.CHUNKS[2], "score": .8}, {**self.CHUNKS[4], "score": .7}]
+        with patch.object(retrieval, "_cross_encoder_scores", side_effect=self.scores):
+            result = retrieval._compare_slot("고려대학교 포털 구축 사업과 버스정보시스템 구축 중 제안서를 더 많이 내는 곳은?",
+                                             ranked, self.CHUNKS, set(range(5)), "cross-encoder", lambda n: 0.)
+        self.assertEqual([h["chunk_id"] for h in result], ["a:1", "b:1", "a:0", "b:0", "c:0"])
+
+    def test_single_named_project_unchanged(self):
+        ranked = [{**self.CHUNKS[0], "score": .9}, {**self.CHUNKS[2], "score": .8}]
+        with patch.object(retrieval, "_cross_encoder_scores", side_effect=self.scores) as spy:
+            result = retrieval._compare_slot("고려대학교 포털 구축 사업의 제안서 부수는?", ranked, self.CHUNKS,
+                                             set(range(5)), "cross-encoder", lambda n: 0.)
+        self.assertEqual(result, ranked)
+        spy.assert_not_called()

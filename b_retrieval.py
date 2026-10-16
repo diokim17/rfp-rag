@@ -4,6 +4,7 @@
 """
 
 from collections import Counter
+from itertools import zip_longest
 import importlib.util
 import math
 import os
@@ -22,6 +23,7 @@ from b_observability import observed, record_retrieval
 RERANK_MODES = ("none", "lexical", "cross-encoder")
 # 청크 본문에는 사업명이 거의 없으므로 리랭킹 입력 앞에 붙여 어느 사업의 청크인지 구분합니다.
 RERANK_FIELDS = ("사업명", "발주 기관")
+COMPARE_DOCS = 3  # 비교 질문에서 문서 전체를 재정렬할 최대 문서 수(재정렬 비용 상한)
 # 기본값: 하이브리드(벡터 100 + BM25 100) → RRF 상위 50개를 cross-encoder로 재정렬 → 문서당 2개.
 DEFAULT_RERANK, DEFAULT_HYBRID, DEFAULT_CANDIDATES, DEFAULT_HYBRID_K, DEFAULT_MAX_PER_DOC = "cross-encoder", True, 50, 100, 2
 # 하이브리드의 BM25 색인에도 사업명·발주 기관을 본문 앞에 붙입니다(eval_v2 yjk-0010: 50위 밖 정답 청크 10→1건).
@@ -135,6 +137,7 @@ WITHIN_DOC_MODES = ("off", "residual", "residual+full")
 _OFF, _ON = {"", "0", "false", "off", "no", "none"}, {"1", "true", "on", "yes"}
 _bm25_indexes = {}
 _doc_members = {}
+_name_gram_cache = {}
 
 
 def _flag(value, env):
@@ -422,6 +425,8 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
         ranked = observed(f"rerank-{mode}")(_rerank)(question, hits, mode)
         ranked = _aspect_slot(question, ranked, mode)
+        ranked = _compare_slot(question, ranked, chunks, eligible, mode,
+                               lambda number: float(index.reconstruct(number) @ vector[0]))
         take = _selector(chunks, options)
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return _finish(question, hits, client, index, chunks, config, eligible, options)
@@ -504,6 +509,56 @@ def _aspect_slot(question, ranked, mode):
     order = [hit["chunk_id"] for hit in _rerank(aspect, same, mode)]
     by_id = {hit["chunk_id"]: hit for hit in same}
     return [*(by_id[c] for c in order), *(hit for hit in ranked if hit["doc_id"] != ranked[0]["doc_id"])]
+
+
+def _name_grams(chunks):
+    """doc_id별 사업명의 '그 사업만의' 글자 2-gram. 여러 사업명에 흔한 2-gram(정보·시스템·구축 등, 전체 문서의 5% 초과)은 뺍니다."""
+    cached = _name_gram_cache.get(id(chunks))
+    if cached is None or cached[0] is not chunks:
+        names = {doc_id: set(_bigrams(str(chunks[numbers[0]]["metadata"].get("사업명", ""))))
+                 for doc_id, numbers in _members(chunks).items()}
+        df = Counter(gram for grams in names.values() for gram in grams)
+        common = max(1, len(names) * .05)
+        _name_gram_cache.clear()
+        _name_gram_cache[id(chunks)] = cached = (chunks, {d: {g for g in grams if df[g] <= common}
+                                                          for d, grams in names.items()})
+    return cached[1]
+
+
+def _named_docs(question, ranked, chunks):
+    """후보 문서 중 사업명 고유 2-gram의 절반 이상(3개 이상)이 질문에 나오는 문서(질문이 이름으로 가리킨 사업), 후보 순서대로.
+
+    2개만 겹쳐도 되면 '컨설팅'·'ERP' 한 단어로 다른 사업이 잡힙니다(평가 질문 247개 중 오탐 4건 → 3개 이상이면 0건).
+    """
+    asked, own = set(_bigrams(question)), _name_grams(chunks)
+    named = []
+    for hit in ranked:
+        grams = own.get(hit["doc_id"], set())
+        hit_count = len(grams & asked)
+        if hit["doc_id"] not in named and hit_count >= 3 and hit_count / len(grams) >= .5:
+            named.append(hit["doc_id"])
+    return named
+
+
+def _compare_slot(question, ranked, chunks, eligible, mode, score_of):
+    """질문이 사업 둘 이상을 이름으로 가리키면(비교 질문) 그 문서들의 전체 청크를 재정렬해 문서별 순서대로 맨 앞에 둡니다.
+
+    비교 질문은 사업 개요 청크가 후보를 차지해 묻는 항목(예: 제안서 부수)의 청크가 후보에 들지 못하므로,
+    이름이 나온 문서(COMPARE_DOCS개까지)는 후보와 상관없이 문서 안 모든 청크를 질문으로 재정렬합니다.
+    문서 순서는 후보 순위를 따르고, 문서마다 재정렬 순서를 번갈아 넣습니다. 사업 하나만 가리키면 그대로입니다.
+    """
+    named = _named_docs(question, ranked, chunks)[:COMPARE_DOCS]
+    if len(named) < 2:
+        return ranked
+    members, known = _members(chunks), {hit["chunk_id"]: hit for hit in ranked}
+    queues = []
+    for doc_id in named:
+        hits = [known.get(chunks[n]["chunk_id"]) or {**chunks[n], "score": score_of(n)}
+                for n in members.get(doc_id, []) if n in eligible]
+        queues.append(_rerank(question, hits, mode))
+    front = [hit for row in zip_longest(*queues) for hit in row if hit]
+    seen = {hit["chunk_id"] for hit in front}
+    return [*front, *(hit for hit in ranked if hit["chunk_id"] not in seen)]
 
 
 def _expand_candidates(question, hits, chunks, eligible, count, score_of):
@@ -611,6 +666,7 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"], lambda number: cosine[number])
         ranked = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode)
         ranked = _aspect_slot(question, ranked, mode)
+        ranked = _compare_slot(question, ranked, chunks, eligible, mode, lambda number: cosine[number])
         take = _selector(chunks, options)
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return hits
