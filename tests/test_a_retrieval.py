@@ -94,6 +94,20 @@ class ARetrievalTests(unittest.TestCase):
             search(rerank_section="maybe")
         self.assertIsNone(retrieval_options(rerank="none", rerank_section=True)["rerank_section"])
 
+    def test_retrieval_signals(self):
+        hit = lambda doc_id, score, rerank=None: {"doc_id": doc_id, "score": score,
+                                                  **({} if rerank is None else {"rerank_score": rerank})}
+        # 1위 문서 a가 2자리, 재정렬 격차는 1위(5) - a가 아닌 문서 중 최고(2)
+        self.assertEqual(a_retrieval.retrieval_signals([hit("a", .6, 5.), hit("b", .7, 2.), hit("a", .5, 1.), hit("c", .4, 0.)]),
+                         {"docs": 3, "top_doc_share": .5, "best_score": .7, "rerank_gap": 3.})
+        # 결과 없음(범위 밖 차단·필터 0건)
+        self.assertEqual(a_retrieval.retrieval_signals([]),
+                         {"docs": 0, "top_doc_share": None, "best_score": None, "rerank_gap": None})
+        # 재정렬을 안 했거나 한 문서뿐이면 격차는 None
+        self.assertIsNone(a_retrieval.retrieval_signals([hit("a", .6), hit("b", .5)])["rerank_gap"])
+        self.assertEqual(a_retrieval.retrieval_signals([hit("a", .6, 3.), hit("a", .5, 1.)]),
+                         {"docs": 1, "top_doc_share": 1., "best_score": .6, "rerank_gap": None})
+
 
 if __name__ == "__main__":
     unittest.main()

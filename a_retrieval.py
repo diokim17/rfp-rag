@@ -442,6 +442,29 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     return _finish(question, hits, client, index, chunks, config, eligible, options)
 
 
+def retrieval_signals(hits):
+    """검색 결과가 얼마나 확실한지 보는 신호(조건 기반 라우팅의 판단 재료). 검색 결과는 바꾸지 않습니다.
+
+    docs: 서로 다른 문서 수. 문서당 상한 2·상위 5개면 3~5이고, 많을수록 한 사업으로 모이지 않은 것입니다.
+    top_doc_share: 1위 청크의 문서가 결과에서 차지하는 비율.
+    best_score: 결과 중 가장 높은 코사인(범위 밖 차단 min_score와 같은 기준).
+    rerank_gap: 1위 재정렬 점수 - 1위 문서가 아닌 문서 중 가장 높은 재정렬 점수. 클수록 1위 문서가 확실합니다.
+      재정렬을 안 했거나 결과가 한 문서뿐이면 None.
+    """
+    if not hits:
+        return {"docs": 0, "top_doc_share": None, "best_score": None, "rerank_gap": None}
+    docs = Counter(hit["doc_id"] for hit in hits)
+    top_doc = hits[0]["doc_id"]
+    other = next((hit.get("rerank_score") for hit in hits if hit["doc_id"] != top_doc), None)
+    first = hits[0].get("rerank_score")
+    return {
+        "docs": len(docs),
+        "top_doc_share": docs[top_doc] / len(hits),
+        "best_score": max(hit["score"] for hit in hits),
+        "rerank_gap": first - other if first is not None and other is not None else None,
+    }
+
+
 def _finish(question, hits, client, index, chunks, config, eligible, options):
     """두 검색 경로의 공통 마무리: 문서 안 재선택(켰을 때)과 결과 기록."""
     if options["within_doc"] != "off" and hits:
