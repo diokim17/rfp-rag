@@ -16,8 +16,9 @@ BASELINE = {"DEFAULT_RERANK": "none", "DEFAULT_HYBRID": False, "DEFAULT_MAX_PER_
 
 
 def setUpModule():
-    # A는 범위 밖 차단 기준을 A 전용 상수(DEFAULT_MIN_SCORE_A, 0.53)로 따로 둬서 그것도 끕니다.
-    for module, extra in ((a_retrieval, {"DEFAULT_MIN_SCORE_A": None}), (b_retrieval, {})):
+    # A는 범위 밖 차단 기준(DEFAULT_MIN_SCORE_A, 0.53)과 재정렬 절 제목(DEFAULT_RERANK_SECTION)도 끕니다.
+    for module, extra in ((a_retrieval, {"DEFAULT_MIN_SCORE_A": None, "DEFAULT_RERANK_SECTION": False}),
+                          (b_retrieval, {})):
         patcher = patch.multiple(module, **BASELINE, **extra)
         patcher.start()
         unittest.addModuleCleanup(patcher.stop)

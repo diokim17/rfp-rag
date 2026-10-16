@@ -29,6 +29,8 @@ DEFAULT_BM25_PREFIX = True
 # 재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문 BM25 상위 청크를 더합니다.
 # 기본 5(yjk-0024 새 질문 정답청크 5위 내 0.737→0.947, yjk-0025 eval_v2 0.968→0.984). 0이면 끔.
 DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
+# 재정렬 입력에 절 제목(section_path)도 붙입니다(eval_v4 yjk-0006(A): 정답 문서 1위 0.952→0.976, 정답 청크 지표는 같음).
+DEFAULT_RERANK_SECTION = True
 # 범위 밖 질문 차단: 질문과 가장 가까운 청크의 코사인이 이 값보다 낮으면 빈 결과를 돌려줘 생성 API를 부르지 않습니다.
 # 기본 0.40(eval_v2 정상 질문 최소 0.423, 범위 밖 질문 24개 중 17개 차단). 나머지는 생성 프롬프트의 거절 규칙이 처리합니다.
 # 점수는 인덱스(청킹)·임베딩 모델마다 달라지므로 바꾸면 experiments/offtopic_threshold_yjk.py로 다시 잽니다. none·off로 끔.
@@ -253,7 +255,7 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         "expand": _expand_count(expand) if mode != "none" else None,
         "rerank_section": (_flag(rerank_section, "RETRIEVAL_RERANK_SECTION")
                            if rerank_section is not None or os.getenv("RETRIEVAL_RERANK_SECTION", "").strip()
-                           else False) if mode != "none" else None,
+                           else DEFAULT_RERANK_SECTION) if mode != "none" else None,
         "dedup": _flag(dedup, "RETRIEVAL_DEDUP") if dedup is not None or os.getenv("RETRIEVAL_DEDUP", "").strip()
         else False,
         "min_score": _min_score(min_score),
@@ -386,8 +388,8 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     min_score: 범위 밖 질문 차단(기본 B 0.40·A 0.53, none·off로 끔, 환경 변수 RETRIEVAL_MIN_SCORE). 필터를 통과한 청크 중 질문과의 코사인이
       가장 높은 값도 이보다 낮으면 RFP와 무관한 질문으로 보고 빈 목록을 돌려줍니다. 그러면 generate_answer가
       생성 API를 부르지 않고 안내 문구를 답합니다. 질문 임베딩 호출은 그대로 한 번 일어납니다.
-    rerank_section: 켜면(기본 끔, 환경 변수 RETRIEVAL_RERANK_SECTION) 재정렬 입력의 사업명·발주 기관 아래 줄에
-      청크의 절 제목(metadata.section_path)을 붙입니다. 같은 문서 안에서 질문한 항목이 있는 절을 고르게 돕는 실험 옵션입니다.
+    rerank_section: 켜면(기본 켬, off로 끔, 환경 변수 RETRIEVAL_RERANK_SECTION) 재정렬 입력의 사업명·발주 기관 아래 줄에
+      청크의 절 제목(metadata.section_path)을 붙입니다. 같은 문서 안에서 질문한 항목이 있는 절을 고르게 돕습니다.
       반환 청크의 text와 score는 그대로이며, 재정렬하지 않으면 쓰이지 않습니다.
     """
     if not question.strip() or top_k < 1:

@@ -1,7 +1,7 @@
 """시나리오 A 검색(a_retrieval.py)의 A 전용 기본값과 옵션을 외부 API·모델 없이 검증합니다.
 
 - 범위 밖 차단 기준(min_score)은 A 임베딩으로 잰 0.53이 기본입니다.
-- rerank_section을 켜면 재정렬 입력에만 절 제목이 붙습니다.
+- rerank_section(기본 켬)은 재정렬 입력에만 절 제목을 붙입니다.
 가짜 임베딩·문서는 test_retrieval_rerank.py의 것을 같이 씁니다.
 """
 
@@ -77,12 +77,12 @@ class ARetrievalTests(unittest.TestCase):
 
         search = lambda **options: self.search(chunks=chunks, rerank="cross-encoder", **options)
         with patch.object(a_retrieval, "_cross_encoder_scores", scorer):
-            off = search()
-            on = search(rerank_section=True)
-            with patch.dict(os.environ, {"RETRIEVAL_RERANK_SECTION": "on"}):
-                self.assertEqual(search(), on)
-                self.assertEqual(search(rerank_section=False), off)  # 인자가 환경 변수보다 우선
-        self.assertFalse(any("발표" in passage for passage in seen[0]))  # 기본은 절 제목을 넣지 않음
+            off = search(rerank_section=False)
+            on = search()  # 기본은 켬
+            with patch.dict(os.environ, {"RETRIEVAL_RERANK_SECTION": "off"}):
+                self.assertEqual(search(), off)
+                self.assertEqual(search(rerank_section=True), on)  # 인자가 환경 변수보다 우선
+        self.assertFalse(any("발표" in passage for passage in seen[0]))  # 끄면 절 제목을 넣지 않음
         self.assertEqual(on[0]["chunk_id"], chunks[1]["chunk_id"])
         self.assertIn(f"학사정보시스템 고도화 나\nⅣ 제안 > 3 발표\n{chunks[1]['text']}", seen[1])
         # 절 제목이 빈 청크는 기존 입력과 같습니다.
