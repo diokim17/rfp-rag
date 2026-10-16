@@ -194,7 +194,7 @@ def _min_score(value):
 
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
                       hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None,
-                      within_doc=None, expand=None, dedup=None, min_score=None):
+                      within_doc=None, expand=None, dedup=None, min_score=None, uncap_named=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -250,6 +250,8 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         "dedup": _flag(dedup, "RETRIEVAL_DEDUP") if dedup is not None or os.getenv("RETRIEVAL_DEDUP", "").strip()
         else False,
         "min_score": _min_score(min_score),
+        "uncap_named": _flag(uncap_named, "RETRIEVAL_UNCAP_NAMED")
+        if uncap_named is not None or os.getenv("RETRIEVAL_UNCAP_NAMED", "").strip() else False,
     }
 
 
@@ -341,7 +343,7 @@ def _rrf(rankings, constant):
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
              rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None,
-             expand=None, dedup=None, min_score=None):
+             expand=None, dedup=None, min_score=None, uncap_named=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -376,6 +378,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     dedup: 켜면(기본 끔, 환경 변수 RETRIEVAL_DEDUP) 최종 결과에서 같은 내용이 자리를 겹쳐 차지하지 않게 합니다.
       본문이 완전히 같은 문서(같은 공고가 다른 파일명으로 두 번 들어온 경우)는 한 문서로 보고 max_per_doc을 함께 세며,
       이미 고른 청크와 본문이 똑같은 청크(문서 사이의 같은 서식 문구 등)는 건너뜁니다. 먼저 나온(순위가 높은) 쪽을 남깁니다.
+    uncap_named: 질문이 사업 하나를 이름으로 가리키면 그 사업의 문서당 상한을 풉니다(기본 끔, RETRIEVAL_UNCAP_NAMED).
     min_score: 범위 밖 질문 차단(기본 B 0.40·A 끔, none·off로 끔, 환경 변수 RETRIEVAL_MIN_SCORE). 필터를 통과한 청크 중 질문과의 코사인이
       가장 높은 값도 이보다 낮으면 RFP와 무관한 질문으로 보고 빈 목록을 돌려줍니다. 그러면 generate_answer가
       생성 API를 부르지 않고 안내 문구를 답합니다. 질문 임베딩 호출은 그대로 한 번 일어납니다.
@@ -385,7 +388,8 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
                                 rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix,
-                                within_doc=within_doc, expand=expand, dedup=dedup, min_score=min_score)
+                                within_doc=within_doc, expand=expand, dedup=dedup, min_score=min_score,
+                                uncap_named=uncap_named)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -425,9 +429,9 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
         ranked = observed(f"rerank-{mode}")(_rerank)(question, hits, mode)
         ranked = _aspect_slot(question, ranked, mode)
-        ranked = _compare_slot(question, ranked, chunks, eligible, mode,
-                               lambda number: float(index.reconstruct(number) @ vector[0]))
-        take = _selector(chunks, options)
+        ranked, picked = _named_slot(question, ranked, chunks, eligible, mode,
+                                     lambda number: float(index.reconstruct(number) @ vector[0]), options)
+        take = _selector(chunks, picked)
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return _finish(question, hits, client, index, chunks, config, eligible, options)
 
@@ -525,31 +529,38 @@ def _name_grams(chunks):
     return cached[1]
 
 
-def _named_docs(question, ranked, chunks):
-    """후보 문서 중 사업명 고유 2-gram의 절반 이상(3개 이상)이 질문에 나오는 문서(질문이 이름으로 가리킨 사업), 후보 순서대로.
+def _named_docs(question, ranked, chunks, strict=False):
+    """후보 문서 중 질문이 이름으로 가리킨 사업, 후보 순서대로. 사업명 고유 2-gram이 3개 이상 질문에 나오고
+    그 절반 이상이 나오거나(strict면 이것만) 5개 이상 나오면 가리킨 것으로 봅니다.
 
     2개만 겹쳐도 되면 '컨설팅'·'ERP' 한 단어로 다른 사업이 잡힙니다(평가 질문 247개 중 오탐 4건 → 3개 이상이면 0건).
+    5개 이상 조건은 '대전대학교 MILE 전산시스템'처럼 긴 사업명을 줄여 쓴 비교 질문을 잡기 위한 것입니다.
     """
     asked, own = set(_bigrams(question)), _name_grams(chunks)
     named = []
     for hit in ranked:
         grams = own.get(hit["doc_id"], set())
-        hit_count = len(grams & asked)
-        if hit["doc_id"] not in named and hit_count >= 3 and hit_count / len(grams) >= .5:
+        count = len(grams & asked)
+        if hit["doc_id"] not in named and count >= 3 and (count / len(grams) >= .5 or (count >= 5 and not strict)):
             named.append(hit["doc_id"])
     return named
 
 
-def _compare_slot(question, ranked, chunks, eligible, mode, score_of):
-    """질문이 사업 둘 이상을 이름으로 가리키면(비교 질문) 그 문서들의 전체 청크를 재정렬해 문서별 순서대로 맨 앞에 둡니다.
+def _named_slot(question, ranked, chunks, eligible, mode, score_of, options):
+    """질문이 이름으로 가리킨 사업에 맞춰 순서와 문서당 상한을 정합니다. 반환: (ranked, options).
 
-    비교 질문은 사업 개요 청크가 후보를 차지해 묻는 항목(예: 제안서 부수)의 청크가 후보에 들지 못하므로,
-    이름이 나온 문서(COMPARE_DOCS개까지)는 후보와 상관없이 문서 안 모든 청크를 질문으로 재정렬합니다.
-    문서 순서는 후보 순위를 따르고, 문서마다 재정렬 순서를 번갈아 넣습니다. 사업 하나만 가리키면 그대로입니다.
+    - 둘 이상(비교 질문): 그 문서들(COMPARE_DOCS개까지)의 전체 청크를 재정렬해 문서별로 번갈아 맨 앞에 둡니다.
+      사업 개요 청크가 후보를 차지해 묻는 항목(예: 제안서 부수)의 청크가 후보 50개에 들지 못하기 때문입니다.
+    - 하나(엄격한 기준으로도 하나)이고 uncap_named(기본 끔, RETRIEVAL_UNCAP_NAMED)면: 문서당 상한을 풉니다. 다른 사업 청크로 남은 자리를 채우는 대신 그 사업의 청크를 더 넣어
+      한 문서 안에 서로 다르게 적힌 값(예: 하자담보 3년과 1년)을 함께 보게 합니다.
+    - 그 밖(이름 없음·목록 질문 등)은 그대로입니다.
     """
     named = _named_docs(question, ranked, chunks)[:COMPARE_DOCS]
+    if len(named) == 1:
+        lift = options.get("uncap_named") and _named_docs(question, ranked, chunks, strict=True) == named
+        return ranked, ({**options, "max_per_doc": None} if lift else options)
     if len(named) < 2:
-        return ranked
+        return ranked, options
     members, known = _members(chunks), {hit["chunk_id"]: hit for hit in ranked}
     queues = []
     for doc_id in named:
@@ -558,7 +569,7 @@ def _compare_slot(question, ranked, chunks, eligible, mode, score_of):
         queues.append(_rerank(question, hits, mode))
     front = [hit for row in zip_longest(*queues) for hit in row if hit]
     seen = {hit["chunk_id"] for hit in front}
-    return [*front, *(hit for hit in ranked if hit["chunk_id"] not in seen)]
+    return [*front, *(hit for hit in ranked if hit["chunk_id"] not in seen)], options
 
 
 def _expand_candidates(question, hits, chunks, eligible, count, score_of):
@@ -666,8 +677,8 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"], lambda number: cosine[number])
         ranked = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode)
         ranked = _aspect_slot(question, ranked, mode)
-        ranked = _compare_slot(question, ranked, chunks, eligible, mode, lambda number: cosine[number])
-        take = _selector(chunks, options)
+        ranked, picked = _named_slot(question, ranked, chunks, eligible, mode, lambda number: cosine[number], options)
+        take = _selector(chunks, picked)
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return hits
 
