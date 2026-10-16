@@ -31,6 +31,9 @@ DEFAULT_BM25_PREFIX = True
 DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
 # 재정렬 입력에 절 제목(section_path)도 붙입니다(eval_v4 yjk-0006(A): 정답 문서 1위 0.952→0.976, 정답 청크 지표는 같음).
 DEFAULT_RERANK_SECTION = True
+# 질문이 사업 하나를 이름으로 가리키면 그 사업의 문서당 상한을 풉니다(B shn-0087~0095 eval_v4 0.968→0.988에서 이식).
+# A에서는 아직 측정 전이라 기본은 끔. on이면 다른 사업 청크로 남은 자리를 채우는 대신 그 사업 청크를 더 넣습니다.
+DEFAULT_UNCAP_NAMED = False
 # 범위 밖 질문 차단: 질문과 가장 가까운 청크의 코사인이 이 값보다 낮으면 빈 결과를 돌려줘 생성 API를 부르지 않습니다.
 # 기본 0.40(eval_v2 정상 질문 최소 0.423, 범위 밖 질문 24개 중 17개 차단). 나머지는 생성 프롬프트의 거절 규칙이 처리합니다.
 # 점수는 인덱스(청킹)·임베딩 모델마다 달라지므로 바꾸면 experiments/offtopic_threshold_yjk.py로 다시 잽니다. none·off로 끔.
@@ -144,6 +147,7 @@ WITHIN_DOC_MODES = ("off", "residual", "residual+full")
 _OFF, _ON = {"", "0", "false", "off", "no", "none"}, {"1", "true", "on", "yes"}
 _bm25_indexes = {}
 _doc_members = {}
+_name_gram_cache = {}
 
 
 def _flag(value, env):
@@ -200,7 +204,8 @@ def _min_score(value):
 
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
                       hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None,
-                      within_doc=None, expand=None, dedup=None, min_score=None, rerank_section=None):
+                      within_doc=None, expand=None, dedup=None, min_score=None, rerank_section=None,
+                      uncap_named=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -259,6 +264,9 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         "dedup": _flag(dedup, "RETRIEVAL_DEDUP") if dedup is not None or os.getenv("RETRIEVAL_DEDUP", "").strip()
         else False,
         "min_score": _min_score(min_score),
+        "uncap_named": (_flag(uncap_named, "RETRIEVAL_UNCAP_NAMED")
+                        if uncap_named is not None or os.getenv("RETRIEVAL_UNCAP_NAMED", "").strip()
+                        else DEFAULT_UNCAP_NAMED) if mode != "none" else None,
     }
 
 
@@ -350,7 +358,7 @@ def _rrf(rankings, constant):
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
              rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None,
-             expand=None, dedup=None, min_score=None, rerank_section=None):
+             expand=None, dedup=None, min_score=None, rerank_section=None, uncap_named=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -391,6 +399,8 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     rerank_section: 켜면(기본 켬, off로 끔, 환경 변수 RETRIEVAL_RERANK_SECTION) 재정렬 입력의 사업명·발주 기관 아래 줄에
       청크의 절 제목(metadata.section_path)을 붙입니다. 같은 문서 안에서 질문한 항목이 있는 절을 고르게 돕습니다.
       반환 청크의 text와 score는 그대로이며, 재정렬하지 않으면 쓰이지 않습니다.
+    uncap_named: 켜면(기본 끔, 환경 변수 RETRIEVAL_UNCAP_NAMED) 질문이 사업 하나를 이름으로 가리킬 때 그 질문만
+      max_per_doc을 적용하지 않습니다(_uncap_named). 재정렬하지 않으면 쓰이지 않습니다.
     """
     if not question.strip() or top_k < 1:
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
@@ -398,7 +408,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
                                 rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix,
                                 within_doc=within_doc, expand=expand, dedup=dedup, min_score=min_score,
-                                rerank_section=rerank_section)
+                                rerank_section=rerank_section, uncap_named=uncap_named)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -437,7 +447,7 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
                                   lambda number: float(index.reconstruct(number) @ vector[0]))
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
         ranked = observed(f"rerank-{mode}")(_rerank)(question, hits, mode, options["rerank_section"])
-        take = _selector(chunks, options)
+        take = _selector(chunks, _uncap_named(question, ranked, chunks, options))
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return _finish(question, hits, client, index, chunks, config, eligible, options)
 
@@ -600,9 +610,52 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
     if mode != "none":
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"], lambda number: cosine[number])
         ranked = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode, options["rerank_section"])
-        take = _selector(chunks, options)
+        take = _selector(chunks, _uncap_named(question, ranked, chunks, options))
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return hits
+
+
+def _name_grams(chunks):
+    """doc_id별 사업명의 '그 사업만의' 글자 2-gram. 여러 사업명에 흔한 2-gram(정보·시스템·구축 등, 전체 문서의 5% 초과)은 뺍니다."""
+    cached = _name_gram_cache.get(id(chunks))
+    if cached is None or cached[0] is not chunks:
+        names = {doc_id: set(_bigrams(str(chunks[numbers[0]]["metadata"].get("사업명", ""))))
+                 for doc_id, numbers in _members(chunks).items()}
+        df = Counter(gram for grams in names.values() for gram in grams)
+        common = max(1, len(names) * .05)
+        _name_gram_cache.clear()
+        _name_gram_cache[id(chunks)] = cached = (chunks, {doc_id: {gram for gram in grams if df[gram] <= common}
+                                                          for doc_id, grams in names.items()})
+    return cached[1]
+
+
+def _named_docs(question, ranked, chunks, strict=False):
+    """후보 문서 중 질문이 이름으로 가리킨 사업, 후보 순서대로 (B b_retrieval._named_docs와 같은 기준).
+
+    사업명 고유 2-gram이 3개 이상 질문에 나오고 그 절반 이상이 나오거나(strict면 이것만) 5개 이상 나오면 가리킨 것으로 봅니다.
+    2개만 겹쳐도 되면 '컨설팅'·'ERP' 한 단어로 다른 사업이 잡힙니다(B 평가 질문 247개 중 오탐 4건 → 3개 이상이면 0건).
+    """
+    asked, own = set(_bigrams(question)), _name_grams(chunks)
+    named = []
+    for hit in ranked:
+        grams = own.get(hit["doc_id"], set())
+        count = len(grams & asked)
+        if hit["doc_id"] not in named and count >= 3 and (count / len(grams) >= .5 or (count >= 5 and not strict)):
+            named.append(hit["doc_id"])
+    return named
+
+
+def _uncap_named(question, ranked, chunks, options):
+    """uncap_named가 켜져 있고 질문이 사업 하나만 가리키면(느슨한 기준으로 하나, 엄격한 기준으로도 같은 하나)
+    max_per_doc을 푼 옵션을 돌려줍니다. 한 문서 안에 서로 다르게 적힌 값(예: 하자담보 3년과 1년)이나
+    다음 청크로 이어지는 목록을 함께 보게 하려는 것입니다. 그 밖(이름 없음·비교·목록 질문)은 options 그대로.
+    """
+    if not options["uncap_named"]:
+        return options
+    named = _named_docs(question, ranked, chunks)
+    if len(named) == 1 and _named_docs(question, ranked, chunks, strict=True) == named:
+        return {**options, "max_per_doc": None}
+    return options
 
 
 def _selector(chunks, options):

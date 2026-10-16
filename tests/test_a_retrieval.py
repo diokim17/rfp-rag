@@ -109,5 +109,57 @@ class ARetrievalTests(unittest.TestCase):
                          {"docs": 1, "top_doc_share": 1., "best_score": .6, "rerank_gap": None})
 
 
+class AUncapNamedTests(unittest.TestCase):
+    """uncap_named: 질문이 사업 하나를 이름으로 가리키면 그 질문만 문서당 상한을 풉니다(기본 끔)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.client = FakeClient()
+        # 10자 청크: 학사 사업은 청크 3개, 나머지는 1~2개. 사업명이 서로 겹치지 않아 고유 2-gram으로 구분됩니다.
+        build_index([
+            document("haksa", "대전대학교 학사행정 고도화", "가", "가" * 10 + "나" * 10 + "다" * 10),
+            document("bus", "버스운행 관리 구축", "나", "가" * 10 + "나" * 10),
+            document("water", "용수공급 타당성조사", "다", "가" * 10),
+            document("library", "도서관 전산화", "라", "나" * 10),
+        ], cls.client, cls.directory.name, model="test-embedding", chunk_size=10, chunk_overlap=0)
+        cls.index, cls.chunks, cls.config = load_index(cls.directory.name)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.directory.cleanup()
+
+    def setUp(self):
+        env = patch.dict(os.environ, {k: v for k, v in os.environ.items() if not k.startswith("RETRIEVAL_")}, clear=True)
+        env.start()
+        self.addCleanup(env.stop)
+
+    def docs(self, question, **options):
+        # 가짜 임베딩은 사업명을 반영하지 않아 코사인이 낮으므로 범위 밖 차단은 끕니다.
+        hits = retrieve(question, self.client, self.index, self.chunks, self.config, 4,
+                        **{**PLAIN, "rerank": "lexical", "max_per_doc": 1, "min_score": "none", **options})
+        return [hit["doc_id"] for hit in hits]
+
+    def test_single_named_project_lifts_cap_only_when_on(self):
+        question = "대전대학교 학사행정 고도화 사업의 일정"
+        self.assertFalse(retrieval_options()["uncap_named"])  # 기본 끔
+        self.assertEqual(self.docs(question).count("haksa"), 1)  # 끄면 상한 1 그대로
+        on = self.docs(question, uncap_named=True)
+        self.assertEqual(on.count("haksa"), 3)  # 그 사업 청크 3개가 모두 들어옴
+        self.assertEqual(len(on), 4)
+        self.assertEqual(self.docs(question, uncap_named=True, hybrid=True).count("haksa"), 3)  # 하이브리드 경로도 같음
+        with patch.dict(os.environ, {"RETRIEVAL_UNCAP_NAMED": "on"}):
+            self.assertEqual(self.docs(question), on)
+            self.assertEqual(self.docs(question, uncap_named=False).count("haksa"), 1)  # 인자가 환경 변수보다 우선
+
+    def test_unnamed_or_two_named_questions_keep_cap(self):
+        # 사업명이 없는 질문, 두 사업을 가리키는 비교 질문, 사업명 한 단어만 겹치는 질문은 상한을 풀지 않습니다.
+        for question in ("사업의 일정 알려줘", "대전대학교 학사행정 고도화와 버스운행 관리 구축 비교", "학사 일정"):
+            self.assertEqual(self.docs(question, uncap_named=True), self.docs(question), question)
+        self.assertIsNone(retrieval_options(rerank="none", uncap_named=True)["uncap_named"])
+        with self.assertRaises(ValueError):
+            retrieval_options(uncap_named="maybe")
+
+
 if __name__ == "__main__":
     unittest.main()

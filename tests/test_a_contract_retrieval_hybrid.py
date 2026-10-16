@@ -60,7 +60,7 @@ class HybridTests(unittest.TestCase):
                                    "hybrid_vector_k": None, "hybrid_bm25_k": None, "rrf_k": None,
                                    "rewrite": "off", "rewrite_model": None, "bm25_prefix": None,
                                    "within_doc": "off", "expand": None, "dedup": False, "min_score": None,
-                                   "rerank_section": None})
+                                   "rerank_section": None, "uncap_named": None})
         with patch.object(retrieval, "_bm25_ranking", side_effect=AssertionError("BM25가 호출되면 안 됨")):
             default = self.search(3)
             off = self.search(3, hybrid=False, rewrite="off")
@@ -95,7 +95,7 @@ class HybridTests(unittest.TestCase):
                                        "RETRIEVAL_REWRITE", "RETRIEVAL_REWRITE_MODEL", "RETRIEVAL_MAX_PER_DOC",
                                        "RETRIEVAL_BM25_PREFIX", "RETRIEVAL_WITHIN_DOC",
                                        "RETRIEVAL_EXPAND", "RETRIEVAL_DEDUP", "RETRIEVAL_MIN_SCORE",
-                                       "RETRIEVAL_RERANK_SECTION"})
+                                       "RETRIEVAL_RERANK_SECTION", "RETRIEVAL_UNCAP_NAMED"})
         base = {"RETRIEVAL_RERANK": "lexical", "RETRIEVAL_HYBRID": "on", "RETRIEVAL_REWRITE": "only"}
         with patch.dict(os.environ, base):
             before = retrieval_options()
@@ -104,7 +104,7 @@ class HybridTests(unittest.TestCase):
                    "RETRIEVAL_REWRITE": "both", "RETRIEVAL_REWRITE_MODEL": "gpt-5-nano", "RETRIEVAL_MAX_PER_DOC": "3",
                    "RETRIEVAL_BM25_PREFIX": "on", "RETRIEVAL_WITHIN_DOC": "residual", "RETRIEVAL_EXPAND": "5",
                    "RETRIEVAL_DEDUP": "on", "RETRIEVAL_MIN_SCORE": "0.5",
-                   "RETRIEVAL_RERANK_SECTION": "on"}
+                   "RETRIEVAL_RERANK_SECTION": "on", "RETRIEVAL_UNCAP_NAMED": "on"}
         for name in documented:
             with self.subTest(name=name), patch.dict(os.environ, {**base, name: changes[name]}):
                 self.assertNotEqual(retrieval_options(), before)
