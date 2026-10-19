@@ -19,7 +19,7 @@ QUESTION = "학사정보시스템 고도화 사업의 요구사항"
 DEFAULTS = {"rerank": "cross-encoder", "candidates": 50, "max_per_doc": 2, "hybrid": True,
             "hybrid_vector_k": 100, "hybrid_bm25_k": 100, "rrf_k": 60, "rewrite": "off", "rewrite_model": None,
             "bm25_prefix": True, "within_doc": "off", "expand": 5,
-            "dedup": False, "min_score": 0.40}
+            "dedup": False, "min_score": 0.40, "uncap_named": True}
 BASELINE = {"rerank": "none", "hybrid": False, "max_per_doc": "none"}
 
 
@@ -73,7 +73,11 @@ class DefaultRetrievalTests(unittest.TestCase):
         self.assertIs(hybrid_calls[0].args[4], True)
         self.assertEqual(len(bm25_spy.call_args_list) - 1, retrieval.EXPAND_DOCS)
         scorer_spy.assert_called_once()
-        self.assertEqual([hit["doc_id"] for hit in hits], ["haksa", "haksa", "bus", "water"])  # 셋째 학사 청크는 상한으로 제외
+        # 질문이 사업 하나(학사정보시스템 고도화)를 이름으로 가리키므로 기본으로 그 사업의 상한 2를 풀어 셋째 학사 청크도 넣습니다.
+        self.assertEqual([hit["doc_id"] for hit in hits], ["haksa", "haksa", "haksa", "bus", "water"])
+        with patch.object(retrieval, "_cross_encoder_scores", side_effect=fake_cross_encoder):
+            capped = [hit["doc_id"] for hit in self.search(5, uncap_named=False)]
+        self.assertEqual(capped, ["haksa", "haksa", "bus", "water"])  # 끄면 셋째 학사 청크는 상한으로 제외
         self.assertEqual([hit["text"] for hit in hits[:2]], ["가 학사 일정 요구사항", "가 학사 성적 요구사항 정의"])
         self.assertTrue(all(isinstance(hit[key], float) for hit in hits for key in ("score", "rerank_score", "rrf_score")))
 
@@ -114,8 +118,8 @@ class DefaultRetrievalTests(unittest.TestCase):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 hits = self.search(5)
-        self.assertEqual(len(hits), 4)
-        self.assertLessEqual([hit["doc_id"] for hit in hits].count("haksa"), 2)
+        self.assertEqual(len(hits), 5)
+        self.assertEqual([hit["doc_id"] for hit in hits].count("haksa"), 3)  # 사업 하나 질문은 상한 해제(기본)
 
     def test_explicit_cross_encoder_without_packages_does_not_fall_back(self):
         with patch.object(retrieval, "_cross_encoder_available", return_value=False), warnings.catch_warnings():

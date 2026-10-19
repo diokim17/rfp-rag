@@ -19,6 +19,9 @@ def setUpModule():
     # A는 범위 밖 차단 기준(DEFAULT_MIN_SCORE_A, 0.53)과 재정렬 절 제목(DEFAULT_RERANK_SECTION)도 끕니다.
     for module, extra in ((a_retrieval, {"DEFAULT_MIN_SCORE_A": None, "DEFAULT_RERANK_SECTION": False}),
                           (b_retrieval, {})):
+        # 사업 하나 질문의 상한 해제(B 기본 켬)도 baseline에서는 끕니다.
+        if hasattr(module, "DEFAULT_UNCAP_NAMED"):
+            extra = {**extra, "DEFAULT_UNCAP_NAMED": False}
         patcher = patch.multiple(module, **BASELINE, **extra)
         patcher.start()
         unittest.addModuleCleanup(patcher.stop)
