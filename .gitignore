@@ -41,3 +41,6 @@ __pycache__/
 rag-b/
 
 !/legacy/README.md
+
+# 시나리오 A 가상환경 (setup_scenario_a.txt로 설치)
+.venv-a/

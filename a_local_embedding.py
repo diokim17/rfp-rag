@@ -48,7 +48,7 @@ class _LocalEmbedding:
         try:
             # 기존 추적 도구가 시간·모델 설정·토큰 수를 기록한다.
             # texts는 실행 함수 안에서만 사용하고 추적 메타데이터로 넘기지 않는다.
-            response = model_call("a_embedding", self.model_name,
+            response = model_call("embedding", self.model_name,
                                   lambda: self._encode(texts), batch_size=self.batch_size,
                                   max_length=self.model.max_seq_length, local=True)
         except Exception:

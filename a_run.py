@@ -24,7 +24,7 @@ from a_experiment_reports import file_hash, save_report, text_file_hash, text_ha
 from a_generation import generate_answer
 from a_observability import Trace, code_version, observed
 from a_parsing import parse_documents, read_json, write_json
-from a_retrieval import retrieve
+from a_retrieval import retrieval_signals, retrieve
 
 ROOT = Path(__file__).resolve().parent
 
@@ -237,7 +237,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         hits = retrieve(question, client, index, chunks, config, args.top_k,
                         {**filters, **(case_filters or {})}, max_per_doc=max_per_doc)
         try:
-            return generate_answer(question, hits, client, generation_model)
+            result = generate_answer(question, hits, client, generation_model)
         except RateLimitError as exc:
             if re.search(r"RPM\).*?Limit\s+0(?:\D|$)", str(exc)):
                 detail = "분당 요청 한도(RPM)가 0입니다. 대기하거나 질문을 줄여도 해결되지 않습니다."
@@ -249,6 +249,9 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                         "OpenAI 프로젝트의 Limits에서 해당 모델의 사용 한도를 확인하세요.\n"
                         "다른 사용 가능한 모델로 바꾸려면 .env.a의 OPENAI_GENERATION_MODEL을 설정하세요.\n"
                         "인덱스는 저장되어 있으므로 기본 실행 ask로 재시도할 수 있습니다.\n")
+        # 검색 결과가 얼마나 확실한지(문서 수·점수). 오답과 겹치는 신호를 찾아 조건 기반 라우팅 기준으로 씁니다.
+        result["signals"] = retrieval_signals(hits)
+        return result
 
     if args.command == "evaluate":
         cases = read_json(args.eval_file)

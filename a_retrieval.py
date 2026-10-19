@@ -29,12 +29,19 @@ DEFAULT_BM25_PREFIX = True
 # 재정렬 후보 확장: 후보에 처음 나온 문서 EXPAND_DOCS개에서 남은 질문 BM25 상위 청크를 더합니다.
 # 기본 5(yjk-0024 새 질문 정답청크 5위 내 0.737→0.947, yjk-0025 eval_v2 0.968→0.984). 0이면 끔.
 DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
+# 재정렬 입력에 절 제목(section_path)도 붙입니다(eval_v4 yjk-0006(A): 정답 문서 1위 0.952→0.976, 정답 청크 지표는 같음).
+DEFAULT_RERANK_SECTION = True
+# 질문이 사업 하나를 이름으로 가리키면 그 사업의 문서당 상한을 풉니다(B shn-0087~0095 eval_v4 0.968→0.988에서 이식).
+# A에서는 아직 측정 전이라 기본은 끔. on이면 다른 사업 청크로 남은 자리를 채우는 대신 그 사업 청크를 더 넣습니다.
+DEFAULT_UNCAP_NAMED = False
 # 범위 밖 질문 차단: 질문과 가장 가까운 청크의 코사인이 이 값보다 낮으면 빈 결과를 돌려줘 생성 API를 부르지 않습니다.
 # 기본 0.40(eval_v2 정상 질문 최소 0.423, 범위 밖 질문 24개 중 17개 차단). 나머지는 생성 프롬프트의 거절 규칙이 처리합니다.
 # 점수는 인덱스(청킹)·임베딩 모델마다 달라지므로 바꾸면 experiments/offtopic_threshold_yjk.py로 다시 잽니다. none·off로 끔.
-# 이 값은 B 임베딩(text-embedding-3-small)으로 잰 것이라, 시나리오 A는 A 모델로 검증하기 전까지 기본으로 끕니다
-# (A에서도 RETRIEVAL_MIN_SCORE나 min_score 인자로 기준값을 주면 차단합니다).
+# 이 값은 B 임베딩(text-embedding-3-small)으로 잰 것이고, 시나리오 A는 A 임베딩(default_model)으로 따로 잰 0.53을 씁니다.
+# A 0.53: eval_v4 정상 질문 최소 0.569, 범위 밖 24개 중 21개 차단. 필터 질문은 필터 안 최고점으로 비교해 더 낮게 나오는데,
+# 0.55에서는 필터 질문 1개가 막혔고(yjk-0033) 0.53에서는 하나도 안 막혔습니다(yjk-0035). 답 없는 문항은 8개 중 2개 차단.
 DEFAULT_MIN_SCORE = 0.40
+DEFAULT_MIN_SCORE_A = 0.53
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # 시나리오 A는 리랭커를 각자 HF 캐시로 내려받지 않고, 서버의 이 공용 폴더에 받아 둔 모델을 함께 씁니다.
 # .env의 A_RERANK_MODEL에는 이 폴더 아래 모델 폴더 이름만 적습니다 (예: bge-reranker-v2-m3).
@@ -109,14 +116,19 @@ def _cross_encoder_scores(question, passages, model_name):
     return scores
 
 
-def _with_project(chunk):
-    """본문 앞에 사업명·발주 기관을 붙인 텍스트. 리랭킹 입력과 BM25 접두 색인에 씁니다."""
-    return " ".join(str(chunk["metadata"][key]) for key in RERANK_FIELDS if chunk["metadata"].get(key)) \
-        + "\n" + chunk["text"]
+def _with_project(chunk, section=False):
+    """본문 앞에 사업명·발주 기관을 붙인 텍스트. 리랭킹 입력과 BM25 접두 색인에 씁니다.
+
+    section이면 그 아래 줄에 절 제목(section_path)도 붙입니다. 절 제목이 없는 청크는 그대로입니다.
+    """
+    head = " ".join(str(chunk["metadata"][key]) for key in RERANK_FIELDS if chunk["metadata"].get(key))
+    if section and chunk["metadata"].get("section_path"):
+        head += "\n" + chunk["metadata"]["section_path"]
+    return head + "\n" + chunk["text"]
 
 
-def _rerank(question, hits, mode):
-    passages = [_with_project(hit) for hit in hits]
+def _rerank(question, hits, mode, section=False):
+    passages = [_with_project(hit, section) for hit in hits]
     if mode == "lexical":
         # 척도가 다른 두 점수를 후보 집합 내 표준점수로 맞춰 더합니다.
         values = [dense + lexical for dense, lexical in zip(
@@ -135,6 +147,7 @@ WITHIN_DOC_MODES = ("off", "residual", "residual+full")
 _OFF, _ON = {"", "0", "false", "off", "no", "none"}, {"1", "true", "on", "yes"}
 _bm25_indexes = {}
 _doc_members = {}
+_name_gram_cache = {}
 
 
 def _flag(value, env):
@@ -180,10 +193,10 @@ def _expand_count(value):
 
 
 def _min_score(value):
-    """None이면 환경 변수 RETRIEVAL_MIN_SCORE, 없으면 기본값(B는 DEFAULT_MIN_SCORE, A는 끔). none·off는 끔(None)."""
+    """None이면 환경 변수 RETRIEVAL_MIN_SCORE, 없으면 기본값(B는 DEFAULT_MIN_SCORE, A는 DEFAULT_MIN_SCORE_A). none·off는 끔(None)."""
     raw = os.getenv("RETRIEVAL_MIN_SCORE") if value is None else value
     if raw is None or (isinstance(raw, str) and not raw.strip()):
-        return None if SCENARIO == "A" else DEFAULT_MIN_SCORE
+        return DEFAULT_MIN_SCORE_A if SCENARIO == "A" else DEFAULT_MIN_SCORE
     if isinstance(raw, str) and raw.strip().lower() in ("none", "off"):
         return None
     return float(raw)
@@ -191,7 +204,8 @@ def _min_score(value):
 
 def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=None, hybrid_vector_k=None,
                       hybrid_bm25_k=None, rrf_k=None, rewrite=None, rewrite_model=None, bm25_prefix=None,
-                      within_doc=None, expand=None, dedup=None, min_score=None):
+                      within_doc=None, expand=None, dedup=None, min_score=None, rerank_section=None,
+                      uncap_named=None):
     """retrieve가 실제로 적용하는 옵션. 우선순위: 인자 > 환경 변수 > 기본값(하이브리드 + cross-encoder + 상한 2).
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
@@ -244,9 +258,15 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
         if rewrite_mode != "off" else None,
         "within_doc": within_mode,
         "expand": _expand_count(expand) if mode != "none" else None,
+        "rerank_section": (_flag(rerank_section, "RETRIEVAL_RERANK_SECTION")
+                           if rerank_section is not None or os.getenv("RETRIEVAL_RERANK_SECTION", "").strip()
+                           else DEFAULT_RERANK_SECTION) if mode != "none" else None,
         "dedup": _flag(dedup, "RETRIEVAL_DEDUP") if dedup is not None or os.getenv("RETRIEVAL_DEDUP", "").strip()
         else False,
         "min_score": _min_score(min_score),
+        "uncap_named": (_flag(uncap_named, "RETRIEVAL_UNCAP_NAMED")
+                        if uncap_named is not None or os.getenv("RETRIEVAL_UNCAP_NAMED", "").strip()
+                        else DEFAULT_UNCAP_NAMED) if mode != "none" else None,
     }
 
 
@@ -338,7 +358,7 @@ def _rrf(rankings, constant):
 def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, rerank=None, candidates=None,
              max_per_doc=None, hybrid=None, hybrid_vector_k=None, hybrid_bm25_k=None, rrf_k=None,
              rewrite=None, rewrite_model=None, rewrite_cache=None, bm25_prefix=None, within_doc=None,
-             expand=None, dedup=None, min_score=None):
+             expand=None, dedup=None, min_score=None, rerank_section=None, uncap_named=None):
     """반환: Chunk에 score(float)를 추가한 목록. filters는 metadata 정확 일치.
     정확히 일치하는 값이 없을 때만 표기 차이(공백·기호, '서울특별시'/'서울시')를 무시하고 그 값을 포함하는
     메타데이터 값이 하나뿐이면 그 값으로 거릅니다(_resolve_filters).
@@ -373,16 +393,22 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
     dedup: 켜면(기본 끔, 환경 변수 RETRIEVAL_DEDUP) 최종 결과에서 같은 내용이 자리를 겹쳐 차지하지 않게 합니다.
       본문이 완전히 같은 문서(같은 공고가 다른 파일명으로 두 번 들어온 경우)는 한 문서로 보고 max_per_doc을 함께 세며,
       이미 고른 청크와 본문이 똑같은 청크(문서 사이의 같은 서식 문구 등)는 건너뜁니다. 먼저 나온(순위가 높은) 쪽을 남깁니다.
-    min_score: 범위 밖 질문 차단(기본 B 0.40·A 끔, none·off로 끔, 환경 변수 RETRIEVAL_MIN_SCORE). 필터를 통과한 청크 중 질문과의 코사인이
+    min_score: 범위 밖 질문 차단(기본 B 0.40·A 0.53, none·off로 끔, 환경 변수 RETRIEVAL_MIN_SCORE). 필터를 통과한 청크 중 질문과의 코사인이
       가장 높은 값도 이보다 낮으면 RFP와 무관한 질문으로 보고 빈 목록을 돌려줍니다. 그러면 generate_answer가
       생성 API를 부르지 않고 안내 문구를 답합니다. 질문 임베딩 호출은 그대로 한 번 일어납니다.
+    rerank_section: 켜면(기본 켬, off로 끔, 환경 변수 RETRIEVAL_RERANK_SECTION) 재정렬 입력의 사업명·발주 기관 아래 줄에
+      청크의 절 제목(metadata.section_path)을 붙입니다. 같은 문서 안에서 질문한 항목이 있는 절을 고르게 돕습니다.
+      반환 청크의 text와 score는 그대로이며, 재정렬하지 않으면 쓰이지 않습니다.
+    uncap_named: 켜면(기본 끔, 환경 변수 RETRIEVAL_UNCAP_NAMED) 질문이 사업 하나를 이름으로 가리킬 때 그 질문만
+      max_per_doc을 적용하지 않습니다(_uncap_named). 재정렬하지 않으면 쓰이지 않습니다.
     """
     if not question.strip() or top_k < 1:
         raise ValueError("비어 있지 않은 질문과 1 이상의 top_k가 필요합니다.")
     options = retrieval_options(rerank=rerank, candidates=candidates, max_per_doc=max_per_doc, hybrid=hybrid,
                                 hybrid_vector_k=hybrid_vector_k, hybrid_bm25_k=hybrid_bm25_k, rrf_k=rrf_k,
                                 rewrite=rewrite, rewrite_model=rewrite_model, bm25_prefix=bm25_prefix,
-                                within_doc=within_doc, expand=expand, dedup=dedup, min_score=min_score)
+                                within_doc=within_doc, expand=expand, dedup=dedup, min_score=min_score,
+                                rerank_section=rerank_section, uncap_named=uncap_named)
     mode, candidates, max_per_doc = options["rerank"], options["candidates"], options["max_per_doc"]
     pool = top_k if mode == "none" else max(top_k, candidates)
     normalize = lambda value: unicodedata.normalize("NFC", str(value))
@@ -420,10 +446,33 @@ def retrieve(question, client, index, chunks, config, top_k=5, filters=None, *, 
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"],
                                   lambda number: float(index.reconstruct(number) @ vector[0]))
         # 후보는 이미 필터를 통과했으므로 재정렬해도 필터 밖 문서가 포함되지 않습니다.
-        ranked = observed(f"rerank-{mode}")(_rerank)(question, hits, mode)
-        take = _selector(chunks, options)
+        ranked = observed(f"rerank-{mode}")(_rerank)(question, hits, mode, options["rerank_section"])
+        take = _selector(chunks, _uncap_named(question, ranked, chunks, options))
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return _finish(question, hits, client, index, chunks, config, eligible, options)
+
+
+def retrieval_signals(hits):
+    """검색 결과가 얼마나 확실한지 보는 신호(조건 기반 라우팅의 판단 재료). 검색 결과는 바꾸지 않습니다.
+
+    docs: 서로 다른 문서 수. 문서당 상한 2·상위 5개면 3~5이고, 많을수록 한 사업으로 모이지 않은 것입니다.
+    top_doc_share: 1위 청크의 문서가 결과에서 차지하는 비율.
+    best_score: 결과 중 가장 높은 코사인(범위 밖 차단 min_score와 같은 기준).
+    rerank_gap: 1위 재정렬 점수 - 1위 문서가 아닌 문서 중 가장 높은 재정렬 점수. 클수록 1위 문서가 확실합니다.
+      재정렬을 안 했거나 결과가 한 문서뿐이면 None.
+    """
+    if not hits:
+        return {"docs": 0, "top_doc_share": None, "best_score": None, "rerank_gap": None}
+    docs = Counter(hit["doc_id"] for hit in hits)
+    top_doc = hits[0]["doc_id"]
+    other = next((hit.get("rerank_score") for hit in hits if hit["doc_id"] != top_doc), None)
+    first = hits[0].get("rerank_score")
+    return {
+        "docs": len(docs),
+        "top_doc_share": docs[top_doc] / len(hits),
+        "best_score": max(hit["score"] for hit in hits),
+        "rerank_gap": first - other if first is not None and other is not None else None,
+    }
 
 
 def _finish(question, hits, client, index, chunks, config, eligible, options):
@@ -560,10 +609,53 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
                 break
     if mode != "none":
         hits = _expand_candidates(question, hits, chunks, eligible, options["expand"], lambda number: cosine[number])
-        ranked = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode)
-        take = _selector(chunks, options)
+        ranked = observed(f"rerank-{mode}")(_rerank)(" ".join(queries), hits, mode, options["rerank_section"])
+        take = _selector(chunks, _uncap_named(question, ranked, chunks, options))
         hits = [hit for hit in ranked if take(hit)][:top_k]
     return hits
+
+
+def _name_grams(chunks):
+    """doc_id별 사업명의 '그 사업만의' 글자 2-gram. 여러 사업명에 흔한 2-gram(정보·시스템·구축 등, 전체 문서의 5% 초과)은 뺍니다."""
+    cached = _name_gram_cache.get(id(chunks))
+    if cached is None or cached[0] is not chunks:
+        names = {doc_id: set(_bigrams(str(chunks[numbers[0]]["metadata"].get("사업명", ""))))
+                 for doc_id, numbers in _members(chunks).items()}
+        df = Counter(gram for grams in names.values() for gram in grams)
+        common = max(1, len(names) * .05)
+        _name_gram_cache.clear()
+        _name_gram_cache[id(chunks)] = cached = (chunks, {doc_id: {gram for gram in grams if df[gram] <= common}
+                                                          for doc_id, grams in names.items()})
+    return cached[1]
+
+
+def _named_docs(question, ranked, chunks, strict=False):
+    """후보 문서 중 질문이 이름으로 가리킨 사업, 후보 순서대로 (B b_retrieval._named_docs와 같은 기준).
+
+    사업명 고유 2-gram이 3개 이상 질문에 나오고 그 절반 이상이 나오거나(strict면 이것만) 5개 이상 나오면 가리킨 것으로 봅니다.
+    2개만 겹쳐도 되면 '컨설팅'·'ERP' 한 단어로 다른 사업이 잡힙니다(B 평가 질문 247개 중 오탐 4건 → 3개 이상이면 0건).
+    """
+    asked, own = set(_bigrams(question)), _name_grams(chunks)
+    named = []
+    for hit in ranked:
+        grams = own.get(hit["doc_id"], set())
+        count = len(grams & asked)
+        if hit["doc_id"] not in named and count >= 3 and (count / len(grams) >= .5 or (count >= 5 and not strict)):
+            named.append(hit["doc_id"])
+    return named
+
+
+def _uncap_named(question, ranked, chunks, options):
+    """uncap_named가 켜져 있고 질문이 사업 하나만 가리키면(느슨한 기준으로 하나, 엄격한 기준으로도 같은 하나)
+    max_per_doc을 푼 옵션을 돌려줍니다. 한 문서 안에 서로 다르게 적힌 값(예: 하자담보 3년과 1년)이나
+    다음 청크로 이어지는 목록을 함께 보게 하려는 것입니다. 그 밖(이름 없음·비교·목록 질문)은 options 그대로.
+    """
+    if not options["uncap_named"]:
+        return options
+    named = _named_docs(question, ranked, chunks)
+    if len(named) == 1 and _named_docs(question, ranked, chunks, strict=True) == named:
+        return {**options, "max_per_doc": None}
+    return options
 
 
 def _selector(chunks, options):

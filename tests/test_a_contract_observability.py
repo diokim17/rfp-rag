@@ -134,6 +134,8 @@ class ObservabilityTests(unittest.TestCase):
             self.assertEqual(result["settings"]["documents_sha256"],
                              run.file_hash(root / "data/processed/documents.json"))
             self.assertIsNone(result["experiment"]["trace_id"])
+            # 문항별 기록에 검색 신호가 남아야 오답과 신호의 관계를 볼 수 있습니다.
+            self.assertEqual(result["records"][0]["signals"]["docs"], 1)
             report = next((root / "reports").glob("*.md")).read_text()
             self.assertNotIn("PRIVATE_QUESTION", report)
             self.assertNotIn("PRIVATE_DOCUMENT", report)

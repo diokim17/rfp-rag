@@ -97,12 +97,15 @@ class DefaultRetrievalTests(unittest.TestCase):
                 patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "off"}):
             self.assertEqual(len(retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5)), 4)
 
-    def test_scenario_a_min_score_off_by_default_but_settable(self):
+    def test_scenario_a_min_score_uses_a_default_and_settable(self):
+        """A는 A 임베딩으로 잰 0.53이 기본이고, 환경 변수·인자로 바꾸거나 끌 수 있습니다."""
         with patch.dict(os.environ, {"RETRIEVAL_RERANK": "lexical"}, clear=True):
-            self.assertIsNone(a_retrieval.retrieval_options()["min_score"])
+            self.assertEqual(a_retrieval.retrieval_options()["min_score"], 0.53)
+            self.assertEqual(a_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5), [])
             self.assertEqual(a_retrieval.retrieval_options(min_score=0.3)["min_score"], 0.3)
-            hits = a_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5)
-            self.assertEqual(len(hits), 4)
+            with patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "off"}):
+                hits = a_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5)
+                self.assertEqual(len(hits), 4)
             with patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "0.5"}):
                 self.assertEqual(a_retrieval.retrieval_options()["min_score"], 0.5)
                 self.assertEqual(a_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5), [])
