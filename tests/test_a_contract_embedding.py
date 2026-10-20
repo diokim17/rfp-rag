@@ -130,9 +130,9 @@ class ChunkingTests(unittest.TestCase):
             chunks = chunk_documents([document("     abcdefghijk")], 5, 0)
             self.assertEqual([(c["chunk_id"], c["text"]) for c in chunks],
                              [("doc:1", "abcde"), ("doc:2", "fghij"), ("doc:3", "k")])
-            explicit = chunk_documents([document("가나다\n\n라마바" * 3)], 10, 2)
-            os.environ.pop("RFP_CHUNKING_STRATEGY")
-            self.assertEqual(chunk_documents([document("가나다\n\n라마바" * 3)], 10, 2), explicit)
+            # fixed 호환성은 명시 설정으로 유지하며, 기본 전략은 별도 additive 테스트에서 검증합니다.
+            self.assertEqual([c["text"] for c in chunk_documents([document("abcdefghijk")], 5, 2)],
+                             ["abcde", "defgh", "ghijk"])
 
     def test_invalid_settings_fail(self):
         for size, overlap in ((0, 0), (-1, 0), (5, -1), (5, 5), (5, 6)):
