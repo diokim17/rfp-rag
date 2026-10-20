@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from a_observability import model_call, observed
+from common_observability import model_call, observed
 
 
 class _LocalEmbedding:

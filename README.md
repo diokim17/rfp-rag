@@ -28,11 +28,18 @@ rag-b/bin/python b_run.py all --limit 1 --question "질문 내용"
 
 두 실행 파일 모두 `parse`, `build`, `ask`, `evaluate`를 지원합니다. 평가 예:
 `rag-b/bin/python b_run.py evaluate --eval-file data/eval.json --judge-model gpt-5-nano --judge-cache results/b/judge-cache.jsonl`.
-설정은 `.env.a`·`.env.b`, 산출물은 `data/processed/a|b`, `indexes/a|b`, `results/a|b`(보고서: `reports/`),
-실험 번호는 `.experiment-state/a|b`에 나뉩니다. 원본과 비교용 평가 데이터는 함께 사용합니다.
+설정은 `.env.a`·`.env.b`, 전처리 결과는 A·B 공통 `data/processed/common`(파싱 코드가 같아 결과도 같음),
+산출물은 `indexes/a|b`, `results/a|b`(보고서: `reports/`), 실험 번호는 `.experiment-state/a|b`에 나뉩니다.
+기존 `data/processed/a|b`를 쓰던 경우 `parse`를 다시 실행하거나 `documents.json`을 `data/processed/common`으로 옮기세요.
+A·B에서 내용이 같은 모듈(parsing·evaluation·observability·experiment_ids·experiment_reports·query_rewrite)은
+`common_*.py` 하나로 합쳤습니다. 기존 `a_*`·`b_*` 이름으로 import해도 같은 모듈이 불러와집니다.
 기존 인덱스는 자동 이전하지 않으므로 새 경로에서 구축하고, 직접 지정하는 출력 경로도 시나리오별로 구분하세요.
 
-`run.py`는 `.env`/환경 변수의 `RFP_SCENARIO`로 실행 함수를 선택하며 가상환경은 자동 전환하지 않습니다.
+`python run.py [명령 ...]`을 실행하면 A / B / A+B 중 하나를 고릅니다. 고른 시나리오의 가상환경(A `.venv-a`,
+B `rag-b` 또는 `.venv`, `RFP_PYTHON_A`·`RFP_PYTHON_B`로 변경 가능) 파이썬으로 따로 실행하므로 어느 환경에서 실행해도 됩니다.
+A+B는 같은 명령을 A, B 순서로 실행하고 `evaluate`이면 두 결과를 표 하나로 출력합니다.
+터미널에서는 항상 묻고, `RFP_SCENARIO`(A·B·AB, 없으면 B)는 Enter만 눌렀을 때의 기본값입니다.
+입력을 받을 수 없는 환경(배치 실행 등)에서는 묻지 않고 그 기본값으로 실행합니다.
 기존 무접두사 모듈과 `scenario_a*.py`, `legacy_run.py`는 `legacy/`에 보관했습니다.
 테스트는 `python -m unittest discover -s tests -v`로 실행합니다. 공통 계약은 A·B 각각 검증하고,
 이전 코드 전용 테스트는 `legacy/tests/`에 보관합니다. `experiments/a_embedding_chy.py`는 A 모듈·경로,
@@ -110,7 +117,7 @@ rfp-rag/
 ├── legacy/                      # 분리 전 무접두사 모듈·scenario_a*·legacy_run.py
 │   └── tests/                   # 이전 통합 설정 선택 방식의 회귀 테스트
 ├── data/raw/                    # 공용 원본
-├── data/processed/a|b/          # 시나리오별 전처리 결과
+├── data/processed/common/       # A·B 공통 전처리 결과
 ├── indexes/a|b/                 # 시나리오별 인덱스
 ├── results/a|b/                 # 시나리오별 결과·캐시·reports/
 ├── .env.a.example / .env.b.example
@@ -284,11 +291,11 @@ B 환경에는 torch 2.8.0을 지정한 `experiments/requirements-rerank.txt`나
 
 ### A additive 적용과 복귀
 
-`run.py`는 기본적으로 B를 선택합니다. A는 `python a_run.py` 또는 `RFP_SCENARIO=A python run.py`로 실행합니다. 공개 함수 인자와 인덱스 3파일 형식은 그대로입니다.
+`run.py`는 실행할 때 A·B를 고릅니다. 메뉴 없이 A만 실행하려면 `.venv-a/bin/python a_run.py`를 직접 실행합니다. 공개 함수 인자와 인덱스 3파일 형식은 그대로입니다.
 
 - 전략 환경변수는 새 build에만 적용됩니다. 기존 fixed 인덱스는 그대로 읽을 수 있습니다.
 - 기존 문서를 그대로 사용하면 parse는 필요 없습니다. 전략·문서·모델이 달라지면 새 별도 경로에 build한 뒤 검색 경로를 전환합니다.
-- 개인 기본 경로 `data/processed/a`, `indexes/a`는 검증된 문서·인덱스 배포 사본에 연결할 수 있습니다. 원본 실험 산출물은 보존하고, build/질의가 없는 상태에서 문서 해시를 확인한 뒤 연결합니다.
+- 개인 기본 경로 `data/processed/common`, `indexes/a`는 검증된 문서·인덱스 배포 사본에 연결할 수 있습니다. 원본 실험 산출물은 보존하고, build/질의가 없는 상태에서 문서 해시를 확인한 뒤 연결합니다.
 - 기본 경로가 심볼릭 링크이면 그 경로에 build하지 마세요. 아래처럼 새 경로를 지정해 검증 후 연결을 전환하세요.
 
 ```bash

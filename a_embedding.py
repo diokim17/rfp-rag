@@ -7,8 +7,8 @@ import unicodedata
 import faiss
 import numpy as np
 
-from a_parsing import read_json, section_of, write_json
-from a_observability import observed, model_call
+from common_parsing import read_json, section_of, write_json
+from common_observability import observed, model_call
 
 
 _BOUNDARIES = tuple(re.compile(pattern) for pattern in (
