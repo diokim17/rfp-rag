@@ -8,8 +8,8 @@ torch 설치 여부에 따라 결과가 달라지지 않도록 모듈 상수를 
 import unittest
 from unittest.mock import patch
 
-import a_retrieval
-import b_retrieval
+from pipelines.server import server_retrieval
+from pipelines.api import api_retrieval
 
 BASELINE = {"DEFAULT_RERANK": "none", "DEFAULT_HYBRID": False, "DEFAULT_MAX_PER_DOC": None, "DEFAULT_BM25_PREFIX": False,
             "DEFAULT_EXPAND": 0, "DEFAULT_MIN_SCORE": None}
@@ -17,8 +17,8 @@ BASELINE = {"DEFAULT_RERANK": "none", "DEFAULT_HYBRID": False, "DEFAULT_MAX_PER_
 
 def setUpModule():
     # A는 범위 밖 차단 기준(DEFAULT_MIN_SCORE_A, 0.53)과 재정렬 절 제목(DEFAULT_RERANK_SECTION)도 끕니다.
-    for module, extra in ((a_retrieval, {"DEFAULT_MIN_SCORE_A": None, "DEFAULT_RERANK_SECTION": False}),
-                          (b_retrieval, {})):
+    for module, extra in ((server_retrieval, {"DEFAULT_MIN_SCORE_A": None, "DEFAULT_RERANK_SECTION": False}),
+                          (api_retrieval, {})):
         # 사업 하나 질문의 상한 해제(B 기본 켬)도 baseline에서는 끕니다.
         if hasattr(module, "DEFAULT_UNCAP_NAMED"):
             extra = {**extra, "DEFAULT_UNCAP_NAMED": False}

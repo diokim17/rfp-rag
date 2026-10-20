@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from retrieval_metrics_yjk import score_case  # noqa: E402
 
@@ -80,7 +80,7 @@ def load_cases(eval_file):
 
 def prepare(cases, index_dir, cache_file=SEED_CACHE, allow_api=False):
     """인덱스를 읽고 질문 임베딩을 캐시에 채웁니다. 반환: (client, index, chunks, config, 준비 정보)."""
-    from b_embedding import embed_texts, load_index
+    from pipelines.api.api_embedding import embed_texts, load_index
 
     index, chunks, config = load_index(index_dir)
     model = config["embedding_model"]
@@ -104,7 +104,7 @@ def prepare(cases, index_dir, cache_file=SEED_CACHE, allow_api=False):
 
 def warm_up(cases, client, index, chunks, config, modes=MODES):
     """cross-encoder 모델 로드와 GPU 초기화를 측정에서 분리합니다. 반환: 준비 시간(ms)."""
-    from b_retrieval import retrieve
+    from pipelines.api.api_retrieval import retrieve
 
     if "cross-encoder" not in modes:
         return 0.0
@@ -117,7 +117,7 @@ def warm_up(cases, client, index, chunks, config, modes=MODES):
 
 def run_grid(cases, client, index, chunks, config, modes=MODES, candidates_list=CANDIDATES, top_ks=TOP_KS):
     """none(기준) → 리랭킹 × 후보 수 × top-k 순서로 실행하며 표를 한 줄씩 출력합니다."""
-    from b_retrieval import retrieve
+    from pipelines.api.api_retrieval import retrieve
 
     api_calls_before = client.api_calls
     settings = [("none", None, k) for k in top_ks]

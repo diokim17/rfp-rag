@@ -1,11 +1,11 @@
 """
-시나리오 A(a_local_generation.py)도 아래 지시문·입력·결과 형식을 그대로 가져다 씁니다.
+A와 동일한 지시문·입력·결과 형식에서 분리했으며 이후 독립적으로 관리합니다.
 """
 
 import json
 import re
 
-from common_observability import observed, model_call
+from observability.observability_trace import observed, model_call
 
 NO_HITS_ANSWER = ("질문과 관련된 RFP 문서가 없어 답변할 수 없습니다. "
                   "사업명이나 발주 기관을 넣거나 검색 조건을 바꿔 다시 질문해 주세요.")
@@ -23,7 +23,14 @@ INSTRUCTIONS = (
     "- 비교: 여러 사업을 비교하는 질문은 마크다운 표 하나로 정리하세요(행은 비교 항목, 열은 사업). "
     "표에 넣은 내용은 글머리표로 반복하지 마세요.\n"
     "- 사업명: 어느 사업에 대한 답인지 사업명을 밝히세요. 서로 다른 사업 정보를 섞지 마세요. "
-    "질문이 가리키는 사업이 분명하지 않으면(예: '그 사업') 추측하지 말고 어떤 사업인지 되물으세요.\n"
+    "단, 같은 검색 자료(같은 사업명으로 묶인 문서)의 붙임·별첨 표에 적힌 사업명이 질문의 사업과 조금 달라도 "
+    "그 문서 안의 값이면 이 사업의 값으로 답하고, 표에 적힌 사업명이 다르다는 점을 함께 밝히세요. "
+    "질문이 '그 사업'·'이 사업'처럼 지시어로 사업 하나를 가리키는데 어느 사업인지 알 수 없을 때에만 추측하지 말고 되물으세요"
+    "(되묻는 문장에는 출처 번호를 붙이지 마세요). "
+    "조건(연도·기관·분야 등)에 맞는 사업 목록을 묻는 질문은 되묻지 말고 검색 자료에서 조건에 맞는 사업을 나열하거나, "
+    "없으면 확인되지 않는다고 답하세요. "
+    "단, 입력에 검색 조건이 있으면 질문의 '이 기관'·'이 사업' 등은 그 조건을 가리키므로 되묻지 말고 "
+    "조건에 맞는 검색 자료의 사업을 모두 다루어 답하세요.\n"
     "- 질문 범위: 질문이 묻는 항목에만 답하고, 비슷하지만 다른 항목(예: 계약 방법과 제출 방법)을 섞지 마세요.\n"
     "- 출처: 검색 자료로 확인한 문장 끝에만 [1]처럼 반각 대괄호 안에 citation 번호를 쓰세요. 다른 모양의 괄호는 쓰지 마세요.\n"
     "- 근거 부족: 자료에서 확인되지 않는 내용은 추측하지 말고, 확인되지 않는다는 점을 답변 전체에서 한 번만 밝히고 "
@@ -63,9 +70,10 @@ def _context(sources):
     return json.dumps(items, ensure_ascii=False)
 
 
-def _prompt(question, sources):
-    """모델 입력: 질문 + 검색 자료."""
-    return f"질문: {question}\n\n검색 자료(JSON):\n{_context(sources)}"
+def _prompt(question, sources, filters=None):
+    """모델 입력: 질문 + 검색 조건(있을 때) + 검색 자료. '이 기관'처럼 질문이 필터를 가리킬 때 대상을 알려 줍니다."""
+    condition = "".join(f"\n검색 조건: {k} = {v}" for k, v in (filters or {}).items())
+    return f"질문: {question}{condition}\n\n검색 자료(JSON):\n{_context(sources)}"
 
 
 def _result(question, sources, model, answer, status):
@@ -84,16 +92,13 @@ def _finish(question, sources, model, text, truncated):
 
 
 @observed("generate-answer")
-def generate_answer(question, hits, client, model="gpt-5-mini"):
+def generate_answer(question, hits, client, model="gpt-5-mini", filters=None):
     """질문과 검색 결과로 답변을 만듭니다. sources에는 번호(citation)를 붙인 전체 검색 결과가 들어갑니다(평가가 사용)."""
-    from a_client import ScenarioAClient
-    if isinstance(client, ScenarioAClient):
-        return client.generate_answer(question, hits, model)
     sources = [{"citation": i, **hit} for i, hit in enumerate(hits, 1)]
     if not hits:  # 필터에 맞는 문서가 없으면 API를 부르지 않음
         return _result(question, sources, model, NO_HITS_ANSWER, "no_hits")
     response = model_call("generation", model, lambda: client.responses.create(
-        model=model, instructions=INSTRUCTIONS, input=_prompt(question, sources),
+        model=model, instructions=INSTRUCTIONS, input=_prompt(question, sources, filters),
         reasoning={"effort": "low"}, max_output_tokens=2000, store=False,
     ), reasoning_effort="low", max_output_tokens=2000)
     # gpt-5 계열은 추론 토큰도 max_output_tokens에 포함돼서, 한도에 걸리면 답이 잘리거나 비어서 옵니다.

@@ -16,7 +16,7 @@ class ScenarioSettingsTests(unittest.TestCase):
             path=Path(directory)/('.env.'+prefix)
             path.write_text(content)
             with patch.dict(os.environ, environment or {}, clear=True):
-                return importlib.import_module(prefix+'_run').read_scenario_settings(path)
+                return importlib.import_module('pipelines.server.server_run' if prefix == 'a' else 'pipelines.api.api_run').read_scenario_settings(path)
 
     def test_fixed_scenario_ignores_other_selector(self):
         for prefix in ('a','b'):
@@ -34,13 +34,13 @@ class ScenarioSettingsTests(unittest.TestCase):
 
     def test_check_config_stops_before_models_and_hides_secrets(self):
         for prefix in ('a','b'):
-            module=importlib.import_module(prefix+'_run')
+            module=importlib.import_module('pipelines.server.server_run' if prefix == 'a' else 'pipelines.api.api_run')
             with tempfile.TemporaryDirectory() as directory:
                 root=Path(directory)
                 (root/('.env.'+prefix)).write_text('A_GENERATION_MODEL=gen\nA_EMBEDDING_MODEL=emb\nOPENAI_API_KEY=SECRET_TEST_VALUE\n')
                 output=io.StringIO()
                 with patch.dict(os.environ,{},clear=True), patch.object(module,'ROOT',root), \
-                        patch('sys.argv',[prefix+'_run.py','check-config']), \
+                        patch('sys.argv',['server_run.py' if prefix == 'a' else 'api_run.py','check-config']), \
                         patch.object(module,'run_pipeline') as pipeline, \
                         patch.object(module,'next_experiment_id') as experiment, redirect_stdout(output):
                     module.main()

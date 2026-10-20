@@ -26,8 +26,8 @@ def load_component(module_name, path, method):
 class ScenarioAClient:
     """기존 client 인자를 유지하고, 모델 객체는 실행 중 재사용합니다.
 
-    a_local_embedding.load_model(Path) -> embed_texts(texts) 메서드가 있는 객체
-    a_local_generation.load_model(Path) -> generate_answer(question, hits, model) 객체
+    pipelines.server.server_local_embedding.load_model(Path) -> embed_texts(texts) 메서드가 있는 객체
+    pipelines.server.server_local_generation.load_model(Path) -> generate_answer(question, hits, model) 객체
     임베딩은 입력 순서의 2차원 벡터, 생성은 기존 답변 dict를 반환합니다.
     """
     def __init__(self, settings, generation_dir, embedding_dir, *, need_generation=True):
@@ -35,8 +35,8 @@ class ScenarioAClient:
         self.generation_model = settings["A_GENERATION_MODEL"]
         self.embedding_path = embedding_dir / self.embedding_model
         self.generation_path = generation_dir / self.generation_model
-        self.embedding = load_component("a_local_embedding", self.embedding_path, "embed_texts")
-        self.generation = (load_component("a_local_generation", self.generation_path, "generate_answer")
+        self.embedding = load_component("pipelines.server.server_local_embedding", self.embedding_path, "embed_texts")
+        self.generation = (load_component("pipelines.server.server_local_generation", self.generation_path, "generate_answer")
                            if need_generation else None)
 
     def embed_texts(self, texts, model):

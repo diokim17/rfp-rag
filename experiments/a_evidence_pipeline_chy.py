@@ -15,10 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import numpy as np
 from dotenv import load_dotenv
-import a_retrieval as retrieval
-from a_embedding import load_index
-from a_client import ScenarioAClient
-from a_evaluation import _answer_chunk_hit
+import pipelines.server.server_retrieval as retrieval
+from pipelines.server.server_embedding import load_index
+from pipelines.server.server_client import ScenarioAClient
+from evaluation.evaluation_metrics import _answer_chunk_hit
 from experiments import a_chunking_chy as base
 
 OPTIONS = dict(rerank='cross-encoder', candidates=50, max_per_doc=2, hybrid=True,

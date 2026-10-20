@@ -13,13 +13,13 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
-from a_experiment_ids import next_experiment_id, owner_initials
-from a_experiment_reports import text_file_hash
-from a_observability import Trace, code_version
-from a_run import read_scenario_settings
-from a_client import ScenarioAClient
-import a_embedding as emb
-import a_retrieval as retrieval
+from tracking.tracking_ids import next_experiment_id, owner_initials
+from tracking.tracking_reports import text_file_hash
+from observability.observability_trace import Trace, code_version
+from pipelines.server.server_run import read_scenario_settings
+from pipelines.server.server_client import ScenarioAClient
+import pipelines.server.server_embedding as emb
+import pipelines.server.server_retrieval as retrieval
 from experiments import a_chunking_chy as base
 from experiments.a_evidence_pipeline_chy import OPTIONS
 
@@ -139,7 +139,7 @@ def main():
     print('Default A paths activated; starting two local generation smoke cases',flush=True)
     for case in [c for c in cases if c['id'] in ('yB058','h10')]:
         with (result_dir/(case['id']+'-ask.log')).open('w') as log:
-            subprocess.run([sys.executable,str(ROOT/'a_run.py'),'ask','--question',case['question'],
+            subprocess.run([sys.executable,'-m','pipelines.server.server_run','ask','--question',case['question'],
                             '--results-dir',str(result_dir/'smoke'), '--reports-dir',str(result_dir/'reports')],
                            cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,check=True)
         print(case['id']+': default-path ask completed',flush=True)

@@ -2,7 +2,7 @@
 
 호출 흐름:
     ScenarioAClient → load_model(모델 폴더) → 반환 객체.embed_texts(문자열 목록)
-    → a_embedding.py에서 벡터 검증·L2 정규화 → 문서 인덱스 구축 또는 질문 검색
+    → pipelines/server/server_embedding.py에서 벡터 검증·L2 정규화 → 문서 인덱스 구축 또는 질문 검색
 
 모델 다운로드는 별도 준비 단계에서 수행한다. 이 파일을 import하는 것만으로는
 .env를 읽거나 모델을 다운로드·로딩하지 않는다. 호출자가 load_model의 반환 객체를
@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from common_observability import model_call, observed
+from observability.observability_trace import model_call, observed
 
 
 class _LocalEmbedding:
@@ -78,7 +78,7 @@ class _LocalEmbedding:
                     # 접두어를 추가하지 않고 모델에 저장된 pooling 구성을 사용한다.
                     # CPU NumPy 배열을 받는다. encode 옵션의 추가 정규화는 끄지만,
                     # 모델 내부 Normalize 계층은 실행될 수 있다. 최종 검증·정규화는
-                    # 공통 a_embedding.py에서 수행한다.
+                    # 공통 pipelines/server/server_embedding.py에서 수행한다.
                     encoded = self.model.encode(
                         batch, batch_size=len(batch), prompt="", show_progress_bar=False,
                         convert_to_numpy=True, normalize_embeddings=False)

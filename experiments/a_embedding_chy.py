@@ -17,16 +17,16 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from a_embedding import build_index, load_index
-from a_experiment_ids import next_experiment_id, owner_initials
-from a_experiment_reports import file_hash, text_file_hash
-from a_observability import Trace, code_version
-from a_parsing import read_json, write_json
-from a_retrieval import retrieve
-from a_client import ScenarioAClient
+from pipelines.server.server_embedding import build_index, load_index
+from tracking.tracking_ids import next_experiment_id, owner_initials
+from tracking.tracking_reports import file_hash, text_file_hash
+from observability.observability_trace import Trace, code_version
+from parsing.parsing_documents import read_json, write_json
+from pipelines.server.server_retrieval import retrieve
+from pipelines.server.server_client import ScenarioAClient
 from experiments.a_retrieval_metrics import score_case
 
-from common_paths import model_directory
+from config.config_paths import model_directory
 
 MODEL_ROOT = model_directory("embedding")
 MODELS = {"bge-m3": "BAAI/bge-m3", "kure-v1": "nlpai-lab/KURE-v1"}
@@ -162,7 +162,7 @@ def run(args):
                   "measured_at_utc": datetime.now(timezone.utc).isoformat(),
                   "documents_sha256": text_file_hash(paths["processed"] / "documents.json"),
                   "evaluation_sha256": text_file_hash(paths["processed"] / "eval.json"),
-                  "module_sha256": text_file_hash(ROOT / "a_local_embedding.py"),
+                  "module_sha256": text_file_hash(ROOT / "pipelines/server/server_local_embedding.py"),
                   "runner_sha256": text_file_hash(Path(__file__))}
     settings = {"scenario": "A", "A_EMBEDDING_MODEL": args.model_folder,
                 "A_GENERATION_MODEL": "unused-retrieval-only"}

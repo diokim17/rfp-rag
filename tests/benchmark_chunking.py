@@ -25,8 +25,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from b_embedding import chunk_documents, _embedding_input
-from b_parsing import read_json, write_json
+from pipelines.api.api_embedding import chunk_documents, _embedding_input
+from parsing.parsing_documents import read_json, write_json
 
 
 def digest(path):
@@ -115,13 +115,13 @@ def main():
     before = json.dumps(documents, ensure_ascii=False)
     baseline = ModuleType("baseline_embedding")
     code = subprocess.check_output(["git", "show", f"{args.baseline_ref}:embedding.py"], cwd=ROOT, text=True)
-    code = code.replace("from parsing import", "from b_parsing import").replace("from observability import", "from b_observability import")
+    code = code.replace("from parsing import", "from parsing.parsing_documents import").replace("from observability import", "from observability.observability_trace import")
     exec(compile(code, "baseline_embedding.py", "exec"), baseline.__dict__)
     result = {"artifact_label": label, "document_count": len(documents), "chunk_size": 1000,
               "chunk_overlap": 150, "baseline_ref": args.baseline_ref,
               "python": platform.python_version(), "platform": platform.platform(),
               "documents_sha256": digest(processed / "documents.json"),
-              "embedding_py_sha256": digest(ROOT / "b_embedding.py"),
+              "embedding_py_sha256": digest(ROOT / "pipelines/api/api_embedding.py"),
               "benchmark_sha256": digest(Path(__file__)), "api_calls": 0, "strategies": {}}
     result["baseline_index_hashes"] = {p.name: digest(p) for p in (ROOT / "indexes/b").glob("*") if p.is_file()}
     result["evaluation_hashes"] = {p.name: digest(p) for p in (ROOT / "data").glob("eval*_v0.json")}

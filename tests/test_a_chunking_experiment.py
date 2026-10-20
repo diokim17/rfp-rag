@@ -11,12 +11,12 @@ import unittest
 from unittest.mock import Mock, patch
 
 import numpy as np
-import a_embedding
-from a_client import ScenarioAClient
-from a_generation import generate_answer
-from a_observability import Trace
-from a_parsing import _sections, write_json
-from a_retrieval import retrieve, retrieval_options
+from pipelines.server import server_embedding
+from pipelines.server.server_client import ScenarioAClient
+from pipelines.server.server_generation import generate_answer
+from observability.observability_trace import Trace
+from parsing.parsing_documents import _sections, write_json
+from pipelines.server.server_retrieval import retrieve, retrieval_options
 from experiments import a_chunking_chy as experiment
 from test_observability import FakeLangfuse
 
@@ -37,10 +37,10 @@ def client():
 
 class AChunkingContractTests(unittest.TestCase):
     def test_public_signatures_remain_unchanged(self):
-        expected={a_embedding.chunk_documents:'(documents, chunk_size=1000, chunk_overlap=150)',
-                  a_embedding.embed_texts:'(texts, client, model)',
-                  a_embedding.build_index:"(documents, client, index_dir='indexes/a', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
-                  a_embedding.load_index:"(index_dir='indexes/a')"}
+        expected={server_embedding.chunk_documents:'(documents, chunk_size=1000, chunk_overlap=150)',
+                  server_embedding.embed_texts:'(texts, client, model)',
+                  server_embedding.build_index:"(documents, client, index_dir='indexes/a', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
+                  server_embedding.load_index:"(index_dir='indexes/a')"}
         for fn,signature in expected.items(): self.assertEqual(str(inspect.signature(fn)),signature)
 
     def test_four_variants_coordinates_tables_json_and_full_connection(self):
@@ -52,8 +52,8 @@ class AChunkingContractTests(unittest.TestCase):
                 experiment.configure(variant)
                 fake=FakeLangfuse(); trace=Trace({},fake); local=client()
                 with trace.run('contract'):
-                    config=a_embedding.build_index([doc],local,directory,'emb',documents_sha256='source-hash')
-                    index,chunks,loaded=a_embedding.load_index(directory)
+                    config=server_embedding.build_index([doc],local,directory,'emb',documents_sha256='source-hash')
+                    index,chunks,loaded=server_embedding.load_index(directory)
                     geometry=experiment.geometry([doc],chunks)
                     hits=retrieve('PRIVATE_QUESTION',local,index,chunks,loaded,5,**experiment.PROFILES['dense'])
                     answer=generate_answer('PRIVATE_QUESTION',hits,local,'gen')
@@ -81,7 +81,7 @@ class AChunkingContractTests(unittest.TestCase):
                     experiment.configure(variant)
                     doc=document(text);doc['sections']=[[False,'bad'],[-1,'bad'],[2,None],[0,'개요']]
                     original=copy.deepcopy(doc)
-                    chunks=a_embedding.chunk_documents([doc],40,39)
+                    chunks=server_embedding.chunk_documents([doc],40,39)
                     covered=set()
                     for chunk in chunks:
                         start,end=chunk['metadata']['start_char'],chunk['metadata']['end_char']
@@ -90,18 +90,18 @@ class AChunkingContractTests(unittest.TestCase):
                     self.assertTrue(all(i in covered for i,c in enumerate(text) if not c.isspace()))
                     self.assertEqual(doc,original)
         for size,overlap in ((0,0),(10,10),(10,-1)):
-            with self.assertRaises(ValueError): a_embedding.chunk_documents([],size,overlap)
+            with self.assertRaises(ValueError): server_embedding.chunk_documents([],size,overlap)
 
     def test_failed_vectors_preserve_index_and_model_mismatch_rejected(self):
         with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{},clear=True):
             experiment.configure('fixed');obj=client();docs=[document('본문')]
-            a_embedding.build_index(docs,obj,d,'emb')
+            server_embedding.build_index(docs,obj,d,'emb')
             before={p.name:p.read_bytes() for p in Path(d).iterdir()}
             for vectors in ([[0,0]],[[float('nan'),1]],[[float('inf'),1]],[[]],[[1,2],[3,4]]):
                 with patch.object(obj.embedding,'embed_texts',return_value=vectors):
-                    with self.assertRaises(ValueError): a_embedding.build_index(docs,obj,d,'emb')
+                    with self.assertRaises(ValueError): server_embedding.build_index(docs,obj,d,'emb')
                 self.assertEqual(before,{p.name:p.read_bytes() for p in Path(d).iterdir()})
-            with self.assertRaises(ValueError): a_embedding.embed_texts(['q'],obj,'different')
+            with self.assertRaises(ValueError): server_embedding.embed_texts(['q'],obj,'different')
 
 
 class ExperimentTests(unittest.TestCase):
@@ -156,7 +156,7 @@ class ExperimentTests(unittest.TestCase):
     def test_index_reuse_checks_input_model_code_and_files(self):
         with tempfile.TemporaryDirectory() as d,patch.dict(os.environ,{},clear=True):
             path=Path(d);experiment.configure('fixed')
-            a_embedding.build_index([document('body')],client(),path,'emb',documents_sha256='documents')
+            server_embedding.build_index([document('body')],client(),path,'emb',documents_sha256='documents')
             manifest=dict(documents_sha256='documents',evaluation_sha256='evaluation',
                           model_manifest_sha256='model',code_hashes={'a':'code'},index_hashes=experiment.fingerprints(path))
             args=(path,manifest,'documents','evaluation','model',{'a':'code'})

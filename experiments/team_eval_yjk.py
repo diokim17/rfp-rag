@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 
 TOP_K = 50
@@ -46,12 +46,12 @@ def score_case(case, hits):
     """질문 하나의 공통 지표. hits는 retrieve 결과(순위순).
 
     답 없는 문항(answerable=false, eval_v4)은 정답 문서가 없거나 채점에 쓰지 않으므로 반환 수만 남기고 검색 지표에서 뺍니다.
-    정답 청크는 A evaluate와 같은 기준(a_evaluation._answer_chunk_hit)으로 봅니다: expected_values가 있으면 금액·기간을
+    정답 청크는 A evaluate와 같은 기준(evaluation.evaluation_metrics._answer_chunk_hit)으로 봅니다: expected_values가 있으면 금액·기간을
     표기와 무관하게 비교하고, 없으면 expected_keywords를 봅니다. 둘 다 없으면(LLM 채점 문항) 판단하지 않습니다(answer_judged=False).
     """
     if case.get("answerable") is False:
         return {"returned": len(hits)}
-    from a_evaluation import _answer_chunk_hit
+    from evaluation.evaluation_metrics import _answer_chunk_hit
     gold = set(case["expected_doc_ids"])
     docs = [hit["doc_id"] for hit in hits]
     judged = bool(case.get("expected_values") or case.get("expected_keywords"))
@@ -109,7 +109,7 @@ def bm25_rows(cases):
 
 def file_hash(path):
     """평가셋·chunks.json 같은 JSON 파일 해시(줄바꿈을 LF로 맞춰 운영체제와 무관)."""
-    from b_experiment_reports import text_file_hash
+    from tracking.tracking_reports import text_file_hash
     return text_file_hash(path)
 
 
@@ -178,9 +178,9 @@ def main():
     args = parser.parse_args()
 
     from dotenv import load_dotenv
-    from b_embedding import embed_texts, load_index
-    from b_experiment_ids import next_experiment_id, owner_initials
-    import b_retrieval as retrieval
+    from pipelines.api.api_embedding import embed_texts, load_index
+    from tracking.tracking_ids import next_experiment_id, owner_initials
+    import pipelines.api.api_retrieval as retrieval
 
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)

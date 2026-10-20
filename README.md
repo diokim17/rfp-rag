@@ -62,28 +62,45 @@ flowchart TD
 
 ```text
 rfp-rag/
-├── run.py                       # 서버 모델·API 선택·가상환경 실행·평가 비교표
-├── a_run.py / b_run.py           # 각 실행 방식 CLI·파이프라인 연결
-├── a_*.py / b_*.py               # 실행 방식별 임베딩·검색·생성
-├── a_client.py                  # 서버 모델 연결
-├── a_local_embedding.py         # 서버 임베딩 모델 로더
-├── a_local_generation.py        # 서버 생성 모델 로더
-├── common_*.py                  # 파싱·평가·추적·실험 번호·보고서·질문 재작성
-├── data/raw/                    # 원본 files/와 data_list.csv
-├── data/processed/common/       # 공통 파싱 결과
-├── indexes/a/ , indexes/b/      # 실행 방식별 인덱스
-├── results/a/ , results/b/      # 실행 결과·reports/
-├── results/reports/             # 팀 실험·검증 보고서
-├── experiments/                 # 실험 실행기·의존성
-├── tests/                       # 두 실행 방식·공통 모듈 테스트
-├── docs/                        # 개발·추적 가이드, 과거 환경 파일
-├── legacy/                      # 분리 전 코드·이전 테스트
-├── requirements-a.txt           # 서버 모델 환경 고정 버전
-├── requirements-b.txt           # API 환경 고정 버전
+├── run.py                         # 실행 방식 선택·가상환경 실행·평가 비교표
+├── pipelines/
+│   ├── server/                    # 서버 모델 직접 실행
+│   │   ├── server_run.py          # 서버 파이프라인 실행
+│   │   ├── server_embedding.py    # 청킹·로컬 임베딩·인덱스
+│   │   ├── server_retrieval.py    # 검색·리랭킹
+│   │   ├── server_generation.py   # 답변 구성
+│   │   ├── server_client.py       # 로컬 모델 연결
+│   │   ├── server_local_embedding.py
+│   │   └── server_local_generation.py
+│   └── api/                       # OpenAI API 사용
+│       ├── api_run.py             # API 파이프라인 실행
+│       ├── api_embedding.py       # 청킹·API 임베딩·인덱스
+│       ├── api_retrieval.py       # 검색·리랭킹
+│       └── api_generation.py      # API 답변 생성
+├── parsing/parsing_documents.py   # 공통 문서 파싱
+├── evaluation/evaluation_metrics.py # 공통 평가·판정기
+├── observability/observability_trace.py # 추적·로깅
+├── tracking/
+│   ├── tracking_ids.py            # 실행 번호 관리
+│   └── tracking_reports.py        # 해시·요약 보고서
+├── retrieval/retrieval_query_rewrite.py # 질문 재작성
+├── config/config_paths.py         # 프로젝트·모델 경로 설정
+├── data/raw/                      # 원본 files/와 data_list.csv
+├── data/processed/common/         # 공통 파싱 결과
+├── models/                        # 생성·임베딩·리랭커 모델
+├── indexes/a/ , indexes/b/        # 실행 방식별 인덱스
+├── results/a/ , results/b/        # 실행 결과·reports/
+├── results/reports/               # 팀 실험·검증 보고서
+├── experiments/                   # 실험 실행기·의존성
+├── tests/                         # 서버·API·공통 기능 테스트
+├── docs/                          # 개발·추적 가이드, 과거 환경 파일
+├── legacy/                        # 분리 전 코드·이전 테스트
+├── requirements-a.txt             # 서버 모델 환경 고정 버전
+├── requirements-b.txt             # API 환경 고정 버전
 └── .env.a.example / .env.b.example
 ```
 
-공통 구현은 `common_*.py`에서 관리합니다. 기존 `a_parsing`·`b_parsing` 등 6종 모듈 이름은 호환용으로 남아 같은 공통 모듈을 가리킵니다. 임베딩·검색·생성은 각 실행 방식에서 개발합니다. 이전 코드는 [legacy 안내](legacy/README.md), 입출력·협업 규칙은 [팀 개발 가이드](docs/TEAM_DEVELOPMENT_GUIDE.md)를 참고하세요.
+서버 모델과 API 코드는 각각 `pipelines/server/`, `pipelines/api/`에서 관리하며 파일에도 `server_`·`api_` 접두사를 사용합니다. 공통 기능은 역할별 패키지에서 함께 사용합니다. 이전 코드는 [legacy 안내](legacy/README.md), 입출력·협업 규칙은 [팀 개발 가이드](docs/TEAM_DEVELOPMENT_GUIDE.md)를 참고하세요.
 
 ## 팀원 및 역할
 
@@ -262,8 +279,8 @@ test -f .env.b || cp .env.b.example .env.b
 준비한 환경의 설정을 확인합니다. 모델 추론·API 호출은 없으며, 모델 파일이나 API 키의 유효성까지 검증하지는 않습니다.
 
 ```bash
-.venv-a/bin/python a_run.py check-config
-.venv-b/bin/python b_run.py check-config
+.venv-a/bin/python -m pipelines.server.server_run check-config
+.venv-b/bin/python -m pipelines.api.api_run check-config
 ```
 
 프로세스 환경변수는 설정 파일보다 우선합니다. 실행 방식별 설정은 `.env.a`·`.env.b`에서 관리하고, 공통 `.env`에 중복 지정하지 마세요.
@@ -309,9 +326,9 @@ python3.12 run.py ask --question "한영대학교 교육환경 구축 사업의 
 | `all --question "질문"` | 파싱 → 인덱스 구축 → 질의응답 |
 | `evaluate --eval-file 경로` | 평가셋 질문 실행·지표 저장 |
 
-명령 없이 `python3.12 run.py`만 실행하면 실행 방식 선택 후 해당 인덱스가 있으면 `ask`, 없으면 `all`을 실행합니다. 질문과 문서 수는 `a_run.py`·`b_run.py`의 기본값을 사용하며 현재 `DEFAULT_LIMIT=3`입니다. 전체 데이터 구축은 위처럼 명령을 명시하고 `--limit`을 생략하세요. `all --limit 3`은 공통 전처리 파일도 3행 기준으로 다시 쓰므로 전체 데이터 실험과 섞지 마세요.
+명령 없이 `python3.12 run.py`만 실행하면 실행 방식 선택 후 해당 인덱스가 있으면 `ask`, 없으면 `all`을 실행합니다. 질문과 문서 수는 `pipelines/server/server_run.py`·`pipelines/api/api_run.py`의 기본값을 사용하며 현재 `DEFAULT_LIMIT=3`입니다. 전체 데이터 구축은 위처럼 명령을 명시하고 `--limit`을 생략하세요. `all --limit 3`은 공통 전처리 파일도 3행 기준으로 다시 쓰므로 전체 데이터 실험과 섞지 마세요.
 
-특정 기관으로 범위를 좁힐 때는 `--filter "발주 기관=기관명"`, 결과 청크 수는 `--top-k 5`를 사용합니다. 메뉴 없는 직접 실행은 `.venv-a/bin/python a_run.py ...` 또는 `.venv-b/bin/python b_run.py ...`로 할 수 있습니다.
+특정 기관으로 범위를 좁힐 때는 `--filter "발주 기관=기관명"`, 결과 청크 수는 `--top-k 5`를 사용합니다. 메뉴 없는 직접 실행은 `.venv-a/bin/python -m pipelines.server.server_run ...` 또는 `.venv-b/bin/python -m pipelines.api.api_run ...`로 할 수 있습니다.
 
 ### 7. 성능 평가와 실행 방식 비교
 
@@ -328,7 +345,7 @@ python3.12 run.py evaluate \
 두 방식 모두 `--judge-model gpt-5-nano` 또는 `gpt-5-mini`를 지원합니다. 판정기에는 각 실행 방식의 API 키가 필요하고 추가 비용이 발생합니다. 생략하면 `llm` 채점 문항은 미채점됩니다. 반복 평가에는 `--judge-cache`를 지정할 수 있습니다. API 방식의 단독 평가 예:
 
 ```bash
-.venv-b/bin/python b_run.py evaluate \
+.venv-b/bin/python -m pipelines.api.api_run evaluate \
   --eval-file data/eval_v4.json \
   --judge-model gpt-5-nano \
   --judge-cache results/b/judge-cache.jsonl

@@ -1,7 +1,7 @@
 """시나리오 선택 실행기: python run.py [명령 ...] 을 실행하면 A·B·A+B 중 하나를 고릅니다.
 
 A(로컬 모델, transformers 5.1)와 B(OpenAI API, transformers 4.57)는 패키지 버전이 달라 한 가상환경에서
-함께 돌 수 없으므로, 고른 시나리오의 가상환경 파이썬으로 a_run.py·b_run.py를 별도 프로세스로 실행합니다.
+함께 돌 수 없으므로, 고른 시나리오의 가상환경 파이썬으로 pipelines/server/server_run.py·pipelines/api/api_run.py를 별도 프로세스로 실행합니다.
 터미널에서는 항상 묻고, RFP_SCENARIO(A·B·AB, 없으면 B)는 Enter만 눌렀을 때의 기본값입니다.
 입력을 받을 수 없는 환경(배치 실행 등)에서는 묻지 않고 그 기본값으로 실행합니다.
 가상환경은 .venv-a(A), .venv-b(B)를 사용하며 B는 기존 rag-b·.venv도 탐색합니다. RFP_PYTHON_A·RFP_PYTHON_B로 바꿀 수 있습니다.
@@ -15,6 +15,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent
 CHOICES = {"1": "A", "2": "B", "3": "AB", "A": "A", "B": "B", "AB": "AB", "A+B": "AB"}
+MODULES = {"A": "pipelines.server.server_run", "B": "pipelines.api.api_run"}
 VENVS = {"A": (".venv-a",), "B": (".venv-b", "rag-b", ".venv")}
 SUMMARY_ROWS = (("답변 정확도", "answer_accuracy"), ("내용 정확도", "answer_content_accuracy"),
                 ("거절 정확도", "refusal_accuracy"), ("오거절률", "false_refusal_rate"),
@@ -43,7 +44,7 @@ def python_for(scenario):
 
 
 def command_for(scenario, args):
-    return [python_for(scenario), str(ROOT / f"{scenario.lower()}_run.py"), *args]
+    return [python_for(scenario), "-m", MODULES[scenario], *args]
 
 
 def env_for(scenario):

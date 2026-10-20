@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 from experiments.a_evidence_pipeline_chy import diagnose,capture_stages,OPTIONS
-import a_retrieval as retrieval
+import pipelines.server.server_retrieval as retrieval
 
 
 def chunk(i,text='target',doc='a'):

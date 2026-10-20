@@ -13,8 +13,8 @@ import unittest
 from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 from unittest.mock import patch
 
-from a_experiment_reports import save_report
-from a_observability import Trace, model_call, observed
+from tracking.tracking_reports import save_report
+from observability.observability_trace import Trace, model_call, observed
 
 
 class FakeObservation:
@@ -104,9 +104,9 @@ class ObservabilityTests(unittest.TestCase):
             self.assertIn("recall_at_k", text)
 
     def test_evaluate_cli_writes_local_result_and_share_report(self):
-        from a_embedding import build_index
+        from pipelines.server.server_embedding import build_index
         from test_a_contract_pipeline import FakeClient
-        import a_run as run
+        import pipelines.server.server_run as run
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -120,12 +120,12 @@ class ObservabilityTests(unittest.TestCase):
             eval_file.write_text(json.dumps([{"question": "예산 PRIVATE_QUESTION",
                                               "expected_doc_ids": ["a"],
                                               "expected_keywords": ["100원"]}]))
-            argv = ["a_run.py", "evaluate", "--eval-file", str(eval_file),
+            argv = ["pipelines/server/server_run.py", "evaluate", "--eval-file", str(eval_file),
                     "--processed-dir", str(root / "data/processed"), "--index-dir", str(root / "index"), "--results-dir", str(root / "results"),
                     "--reports-dir", str(root / "reports"), "--owner", "tester"]
             with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "LANGFUSE_ENABLED": "false", "A_GENERATION_MODEL": "gen", "A_EMBEDDING_MODEL": "text-embedding-3-small"}, clear=True), \
-                    patch("sys.argv", argv), patch("a_run.load_dotenv"), \
-                    patch("a_client.ScenarioAClient", LocalFake), patch.object(run, "ROOT", root):
+                    patch("sys.argv", argv), patch("pipelines.server.server_run.load_dotenv"), \
+                    patch("pipelines.server.server_client.ScenarioAClient", LocalFake), patch.object(run, "ROOT", root):
                 run.main()
             result = json.loads(next((root / "results").glob("evaluate_*.json")).read_text())
             self.assertEqual(result["summary"]["recall_at_k"], 1)

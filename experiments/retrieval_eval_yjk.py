@@ -22,7 +22,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 
 ASPECTS = ["사업 예산은 얼마인가요?", "사업 기간은 어떻게 되나요?", "입찰 참가 자격은 무엇인가요?",
            "제안서 평가 방법은 어떻게 되나요?", "주요 요구사항은 무엇인가요?", "추진 배경과 목적은 무엇인가요?"]
@@ -107,8 +107,8 @@ class CachedEmbeddingClient:
 
 
 def run(index_dir, eval_file, results_dir, reports_dir, label, top_k):
-    from b_embedding import embed_texts, load_index
-    from b_retrieval import retrieve
+    from pipelines.api.api_embedding import embed_texts, load_index
+    from pipelines.api.api_retrieval import retrieve
 
     cases = read_json(eval_file)
     index, chunks, config = load_index(index_dir)

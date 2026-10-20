@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 
 CAPS = (None, 2, 3)
@@ -56,8 +56,8 @@ def label(cap, mode, candidates):
 
 
 def run(args):
-    from b_embedding import embed_texts, load_index
-    from b_retrieval import retrieve
+    from pipelines.api.api_embedding import embed_texts, load_index
+    from pipelines.api.api_retrieval import retrieve
 
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)

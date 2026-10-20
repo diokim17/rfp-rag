@@ -20,17 +20,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import numpy as np
-from a_client import ScenarioAClient
-from a_embedding import build_index, chunk_documents, load_index
-from a_evaluation import _answer_chunk_hit
-from a_experiment_ids import next_experiment_id, owner_initials
-from a_experiment_reports import file_hash, text_file_hash
-from a_observability import Trace, code_version
-from a_parsing import read_json, write_json
-from a_retrieval import retrieve, retrieval_options
+from pipelines.server.server_client import ScenarioAClient
+from pipelines.server.server_embedding import build_index, chunk_documents, load_index
+from evaluation.evaluation_metrics import _answer_chunk_hit
+from tracking.tracking_ids import next_experiment_id, owner_initials
+from tracking.tracking_reports import file_hash, text_file_hash
+from observability.observability_trace import Trace, code_version
+from parsing.parsing_documents import read_json, write_json
+from pipelines.server.server_retrieval import retrieve, retrieval_options
 from experiments.a_embedding_chy import verify_model, sha256
 from experiments.a_retrieval_metrics import score_case
-from common_paths import model_directory
+from config.config_paths import model_directory
 
 MODEL_ROOT = model_directory('embedding')
 RERANK_ROOT = model_directory('rerank')
@@ -56,8 +56,11 @@ def configure(variant, context="none"):
 
 
 def code_hashes():
-    paths = list(ROOT.glob('a_*.py')) + [Path(__file__), ROOT/'experiments/a_embedding_chy.py',
-                                       ROOT/'experiments/a_retrieval_metrics.py']
+    paths = list(ROOT.joinpath('pipelines/server').glob('server_*.py'))
+    for folder in ('parsing', 'evaluation', 'observability', 'tracking', 'retrieval', 'config'):
+        paths.extend(ROOT.joinpath(folder).glob('*.py'))
+    paths.extend([Path(__file__), ROOT/'experiments/a_embedding_chy.py',
+                  ROOT/'experiments/a_retrieval_metrics.py'])
     return {str(p.relative_to(ROOT)): text_file_hash(p) for p in sorted(paths)}
 
 

@@ -81,6 +81,6 @@ git add results/reports/evaluate_실제시각.md
 
 개인 trace ID는 실행자가 기록을 찾는 용도이며 다른 팀원에게 열람 권한을 제공하지 않습니다. 팀은 공유 요약을 비교하고 실패 분석이 필요하면 실행자가 자신의 상세 기록을 확인해 설명합니다.
 
-현재 A 추적은 `a_observability.py`, 공유 요약은 `a_experiment_reports.py`, 실행 연결은 `a_run.py`에서 관리합니다. B는 b_ 접두사 모듈을 사용하며 run.py는 시나리오를 선택합니다. 기존 모듈 입출력은 유지합니다.
+추적은 `observability/observability_trace.py`, 공유 요약은 `tracking/tracking_reports.py`에서 공통으로 관리합니다. 실행 연결은 `pipelines/server/server_run.py`·`pipelines/api/api_run.py`에 있으며, `run.py`에서 실행 방식을 선택합니다. 기존 모듈 입출력은 유지합니다.
 
 공식 문서: [추적 안내](https://langfuse.com/docs/observability/get-started), [토큰·비용](https://langfuse.com/docs/observability/features/token-and-cost-tracking).

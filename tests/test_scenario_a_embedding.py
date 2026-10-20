@@ -12,13 +12,13 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from a_embedding import build_index, embed_texts, load_index
-from a_evaluation import evaluate
-from a_generation import generate_answer
-from a_observability import Trace
-from a_retrieval import retrieve
-from a_client import ScenarioAClient
-from a_local_embedding import _LocalEmbedding, load_model
+from pipelines.server.server_embedding import build_index, embed_texts, load_index
+from evaluation.evaluation_metrics import evaluate
+from pipelines.server.server_generation import generate_answer
+from observability.observability_trace import Trace
+from pipelines.server.server_retrieval import retrieve
+from pipelines.server.server_client import ScenarioAClient
+from pipelines.server.server_local_embedding import _LocalEmbedding, load_model
 from test_observability import FakeLangfuse
 
 
@@ -56,7 +56,7 @@ class FakeModel:
 
 class LocalEmbeddingTests(unittest.TestCase):
     def test_import_does_not_load_optional_packages_or_env(self):
-        code = ("import sys; import a_local_embedding as scenario_a_embedding; "
+        code = ("import sys; import pipelines.server.server_local_embedding as scenario_a_embedding; "
                 "assert 'torch' not in sys.modules; "
                 "assert 'sentence_transformers' not in sys.modules; "
                 "assert 'dotenv' not in sys.modules")

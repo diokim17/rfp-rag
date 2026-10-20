@@ -89,8 +89,8 @@ def main():
 
     from dotenv import load_dotenv
     from openai import OpenAI
-    from b_embedding import load_index
-    from b_retrieval import retrieve
+    from pipelines.api.api_embedding import load_index
+    from pipelines.api.api_retrieval import retrieve
 
     load_dotenv(ROOT / ".env.b", override=False)  # 키는 이 컴퓨터의 .env에서만 읽습니다.
     if not os.getenv("OPENAI_API_KEY"):

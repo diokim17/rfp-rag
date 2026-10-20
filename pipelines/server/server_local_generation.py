@@ -1,12 +1,12 @@
 """
 지시문·입력·결과 형식은 분리 시점의 시나리오 B와 같아서, A/B를 모델만 다른 조건으로 비교할 수 있습니다.
-a_client.py가 load_model을 한 번 부르고, 돌려받은 객체의 generate_answer를 질문마다 다시 씁니다.
+pipelines/server/server_client.py가 load_model을 한 번 부르고, 돌려받은 객체의 generate_answer를 질문마다 다시 씁니다.
 """
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from a_generation import INSTRUCTIONS, NO_HITS_ANSWER, _finish, _prompt, _result
+from pipelines.server.server_generation import INSTRUCTIONS, NO_HITS_ANSWER, _finish, _prompt, _result
 
 MAX_NEW_TOKENS = 1024  # 답변 최대 길이(토큰)
 

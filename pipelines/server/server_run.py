@@ -9,7 +9,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common_paths import model_directory, project_path
+from config.config_paths import model_directory, project_path
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
@@ -18,16 +18,16 @@ from openai import OpenAI, RateLimitError
 # torch를 불러오기 전에 정해야 해서 여기서 설정하고, 이미 값을 지정했으면 그대로 둡니다.
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-from a_embedding import build_index, load_index
-from common_evaluation import JUDGE_MODELS, evaluate, make_llm_judge
-from common_experiment_ids import next_experiment_id, owner_initials
-from common_experiment_reports import file_hash, save_report, text_file_hash, text_hash
-from a_generation import generate_answer
-from common_observability import Trace, code_version, observed
-from common_parsing import parse_documents, read_json, write_json
-from a_retrieval import retrieval_signals, retrieve
+from pipelines.server.server_embedding import build_index, load_index
+from evaluation.evaluation_metrics import JUDGE_MODELS, evaluate, make_llm_judge
+from tracking.tracking_ids import next_experiment_id, owner_initials
+from tracking.tracking_reports import file_hash, save_report, text_file_hash, text_hash
+from pipelines.server.server_generation import generate_answer
+from observability.observability_trace import Trace, code_version, observed
+from parsing.parsing_documents import parse_documents, read_json, write_json
+from pipelines.server.server_retrieval import retrieval_signals, retrieve
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
 
 # 팀 공용 모델 기본 경로. A 모델 설정값은 이 경로 아래의 하위 폴더 이름입니다.
 A_GENERATION_MODEL_DIR = ROOT / "models/generate"
@@ -59,7 +59,7 @@ def check_index_documents(args, parser):
     """저장된 인덱스가 현재 전처리 문서로 생성됐는지 API 호출 전에 검사합니다."""
     documents_path = args.processed_dir / "documents.json"
     config_path = args.index_dir / "config.json"
-    rebuild = shlex.join([sys.executable, str(ROOT / "a_run.py"), "build",
+    rebuild = shlex.join([sys.executable, "-m", "pipelines.server.server_run", "build",
                           "--processed-dir", str(args.processed_dir),
                           "--index-dir", str(args.index_dir)])
     if args.owner:
@@ -78,7 +78,7 @@ def check_index_documents(args, parser):
     stored_hash = config.get("documents_sha256") if isinstance(config, dict) else None
     if not isinstance(stored_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", stored_hash):
         parser.error("인덱스에 유효한 documents_sha256이 없습니다. "
-                     "해시 저장을 지원하는 a_embedding.py 반영 후 build를 실행하세요:\n" + rebuild)
+                     "해시 저장을 지원하는 pipelines/server/server_embedding.py 반영 후 build를 실행하세요:\n" + rebuild)
     if stored_hash not in {current_hash, legacy_hash}:
         parser.error("전처리 문서가 인덱스 생성 당시와 다릅니다. "
                      "--processed-dir와 --index-dir를 확인한 뒤 build를 실행하세요:\n" + rebuild)
@@ -194,7 +194,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
         check_index_documents(args, parser)
 
     settings = args.scenario_settings
-    from a_client import ScenarioAClient
+    from pipelines.server.server_client import ScenarioAClient
     if os.getenv("RETRIEVAL_REWRITE", "off").strip().lower() not in {"", "off"}:
         parser.error("시나리오 A에서는 OpenAI 질문 재작성을 끄세요: RETRIEVAL_REWRITE=off")
     try:

@@ -21,16 +21,16 @@ EVAL=${EVAL:-data/eval_v2.json}
 [ -f data/raw/data_list.csv ] || { echo "data/raw/data_list.csv와 data/raw/files/가 필요합니다."; exit 1; }
 
 if [ ! -f "$PROCESSED/documents.json" ]; then
-  "$PY" b_run.py parse --processed-dir "$PROCESSED"
+  "$PY" -m pipelines.api.api_run parse --processed-dir "$PROCESSED"
 fi
-DOCS=$("$PY" -c "from b_experiment_reports import text_file_hash; print(text_file_hash('$PROCESSED/documents.json'))")
+DOCS=$("$PY" -c "from tracking.tracking_reports import text_file_hash; print(text_file_hash('$PROCESSED/documents.json'))")
 if [ "$DOCS" != "$EXPECTED_DOCS" ]; then
   echo "경고: documents_sha256 ${DOCS:0:8}… 이 shn-0035(${EXPECTED_DOCS:0:8}…)와 다릅니다. 원본 데이터나 파서 버전을 확인하세요."
   [ "${ALLOW_DOC_MISMATCH:-0}" = 1 ] || exit 1
 fi
 if [ ! -f "$INDEX/config.json" ]; then
   RFP_CHUNKING_STRATEGY=structured RFP_EMBEDDING_CONTEXT=none \
-    "$PY" b_run.py build --processed-dir "$PROCESSED" --index-dir "$INDEX"
+    "$PY" -m pipelines.api.api_run build --processed-dir "$PROCESSED" --index-dir "$INDEX"
 fi
 
 # k(top_k)는 팀 기준 5로 고정. 필터 표기 보정은 retrieve 기본 동작이라 +fuzzy는 붙이지 않습니다.

@@ -6,11 +6,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import a_embedding as emb
-from a_parsing import _sections
-from a_retrieval import retrieve
-from a_generation import generate_answer
-from a_evaluation import evaluate
+import pipelines.server.server_embedding as emb
+from parsing.parsing_documents import _sections
+from pipelines.server.server_retrieval import retrieve
+from pipelines.server.server_generation import generate_answer
+from evaluation.evaluation_metrics import evaluate
 from experiments import a_chunking_chy as base
 from test_a_chunking_experiment import client
 
@@ -103,7 +103,7 @@ class OverviewEvaluationTests(unittest.TestCase):
 
     def test_rrf_capture_keeps_original_rankings_and_results(self):
         from experiments.a_overview_chy import capture
-        import a_retrieval as retrieval
+        import pipelines.server.server_retrieval as retrieval
         chunks=[{'chunk_id':str(i)} for i in range(4)]
         ranks=[[2,0,1],[1,3,0]]
         expected=retrieval._rrf(ranks,60)

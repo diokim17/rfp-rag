@@ -1,4 +1,4 @@
-"""박단비: 시나리오 A(a_run)에서도 B와 같은 OpenAI 판정기가 연결되는지 확인합니다 (모델·API는 mock)."""
+"""박단비: 시나리오 A(pipelines.server.server_run)에서도 B와 같은 OpenAI 판정기가 연결되는지 확인합니다 (모델·API는 mock)."""
 
 import argparse
 from contextlib import redirect_stderr, redirect_stdout
@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import a_run
-from a_observability import Trace
-from a_parsing import read_json, write_json
+from pipelines.server import server_run
+from observability.observability_trace import Trace
+from parsing.parsing_documents import read_json, write_json
 
 
 class AJudgeTests(unittest.TestCase):
@@ -34,12 +34,12 @@ class AJudgeTests(unittest.TestCase):
         self.args.judge_model = judge_model
         self.args.judge_cache = None
         output = io.StringIO()
-        with patch("a_client.ScenarioAClient") as local_client, patch("a_run.OpenAI") as openai_client, \
-                patch("a_run.load_index", return_value=(object(), [], self.config)), \
-                patch("a_run.make_llm_judge") as factory, \
-                patch("a_run.evaluate", return_value={"summary": {}}) as evaluate, \
-                patch("a_run.save_report"), redirect_stdout(io.StringIO()), redirect_stderr(output):
-            a_run.run_pipeline(self.args, argparse.ArgumentParser(), {}, {"experiment_id": "tester-0001"},
+        with patch("pipelines.server.server_client.ScenarioAClient") as local_client, patch("pipelines.server.server_run.OpenAI") as openai_client, \
+                patch("pipelines.server.server_run.load_index", return_value=(object(), [], self.config)), \
+                patch("pipelines.server.server_run.make_llm_judge") as factory, \
+                patch("pipelines.server.server_run.evaluate", return_value={"summary": {}}) as evaluate, \
+                patch("pipelines.server.server_run.save_report"), redirect_stdout(io.StringIO()), redirect_stderr(output):
+            server_run.run_pipeline(self.args, argparse.ArgumentParser(), {}, {"experiment_id": "tester-0001"},
                                Trace({}), "test")
         return local_client, openai_client, factory, evaluate, output.getvalue()
 

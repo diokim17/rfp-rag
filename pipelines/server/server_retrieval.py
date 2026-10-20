@@ -14,12 +14,12 @@ import warnings
 
 import numpy as np
 
-from common_paths import model_directory
+from config.config_paths import model_directory
 
 SCENARIO = "A"
 
-from a_embedding import embed_texts
-from common_observability import observed, record_retrieval
+from pipelines.server.server_embedding import embed_texts
+from observability.observability_trace import observed, record_retrieval
 
 RERANK_MODES = ("none", "lexical", "cross-encoder")
 # 청크 본문에는 사업명이 거의 없으므로 리랭킹 입력 앞에 붙여 어느 사업의 청크인지 구분합니다.
@@ -47,7 +47,7 @@ DEFAULT_MIN_SCORE_A = 0.53
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # 시나리오 A는 리랭커를 각자 HF 캐시로 내려받지 않고, 서버의 이 공용 폴더에 받아 둔 모델을 함께 씁니다.
 # .env의 A_RERANK_MODEL에는 이 폴더 아래 모델 폴더 이름만 적습니다 (예: bge-reranker-v2-m3).
-A_RERANK_MODEL_DIR = Path(__file__).resolve().parent / "models/rerank"
+A_RERANK_MODEL_DIR = Path(__file__).resolve().parents[2] / "models/rerank"
 _cross_encoders = {}
 
 
@@ -585,7 +585,7 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
     """하이브리드·질문 재작성 경로. 질문마다 벡터(와 BM25) 순위를 만들고 RRF로 합친 뒤 기존과 같이 리랭킹합니다."""
     queries = [question]
     if options["rewrite"] != "off":
-        from common_query_rewrite import rewrite_question  # 재작성을 켰을 때만 불러옵니다.
+        from retrieval.retrieval_query_rewrite import rewrite_question  # 재작성을 켰을 때만 불러옵니다.
 
         rewritten, _ = rewrite_question(question, client, options["rewrite_model"], rewrite_cache)
         queries = [rewritten] if options["rewrite"] == "only" else list(dict.fromkeys([question, rewritten]))
@@ -635,7 +635,7 @@ def _name_grams(chunks):
 
 
 def _named_docs(question, ranked, chunks, strict=False):
-    """후보 문서 중 질문이 이름으로 가리킨 사업, 후보 순서대로 (B b_retrieval._named_docs와 같은 기준).
+    """후보 문서 중 질문이 이름으로 가리킨 사업, 후보 순서대로 (B pipelines.api.api_retrieval._named_docs와 같은 기준).
 
     사업명 고유 2-gram이 3개 이상 질문에 나오고 그 절반 이상이 나오거나(strict면 이것만) 5개 이상 나오면 가리킨 것으로 봅니다.
     2개만 겹쳐도 되면 '컨설팅'·'ERP' 한 단어로 다른 사업이 잡힙니다(B 평가 질문 247개 중 오탐 4건 → 3개 이상이면 0건).

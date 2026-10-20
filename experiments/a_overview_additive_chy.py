@@ -14,10 +14,10 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from dotenv import load_dotenv
 import numpy as np
-import a_embedding as embedding
-import a_retrieval as retrieval
-from a_client import ScenarioAClient
-from a_evaluation import _answer_chunk_hit
+import pipelines.server.server_embedding as embedding
+import pipelines.server.server_retrieval as retrieval
+from pipelines.server.server_client import ScenarioAClient
+from evaluation.evaluation_metrics import _answer_chunk_hit
 from experiments import a_chunking_chy as base
 from experiments.a_evidence_pipeline_chy import OPTIONS, read_source, capture_stages, diagnose, rerank_token_counts
 

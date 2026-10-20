@@ -7,8 +7,8 @@ import unicodedata
 import faiss
 import numpy as np
 
-from common_parsing import read_json, section_of, write_json
-from common_observability import observed, model_call
+from parsing.parsing_documents import read_json, section_of, write_json
+from observability.observability_trace import observed, model_call
 
 
 _BOUNDARIES = tuple(re.compile(pattern) for pattern in (
@@ -26,9 +26,9 @@ _PROJECT_CONTEXT_WEIGHT = 0.2
 
 
 def _chunking_strategy():
-    strategy = os.getenv("RFP_CHUNKING_STRATEGY", "overview_additive")
-    if strategy not in {"fixed", "boundary", "structured", "overview", "overview_stable", "overview_additive"}:
-        raise ValueError("RFP_CHUNKING_STRATEGY는 fixed, boundary, structured, overview, overview_stable 또는 overview_additive이어야 합니다.")
+    strategy = os.getenv("RFP_CHUNKING_STRATEGY", "structured")
+    if strategy not in {"fixed", "boundary", "structured"}:
+        raise ValueError("RFP_CHUNKING_STRATEGY는 fixed, boundary 또는 structured여야 합니다.")
     return strategy
 
 
@@ -259,109 +259,11 @@ def _boundary_end(text, start, end, chunk_size, chunk_overlap):
     return end
 
 
-# 짧은 사업 개요를 인식하는 공통 규칙. 기본 additive는 fixed 범위에 개요를 추가합니다.
-# 질문/정답/문서 ID를 참조하지 않으며, 명시적 fixed 선택도 유지합니다.
-_OVERVIEW_HEADING = re.compile(r"(?:사업|용역)\s*개요|사업\s*기간\s*및\s*사업비")
-_OVERVIEW_FIELDS = tuple(re.compile(pattern) for pattern in (
-    r"사\s*업\s*명", r"(?:사업|용역|계약)\s*기간",
-    r"(?:소요\s*예산|사업\s*(?:금액|예산|비)|용역\s*비)",
-    r"(?:계약|입찰|추진)\s*(?:방식|방법)",
-))
-
-
-def _overview_spans(document, chunk_size, table_spans):
-    """제목부터 다음 절까지 크기 안에 들어오는 개요만 격리. 긴 절은 fixed 유지."""
-    text = document["text"]
-    sections = _section_entries(document)
-    table_starts = [a for a, _ in table_spans]
-    spans = []
-    for i, (start, title) in enumerate(sections):
-        # 상위 경로의 '사업 개요' 때문에 추진배경/사업범위까지 선택하지 않습니다.
-        if not _OVERVIEW_HEADING.search(title.rsplit(">", 1)[-1]):
-            continue
-        end = sections[i + 1][0] if i + 1 < len(sections) else len(text)
-        if not 0 < end - start <= chunk_size:
-            continue
-        if (_containing_span(start, table_spans, table_starts)
-                or _containing_span(end, table_spans, table_starts)):
-            continue
-        body = text[start:end]
-        if sum(bool(pattern.search(body)) for pattern in _OVERVIEW_FIELDS) < 2:
-            continue
-        spans.append((start, end))
-    return spans
-
-
-def _overview_ranges(document, chunk_size, chunk_overlap, table_spans):
-    """개요 양끝에서 overlap을 끊고 나머지는 fixed. 모든 비공백 원문을 보존."""
-    text = document["text"]
-    spans = _overview_spans(document, chunk_size, table_spans)
-    boundaries = sorted({0, len(text), *(p for span in spans for p in span)})
-    for left, right in zip(boundaries, boundaries[1:]):
-        start = left
-        while start < right:
-            end = min(start + chunk_size, right)
-            yield start, end
-            if end == right:
-                break
-            start = end - chunk_overlap
-
-
-def _overview_stable_ranges(document, chunk_size, chunk_overlap, table_spans):
-    """fixed 원래 좌표에서 개요만 차감. 비접촉 청크는 유지하고 개요는 한 번 추가."""
-    text = document["text"]
-    spans = _overview_spans(document, chunk_size, table_spans)
-    ranges = set(spans)
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        fragments = [(start, end)]
-        for left, right in spans:
-            remaining = []
-            for a, b in fragments:
-                if b <= left or a >= right:
-                    remaining.append((a, b))
-                else:
-                    if a < left:
-                        remaining.append((a, left))
-                    if b > right:
-                        remaining.append((right, b))
-            fragments = remaining
-        ranges.update(fragments)
-        if end == len(text):
-            break
-        start = end - chunk_overlap
-    # 절단 때문에 생긴 포함 관계 조각은 제거해 같은 끝/시작의 중복을 방지.
-    furthest_end = -1
-    kept = []
-    for a, b in sorted(ranges, key=lambda span: (span[0], -span[1])):
-        if b > furthest_end:
-            kept.append((a, b))
-            furthest_end = b
-    yield from kept
-
-
-def _overview_additive_ranges(document, chunk_size, chunk_overlap, table_spans):
-    """모든 fixed 범위 유지 + 별도 개요 범위 추가. 동일 좌표만 중복 제거."""
-    text = document["text"]
-    ranges = set(_overview_spans(document, chunk_size, table_spans))
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        ranges.add((start, end))
-        if end == len(text):
-            break
-        start = end - chunk_overlap
-    yield from sorted(ranges)
-
-
 @observed("chunking")
 def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
     """문자 기준 청킹. boundary는 문장, structured는 섹션/표 경계를 우선.
 
-    기본 overview_additive는 fixed 범위를 보존하고 짧은 개요를 추가합니다.
-    추가 개요와 fixed 사이의 중복에는 chunk_overlap 상한을 적용하지 않습니다.
-    structured의 실제 중복은 chunk_overlap 이하이며 모든 전략은 원문 위치를 유지합니다.
+    structured의 실제 중복은 chunk_overlap 이하입니다. 원문 위치 유지.
     반환: Chunk dict 목록.
     """
     if not 0 <= chunk_overlap < chunk_size:
@@ -376,19 +278,6 @@ def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
         tables = _table_entries(text, table_spans)
         table_ends = [end for _, end in table_spans]
         structure = _structure(section_document, chunk_size, table_spans) if strategy == "structured" else None
-        if strategy in {"overview", "overview_stable", "overview_additive"}:
-            ranges = {"overview": _overview_ranges, "overview_stable": _overview_stable_ranges,
-                      "overview_additive": _overview_additive_ranges}[strategy]
-            for number, (start, end) in enumerate(ranges(section_document, chunk_size, chunk_overlap, table_spans)):
-                if text[start:end].strip():
-                    chunks.append({
-                        "chunk_id": f"{document['doc_id']}:{number}",
-                        "doc_id": document["doc_id"], "text": text[start:end],
-                        "metadata": {**document["metadata"], "start_char": start, "end_char": end,
-                                     "section_path": section_of(section_document, start),
-                                     "tables": _chunk_tables(tables, table_ends, start, end)},
-                    })
-            continue
         start, number = 0, 0
         previous_end = 0
         while start < len(text):
@@ -426,9 +315,6 @@ def embed_texts(texts, client, model):
     """문서·질문에 공통으로 사용하는 정규화된 float32 벡터."""
     if not texts:
         raise ValueError("임베딩할 텍스트가 없습니다.")
-    from a_client import ScenarioAClient
-    if isinstance(client, ScenarioAClient):
-        raw_vectors = client.embed_texts(texts, model)
     else:
         response = model_call("embedding", model,
                              lambda: client.embeddings.create(model=model, input=texts),
@@ -455,7 +341,7 @@ def embed_texts(texts, client, model):
 
 
 @observed("build-index")
-def build_index(documents, client, index_dir="indexes/a", model="text-embedding-3-small",
+def build_index(documents, client, index_dir="indexes/b", model="text-embedding-3-small",
                 chunk_size=1000, chunk_overlap=150, documents_sha256=None):
     """호출자가 계산한 documents.json 해시를 재계산·변환 없이 config에 저장합니다."""
     strategy = _chunking_strategy()
@@ -487,7 +373,7 @@ def build_index(documents, client, index_dir="indexes/a", model="text-embedding-
     return config
 
 
-def load_index(index_dir="indexes/a"):
+def load_index(index_dir="indexes/b"):
     path = Path(index_dir)
     index = faiss.read_index(str(path / "index.faiss"))
     chunks, config = read_json(path / "chunks.json"), read_json(path / "config.json")

@@ -17,8 +17,8 @@ import time
 import unicodedata
 from collections import Counter, defaultdict
 
-import common_observability as observability
-from common_observability import observed
+import observability.observability_trace as observability
+from observability.observability_trace import observed
 
 STATUSES = ("ok", "no_hits", "empty", "truncated", "api_error")
 GRADINGS = {"numeric", "keyword", "llm", "refusal"}

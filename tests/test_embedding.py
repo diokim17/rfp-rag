@@ -14,12 +14,12 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from b_embedding import build_index, chunk_documents, embed_texts, load_index
-from b_evaluation import evaluate
-from b_generation import generate_answer
-from b_observability import Trace
-from b_parsing import read_json, write_json
-from b_retrieval import retrieve
+from pipelines.api.api_embedding import build_index, chunk_documents, embed_texts, load_index
+from evaluation.evaluation_metrics import evaluate
+from pipelines.api.api_generation import generate_answer
+from observability.observability_trace import Trace
+from parsing.parsing_documents import read_json, write_json
+from pipelines.api.api_retrieval import retrieve
 from test_observability import FakeLangfuse
 from test_pipeline import FakeClient
 

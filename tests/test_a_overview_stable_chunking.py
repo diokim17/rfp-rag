@@ -1,7 +1,7 @@
 import os
 from unittest.mock import patch
 
-import a_embedding as emb
+import pipelines.server.server_embedding as emb
 from test_a_overview_chunking import OverviewTests, document
 from experiments import a_chunking_chy as base
 

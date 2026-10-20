@@ -3,7 +3,7 @@
   .venv-a/bin/python experiments/offtopic_threshold_yjk.py --index-dir indexes/a --eval-file data/eval_v4.json
   rag-b/bin/python experiments/offtopic_threshold_yjk.py --scenario B --index-dir indexes/b --eval-file data/eval_v2.json
 
---scenario(기본 A)에 따라 a_embedding·.env.a 또는 b_embedding·.env.b를 씁니다.
+--scenario(기본 A)에 따라 pipelines.server.server_embedding·.env.a 또는 pipelines.api.api_embedding·.env.b를 씁니다.
 A는 서버의 A 임베딩 모델(A_EMBEDDING_MODEL)로 임베딩합니다. 인덱스도 같은 A 모델로 만든 것이어야 합니다.
 B는 임베딩 API를 한 번 호출합니다(평가셋 질문 + 아래 범위 밖 질문 30개, text-embedding-3-small 기준 $0.001 미만). 생성 호출은 없습니다.
 - 정상: 평가셋 질문. 하나라도 막히면 안 되므로 기준은 이 최솟값보다 충분히 낮아야 합니다.
@@ -22,7 +22,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from a_parsing import read_json
+from parsing.parsing_documents import read_json
 
 OFF_TOPIC = ["오늘 서울 날씨 어때?", "점심 메뉴 추천해줘", "강남역 근처 맛집 알려줘", "주말에 볼만한 영화 뭐 있어?",
              "프랑스의 수도는 어디야?", "임진왜란은 몇 년에 일어났어?", "광합성 원리를 설명해줘", "1부터 100까지 더하면 얼마야?",
@@ -37,16 +37,16 @@ BORDER = ["RFP가 뭐야?", "제안서 잘 쓰는 방법 알려줘", "공공기�
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--scenario", choices=["A", "B"], default="A", help="A면 a_embedding·.env.a, B면 b_embedding·.env.b")
+    parser.add_argument("--scenario", choices=["A", "B"], default="A", help="A면 pipelines.server.server_embedding·.env.a, B면 pipelines.api.api_embedding·.env.b")
     parser.add_argument("--index-dir", default="indexes/a")  # Windows FAISS는 한글 절대 경로를 못 열어 상대 경로
     parser.add_argument("--eval-file", type=Path, default=ROOT / "data/eval_v4.json")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
     if args.scenario == "A":
-        from a_embedding import embed_texts, load_index
+        from pipelines.server.server_embedding import embed_texts, load_index
     else:
-        from b_embedding import embed_texts, load_index
+        from pipelines.api.api_embedding import embed_texts, load_index
 
     env_file = ROOT / f".env.{args.scenario.lower()}"
     load_dotenv(env_file, override=False)
@@ -56,8 +56,8 @@ def main():
     index, _, config = load_index(args.index_dir)
     model = config["embedding_model"]
     if args.scenario == "A":
-        from a_client import ScenarioAClient
-        from a_run import A_EMBEDDING_MODEL_DIR, A_GENERATION_MODEL_DIR, read_scenario_settings
+        from pipelines.server.server_client import ScenarioAClient
+        from pipelines.server.server_run import A_EMBEDDING_MODEL_DIR, A_GENERATION_MODEL_DIR, read_scenario_settings
         client = ScenarioAClient(read_scenario_settings(env_file), A_GENERATION_MODEL_DIR, A_EMBEDDING_MODEL_DIR,
                                  need_generation=False)
     else:

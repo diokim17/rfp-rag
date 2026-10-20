@@ -13,10 +13,10 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import a_run as run
-from a_experiment_reports import file_hash, text_file_hash, text_hash
-from a_observability import Trace
-from a_parsing import read_json, write_json
+import pipelines.server.server_run as run
+from tracking.tracking_reports import file_hash, text_file_hash, text_hash
+from observability.observability_trace import Trace
+from parsing.parsing_documents import read_json, write_json
 
 DOCUMENTS = [{"doc_id": "a", "text": "예산\n줄바꿈이 든 본문\r\n", "metadata": {"filename": "a.hwp", "source": "files/a.hwp"}}]
 
@@ -95,7 +95,7 @@ class IndexAcrossPlatformsTests(unittest.TestCase):
 
         experiment = {"experiment_id": "tester-0001"}
         with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "OPENAI_GENERATION_MODEL": "gpt-5-mini"}), \
-                patch("a_client.ScenarioAClient", LocalFake), patch("a_run.build_index", side_effect=build), redirect_stdout(io.StringIO()):
+                patch("pipelines.server.server_client.ScenarioAClient", LocalFake), patch("pipelines.server.server_run.build_index", side_effect=build), redirect_stdout(io.StringIO()):
             run.run_pipeline(self.args, argparse.ArgumentParser(), {}, experiment, Trace({}), "test")
         self.assertEqual(stored["hash"], self.lf_hash)
         self.assertEqual(experiment["documents_sha256"], self.lf_hash)

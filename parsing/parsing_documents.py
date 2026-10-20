@@ -12,7 +12,7 @@ from pathlib import Path
 import olefile
 import pymupdf
 
-from common_observability import observed
+from observability.observability_trace import observed
 
 
 def write_json(path, value):

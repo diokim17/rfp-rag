@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from team_eval_yjk import TOP_K, file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
 
@@ -68,9 +68,9 @@ def main():
     args = parser.parse_args()
 
     from dotenv import load_dotenv
-    from b_embedding import embed_texts, load_index
-    from b_experiment_ids import next_experiment_id, owner_initials
-    import b_retrieval as retrieval
+    from pipelines.api.api_embedding import embed_texts, load_index
+    from tracking.tracking_ids import next_experiment_id, owner_initials
+    import pipelines.api.api_retrieval as retrieval
 
     load_dotenv(ROOT / ".env.b", override=False)
     cases = read_json(args.eval_file)
