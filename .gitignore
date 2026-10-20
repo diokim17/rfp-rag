@@ -44,5 +44,14 @@ rag-b/
 
 .venv-b/
 
-/models/
+/models/*
+!/models/generate/
+/models/generate/*
+!/models/generate/.gitkeep
+!/models/embedding/
+/models/embedding/*
+!/models/embedding/.gitkeep
+!/models/rerank/
+/models/rerank/*
+!/models/rerank/.gitkeep
 .venv-a/
