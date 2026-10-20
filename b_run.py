@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from common_paths import model_directory, project_path
 from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
@@ -24,8 +25,8 @@ from b_retrieval import retrieve, with_next_chunk
 ROOT = Path(__file__).resolve().parent
 
 # 팀 공용 모델 기본 경로. A 모델 설정값은 이 경로 아래의 하위 폴더 이름입니다.
-A_GENERATION_MODEL_DIR = Path("/home/spai1313/models/generate")
-A_EMBEDDING_MODEL_DIR = Path("/home/spai1313/models/embedding")
+A_GENERATION_MODEL_DIR = ROOT / "models/generate"
+A_EMBEDDING_MODEL_DIR = ROOT / "models/embedding"
 
 # VS Code에서 인자 없이 실행할 때 사용할 설정입니다.
 DEFAULT_COMMAND = "auto"  # 인덱스가 있으면 ask, 없으면 all. 재생성하려면 "all"
@@ -82,7 +83,7 @@ def main():
     parser = argparse.ArgumentParser(description="시나리오 B: 최소 RFP RAG 파이프라인")
     parser.add_argument("command", choices=["parse", "build", "ask", "all", "evaluate", "check-config"])
     parser.add_argument("--question", help="ask/all 실행 질문")
-    parser.add_argument("--owner", help="담당자 영문 이니셜 (기본: EXPERIMENT_OWNER)")
+    parser.add_argument("--owner", help="담당자 영문 이니셜 (선택, 기본: EXPERIMENT_OWNER 또는 user)")
     parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
     parser.add_argument("--limit", type=int, help="전처리할 CSV 앞쪽 N행 (생략: 전체)")
     parser.add_argument("--top-k", type=int, default=5)
@@ -111,6 +112,10 @@ def main():
             print(f"처리할 문서 수: {DEFAULT_LIMIT or '전체'}")
         print(f"질문: {DEFAULT_QUESTION}")
     args = parser.parse_args(argv)
+    for name in ("raw_dir", "processed_dir", "index_dir", "results_dir", "reports_dir", "eval_file", "judge_cache"):
+        value = getattr(args, name)
+        if value is not None:
+            setattr(args, name, project_path(value, ROOT))
     if args.command in {"ask", "all"} and not (args.question or "").strip():
         parser.error("ask/all에는 --question이 필요합니다.")
     if args.command == "evaluate" and not args.eval_file:

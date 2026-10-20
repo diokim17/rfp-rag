@@ -26,7 +26,9 @@ from a_retrieval import retrieve
 from a_client import ScenarioAClient
 from experiments.a_retrieval_metrics import score_case
 
-MODEL_ROOT = Path("/home/spai1313/models/embedding")
+from common_paths import model_directory
+
+MODEL_ROOT = model_directory("embedding")
 MODELS = {"bge-m3": "BAAI/bge-m3", "kure-v1": "nlpai-lab/KURE-v1"}
 OPTIONS = dict(rerank="none", hybrid=False, max_per_doc="none", rewrite="off",
                within_doc="off", expand=0)

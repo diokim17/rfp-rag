@@ -114,7 +114,7 @@ class _LocalEmbedding:
 def load_model(model_path: Path):
     """준비된 로컬 모델을 읽고 embed_texts(texts)를 가진 객체를 반환한다.
 
-    model_path 예: Path('/home/spai1313/models/embedding/default_model')
+    model_path 예: Path('models/embedding/default_model')
     .env의 모델 폴더 이름을 실제 경로로 합치는 작업은 ScenarioAClient가 담당한다.
     위 observed 데코레이터는 입력 본문 없이 모델 로딩 단계의 시간·오류를 추적한다.
     """

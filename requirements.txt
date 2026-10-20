@@ -1,2 +1,2 @@
-# 기존 설치 명령 및 setup_scenario_a.txt의 참조 호환용
+# 공통 직접 의존성의 기존 참조 호환용. 전체 설치는 requirements-a.txt 또는 requirements-b.txt를 사용합니다.
 -r docs/environment_archive/requirements.txt
