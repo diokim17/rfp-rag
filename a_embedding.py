@@ -26,7 +26,7 @@ _PROJECT_CONTEXT_WEIGHT = 0.2
 
 
 def _chunking_strategy():
-    strategy = os.getenv("RFP_CHUNKING_STRATEGY", "fixed")
+    strategy = os.getenv("RFP_CHUNKING_STRATEGY", "overview_additive")
     if strategy not in {"fixed", "boundary", "structured", "overview", "overview_stable", "overview_additive"}:
         raise ValueError("RFP_CHUNKING_STRATEGY는 fixed, boundary, structured, overview, overview_stable 또는 overview_additive이어야 합니다.")
     return strategy
@@ -259,8 +259,8 @@ def _boundary_end(text, start, end, chunk_size, chunk_overlap):
     return end
 
 
-# 짧은 사업 개요의 핵심 항목을 하나의 원문 청크로 분리하는 선택형 전략.
-# 질문/정답/문서 ID를 참조하지 않으며, 기존 fixed 경로를 기본으로 유지합니다.
+# 짧은 사업 개요를 인식하는 공통 규칙. 기본 additive는 fixed 범위에 개요를 추가합니다.
+# 질문/정답/문서 ID를 참조하지 않으며, 명시적 fixed 선택도 유지합니다.
 _OVERVIEW_HEADING = re.compile(r"(?:사업|용역)\s*개요|사업\s*기간\s*및\s*사업비")
 _OVERVIEW_FIELDS = tuple(re.compile(pattern) for pattern in (
     r"사\s*업\s*명", r"(?:사업|용역|계약)\s*기간",
@@ -359,7 +359,9 @@ def _overview_additive_ranges(document, chunk_size, chunk_overlap, table_spans):
 def chunk_documents(documents, chunk_size=1000, chunk_overlap=150):
     """문자 기준 청킹. boundary는 문장, structured는 섹션/표 경계를 우선.
 
-    structured의 실제 중복은 chunk_overlap 이하입니다. 원문 위치/기본 fixed 유지.
+    기본 overview_additive는 fixed 범위를 보존하고 짧은 개요를 추가합니다.
+    추가 개요와 fixed 사이의 중복에는 chunk_overlap 상한을 적용하지 않습니다.
+    structured의 실제 중복은 chunk_overlap 이하이며 모든 전략은 원문 위치를 유지합니다.
     반환: Chunk dict 목록.
     """
     if not 0 <= chunk_overlap < chunk_size:

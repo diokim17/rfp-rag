@@ -72,7 +72,7 @@ VS Code에서 본인 계정으로 서버에 접속하고 본인의 프로젝트 
 
 ## 2. 담당 파일과 수정 범위
 
-흐름: `parsing → embedding → retrieval → generation → evaluation`, 연결과 명령 실행은 `run.py`가 담당합니다.
+흐름: `parsing → embedding → retrieval → generation → evaluation`. 현재 A에서는 `run.py → a_run.py → a_embedding.build_index/chunk_documents`로 구축하고 `load_index → a_retrieval.retrieve → a_generation.generate_answer → a_evaluation.evaluate`로 연결합니다. 직접 a_run.py 실행도 가능합니다.
 
 | 담당 | 주 파일 | 내부에서 실험할 수 있는 내용 | 유지할 연결 지점 |
 | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ VS Code에서 본인 계정으로 서버에 접속하고 본인의 프로젝트 
 | 박단비 / 생성 | `generation.py` | 프롬프트, 근거 사용, 답변 품질 | Answer, sources와 인용 번호 |
 | 김시현 / 평가 | `evaluation.py` | 정답셋, 평가 지표, 비교 보고서 | evaluate 반환 구조, 정답 문서 ID |
 
-OCR, 리랭킹, 대화 기억, 시나리오 A는 현재 구현되지 않았습니다. 추가할 때도 기존 baseline 실행 경로를 유지합니다. 담당 파일 외 수정이 필요하면 PR에 이유와 영향을 적고 관련 담당자와 함께 검토합니다. 함수 내부 보조 함수나 선택 옵션을 추가할 수 있지만 기존 호출이 그대로 동작해야 합니다.
+현재 코드는 A/B 시나리오별 모듈로 분리되어 있고 시나리오 A와 리랭킹이 구현돼 있습니다. 아래 담당 표의 공통 파일명은 초기 구조이며, 현재 A 담당 파일은 a_ 접두사 모듈입니다. run.py는 시나리오 선택 후 a_run.py 또는 b_run.py로 위임합니다. 담당 파일 외 수정이 필요하면 PR에 이유와 영향을 적고 관련 담당자와 함께 검토합니다. 함수 내부 보조 함수나 선택 옵션을 추가할 수 있지만 기존 호출이 그대로 동작해야 합니다.
 
 ## 3. 반드시 유지할 입출력 계약
 
@@ -114,8 +114,8 @@ Answer = {
 | `parse_documents` | `(raw_dir, output_dir, limit=None)` | Document 목록 및 documents/errors JSON 저장 |
 | `chunk_documents` | `(documents, chunk_size=1000, chunk_overlap=150)` | Chunk 목록 |
 | `embed_texts` | `(texts, client, model)` | 입력 순서와 같은 정규화된 float32 벡터 |
-| `build_index` | `(documents, client, index_dir="indexes", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150)` | config dict 및 인덱스 파일 저장 |
-| `load_index` | `(index_dir="indexes")` | `(index, chunks, config)` 튜플 |
+| `build_index` (A) | `(documents, client, index_dir="indexes/a", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150, documents_sha256=None)` | config dict 및 인덱스 파일 저장 |
+| `load_index` (A) | `(index_dir="indexes/a")` | `(index, chunks, config)` 튜플 |
 | `retrieve` | `(question, client, index, chunks, config, top_k=5, filters=None)` | Hit 목록 |
 | `generate_answer` | `(question, hits, client, model="gpt-5-mini")` | Answer dict |
 | `evaluate` | `(cases, answer_fn)` | `{"summary": {...}, "records": [...]}` |
@@ -127,7 +127,7 @@ Answer = {
 - `doc_id`는 NFC 정규화 파일명의 SHA-256 앞 16자리입니다. 같은 파일명은 같은 ID를 유지하며 내용 변경을 ID로 감지하지 못합니다. 파일명이나 ID 규칙을 바꾸면 평가 정답도 영향을 받습니다.
 - `metadata`는 CSV 열 이름과 문자열 값을 유지합니다. `텍스트` 열은 제외하고 실제 원본에서 본문을 추출합니다. `filename`, `source`를 유지해야 출처 출력이 동작합니다.
 - `chunk_id`는 현재 `doc_id:순번`입니다. 청크마다 고유해야 하며 원문 문서의 `doc_id`를 유지합니다. 문자 위치를 토큰 위치로 바꾸거나 가짜 위치를 넣지 않습니다. 원문에 대응하지 않는 청킹 전략은 위치 규약부터 협의합니다.
-- 청킹 실험은 `RFP_CHUNKING_STRATEGY=fixed|boundary|structured`로 고릅니다. structured의 기본 버전은 기존 v2이며 v3는 `RFP_STRUCTURED_CHUNKING_VERSION=3`으로 명시할 때 사용합니다. fixed와 boundary는 버전 1을 유지합니다.
+- A 청킹은 `RFP_CHUNKING_STRATEGY=overview_additive|fixed|boundary|structured|overview|overview_stable`로 고릅니다. A 기본값 overview_additive는 fixed 범위를 전부 보존하고 개요를 추가합니다. B의 기존 기본값은 structured이며 변경하지 않습니다. 추가 개요와 fixed 사이에는 overlap 상한이 적용되지 않으며 chunk_id 형식은 유지하지만 순번은 달라질 수 있습니다. structured의 기본 버전은 기존 v2이며 v3는 `RFP_STRUCTURED_CHUNKING_VERSION=3`으로 명시할 때 사용합니다. fixed와 boundary는 버전 1을 유지합니다.
 - 임베딩 입력 문맥은 `RFP_EMBEDDING_CONTEXT=none|project|project_blend|table|section`으로 선택하며 기본은 `none`입니다. `project`는 사업 문맥을 붙이고 `project_blend`는 본문/문맥 벡터를 80:20으로 결합합니다. `table`과 `section`은 표 헤더·절 경로를 문서 임베딩 입력에만 추가합니다.
 - 선택 설정마다 별도 인덱스를 빌드하고 같은 `--index-dir`를 질의·평가에 사용합니다. `config.json`의 청킹 전략·버전과 임베딩 문맥이 조건 재현 기준입니다. 옵션은 `run.py` 기본값과 Document → Chunk → Hit → Answer 계약을 변경하지 않습니다.
 - 환경변수 변경은 이미 빌드된 인덱스를 바꾸지 않습니다. 기존 인덱스를 재사용하면 build하지 말고, 다른 옵션을 적용하려면 별도 경로로 새로 build합니다.
@@ -231,3 +231,5 @@ PR에는 다음을 기록합니다.
 | 복구·호환성 | 검증된 baseline 인덱스 보존, 새 형식의 schema version과 마이그레이션, 원자적 저장/잠금은 향후 구현 |
 
 위 보완 기능은 이 문서 작성으로 구현된 기능이 아닙니다. 우선 공통 평가셋, baseline 측정, 개인 작업 폴더, 병합 검토 기준을 확정하면 팀원이 같은 기준으로 실험을 비교할 수 있습니다.
+
+A additive 기본 경로 전환·복귀는 README의 해당 절을 따릅니다. 개인 소유 경로만 연결하고, 기존 fixed 및 실험 원본은 보존합니다. 명시적 전략 변경은 기존 인덱스를 자동 변환하지 않습니다.

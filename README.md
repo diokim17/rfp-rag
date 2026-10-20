@@ -172,11 +172,11 @@ RETRIEVAL_REWRITE=off
 
 A의 기본 인덱스·결과 경로는 위 구조처럼 B와 분리됩니다. 명시한 `--index-dir`, `--results-dir`, `--reports-dir`는 우선 적용됩니다. 임베딩 모델이나 청킹을 바꾸면 인덱스를 다시 구축하고, 생성 모델만 바꾸면 기존 인덱스를 재사용할 수 있습니다.
 
-현재 A에서는 OpenAI 기반 질문 재작성을 꺼야 하며, 켜져 있으면 안내 후 종료합니다. 모델 폴더·담당 모듈이 없거나 로딩이 미구현이면 B로 대체하지 않고 오류를 안내합니다. 오프라인 연결 검증은 완료했으며, 실제 A 모델과 GPU 메모리 통합 검증은 담당 모듈 구현 후 진행합니다.
+현재 A에서는 OpenAI 기반 질문 재작성을 꺼야 하며, 켜져 있으면 안내 후 종료합니다. 모델 폴더·담당 모듈이 없거나 로딩이 미구현이면 B로 대체하지 않고 오류를 안내합니다. 로컬 A 모델의 전체 재임베딩·검색 비교와 기본 경로 생성 smoke 검증을 수행했습니다. 검증 조건과 한계는 `results/reports/a_additive_activation.md`를 참고하세요.
 
 ### 팀 실험 옵션
 
-`RFP_CHUNKING_STRATEGY`는 `fixed`(기본), `boundary`, `structured`를 선택합니다. structured의 기본 버전은 기존과 같은 v2이며, v3는 `RFP_STRUCTURED_CHUNKING_VERSION=3`으로 명시할 때 선택합니다. `RFP_EMBEDDING_CONTEXT`는 `none`(기본), `project`, `project_blend`, `table`, `section`을 선택합니다. 조건마다 별도 `--index-dir`로 빌드하고 질의·평가에도 같은 경로를 사용하세요. 선택한 청킹 전략과 버전은 인덱스 `config.json`에서 확인할 수 있습니다.
+시나리오 A의 `RFP_CHUNKING_STRATEGY` 기본값은 `overview_additive`입니다. 기존 fixed 범위를 전부 보존하고 조건에 맞는 짧은 사업 개요만 추가합니다. 명시적 `fixed`, `boundary`, `structured`, `overview`, `overview_stable`도 지원합니다. 시나리오 B의 기존 기본값은 `structured`이며 변경하지 않습니다. 추가 개요와 fixed 사이 중복은 150자를 넘을 수 있으며, 개요 삽입으로 기존 청크의 순번은 달라질 수 있습니다. structured의 기본 버전은 기존과 같은 v2이며, v3는 `RFP_STRUCTURED_CHUNKING_VERSION=3`으로 명시할 때 선택합니다. `RFP_EMBEDDING_CONTEXT`는 `none`(기본), `project`, `project_blend`, `table`, `section`을 선택합니다. 조건마다 별도 `--index-dir`로 빌드하고 질의·평가에도 같은 경로를 사용하세요. 선택한 청킹 전략과 버전은 인덱스 `config.json`에서 확인할 수 있습니다.
 
 ```bash
 RFP_CHUNKING_STRATEGY=structured RFP_STRUCTURED_CHUNKING_VERSION=2 \
@@ -281,3 +281,24 @@ B 환경에는 torch 2.8.0을 지정한 `experiments/requirements-rerank.txt`나
 판정에는 추가 OpenAI API 비용이 발생합니다. `--judge-cache results/judge-cache.jsonl`을 함께 지정하면 동일 입력의 판정을 재사용합니다.
 판정기 옵션을 생략하면 LLM 문항은 미채점되며 문항 수를 경고로 출력합니다. 판정기 옵션은 B의 evaluate에서만 지원합니다.
 결과 JSON의 `judge_settings`에 판정 모델과 캐시 경로를 기록합니다.
+
+### A additive 적용과 복귀
+
+`run.py`는 기본적으로 B를 선택합니다. A는 `python a_run.py` 또는 `RFP_SCENARIO=A python run.py`로 실행합니다. 공개 함수 인자와 인덱스 3파일 형식은 그대로입니다.
+
+- 전략 환경변수는 새 build에만 적용됩니다. 기존 fixed 인덱스는 그대로 읽을 수 있습니다.
+- 기존 문서를 그대로 사용하면 parse는 필요 없습니다. 전략·문서·모델이 달라지면 새 별도 경로에 build한 뒤 검색 경로를 전환합니다.
+- 개인 기본 경로 `data/processed/a`, `indexes/a`는 검증된 문서·인덱스 배포 사본에 연결할 수 있습니다. 원본 실험 산출물은 보존하고, build/질의가 없는 상태에서 문서 해시를 확인한 뒤 연결합니다.
+- 기본 경로가 심볼릭 링크이면 그 경로에 build하지 마세요. 아래처럼 새 경로를 지정해 검증 후 연결을 전환하세요.
+
+```bash
+# EXPERIMENT_OWNER와 모델은 개인 .env.a에서 읽고 번호는 자동 생성합니다.
+RFP_CHUNKING_STRATEGY=overview_additive .venv-a/bin/python a_run.py build \
+  --processed-dir data/processed/a --index-dir indexes/a-additive-next
+.venv-a/bin/python a_run.py ask --question "사업 기간은 얼마인가요?"
+# fixed로 새로 구축할 경우에도 별도 경로 사용
+RFP_CHUNKING_STRATEGY=fixed .venv-a/bin/python a_run.py build \
+  --processed-dir data/processed/a --index-dir indexes/a-fixed-next
+```
+
+실행에 앞서 새 build 경로가 비어 있는지 확인하세요. 복귀 시 환경변수만 바꾸지 말고 동일 문서 해시를 가진 보존 fixed 인덱스로 `indexes/a` 연결을 되돌립니다. 개인 전환 결과와 정확한 경로는 `results/reports/a_additive_activation.md`에 기록합니다.

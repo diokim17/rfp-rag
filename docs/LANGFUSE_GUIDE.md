@@ -13,7 +13,7 @@ python -m pip install -r requirements-server.lock.txt
 python -m pip check
 ```
 
-개인 `.env`에 본인 프로젝트의 설정을 넣습니다. 키는 커밋하지 않습니다.
+시나리오 A는 개인 `.env.a`, B는 `.env.b`에 본인 프로젝트의 설정을 넣습니다. run.py의 시나리오 선택용 `.env`와 프로세스 환경변수는 별도로 유지합니다. 키는 커밋하지 않습니다.
 
 ```dotenv
 LANGFUSE_SECRET_KEY="sk-lf-..."
@@ -42,7 +42,7 @@ BASE_URL은 Markdown 링크가 아닌 URL 문자열입니다. 미국 리전 프�
 
 위 한글 이름을 owner에 넣어도 대응하는 이니셜로 변환합니다. 그 외에는 고유한 영문 2~16자를 설정합니다. 대문자는 소문자로 통일하고 owner가 없으면 설정 방법을 안내하며 실행을 중단합니다.
 
-번호는 프로젝트의 `.experiment-state/experiments.sqlite3`에 owner별로 저장합니다. 결과 파일을 지워도 다음 번호가 유지되며, 동시 실행은 DB 잠금으로 서로 다른 번호를 받습니다. 실패한 실행도 번호를 소비하므로 번호가 건너뛰는 것은 정상입니다. parse/build/ask/all/evaluate는 같은 owner 번호를 공유하며 각 명령 실행마다 증가합니다. 질문별 평가 사례마다 증가하는 번호는 아닙니다.
+현재 A 번호는 `.experiment-state/a/experiments.sqlite3`, B 번호는 `.experiment-state/b/experiments.sqlite3`에 owner별로 저장합니다. 결과 파일을 지워도 다음 번호가 유지되며, 동시 실행은 DB 잠금으로 서로 다른 번호를 받습니다. 실패한 실행도 번호를 소비하므로 번호가 건너뛰는 것은 정상입니다. parse/build/ask/all/evaluate는 같은 owner 번호를 공유하며 각 명령 실행마다 증가합니다. 질문별 평가 사례마다 증가하는 번호는 아닙니다.
 
 상태 폴더는 Git에서 제외합니다. 삭제하면 번호가 처음부터 시작하므로 보존하세요. 같은 owner가 새 clone이나 다른 서버에서 별도 상태 파일로 실행하면 번호가 중복될 수 있으므로 기존 상태 파일을 실행이 없는 때 함께 이전하거나, 별도 작업 공간에는 다른 owner 식별자를 사용합니다. 팀원별 고유 이니셜을 정하면 서로 다른 계정의 첫 실행도 구분됩니다.
 
@@ -51,7 +51,7 @@ python run.py ask --question "주요 요구사항은 무엇인가요?" --index-d
 python run.py evaluate --eval-file data/eval.json --index-dir indexes/retrieval-yj-001 --results-dir results/retrieval-yj-001 --top-k 5
 ```
 
-본인의 인덱스와 OpenAI 키가 필요하고 API 비용이 발생합니다. 평가셋은 원문에서 정답을 확인해 팀이 별도 준비해야 합니다. parse/build에서도 자동 실험 ID가 배정됩니다. 각 CLI 실행은 별도 trace입니다.
+본인의 인덱스가 필요합니다. A의 임베딩·답변 생성은 로컬 모델을 사용하고, OpenAI 판정기를 명시하면 API 비용이 발생합니다. B의 원격 모델 실행에도 API 비용이 발생합니다. 평가셋은 원문에서 정답을 확인해 팀이 별도 준비해야 합니다. parse/build에서도 자동 실험 ID가 배정됩니다. 각 CLI 실행은 별도 trace입니다.
 
 ## 기록 위치와 내용
 
@@ -81,6 +81,6 @@ git add results/reports/evaluate_실제시각.md
 
 개인 trace ID는 실행자가 기록을 찾는 용도이며 다른 팀원에게 열람 권한을 제공하지 않습니다. 팀은 공유 요약을 비교하고 실패 분석이 필요하면 실행자가 자신의 상세 기록을 확인해 설명합니다.
 
-추적은 `observability.py`, 공유 요약은 `experiment_reports.py`, 실행 연결은 `run.py`에서 관리합니다. 기존 모듈 입출력은 유지합니다.
+현재 A 추적은 `a_observability.py`, 공유 요약은 `a_experiment_reports.py`, 실행 연결은 `a_run.py`에서 관리합니다. B는 b_ 접두사 모듈을 사용하며 run.py는 시나리오를 선택합니다. 기존 모듈 입출력은 유지합니다.
 
 공식 문서: [추적 안내](https://langfuse.com/docs/observability/get-started), [토큰·비용](https://langfuse.com/docs/observability/features/token-and-cost-tracking).
