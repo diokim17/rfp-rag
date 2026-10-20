@@ -6,7 +6,7 @@
 # 비용: 인덱스가 없으면 빌드(약 $0.25)와 질문 임베딩 65건. 인덱스가 있으면 질문 임베딩만. 경로는 PROCESSED·INDEX 환경 변수로 바꿀 수 있습니다.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=${PY:-rag-b/bin/python}
+PY=${PY:-.venv-b/bin/python}
 # 팀 공용 data/processed/b·indexes는 건드리지 않고 개인 경로를 씁니다.
 PROCESSED=${PROCESSED:-data/processed/b/eval-v2-yjk}
 INDEX=${INDEX:-indexes/b/eval-v2-structured-yjk}
@@ -15,7 +15,7 @@ EXPECTED_DOCS=0e93af3a97c4f261ea7304aa8db76b7638ed02eadf021eb6babc279ef7a5842c
 export PYTHONUTF8=1 LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
 
 "$PY" -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 'CUDA 없음: GPU 서버에서 실행하세요')"
-"$PY" -c "import transformers" 2>/dev/null || "$PY" -m pip install -r requirements-b-venv.txt
+"$PY" -c "import transformers" 2>/dev/null || "$PY" -m pip install -r requirements-b.txt
 EVAL=${EVAL:-data/eval_v2.json}
 [ -f "$EVAL" ] || { echo "평가셋 $EVAL 이 없습니다."; exit 1; }
 [ -f data/raw/data_list.csv ] || { echo "data/raw/data_list.csv와 data/raw/files/가 필요합니다."; exit 1; }

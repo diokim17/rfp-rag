@@ -19,8 +19,15 @@ class ExperimentIdTests(unittest.TestCase):
                 ids = list(pool.map(lambda _: next_experiment_id("dyk", directory), range(20)))
             self.assertEqual(set(ids), {f"dyk-{i:04d}" for i in range(1, 21)})
 
+    def test_blank_owner_uses_default_and_persistent_counter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(owner_initials(""), "user")
+            self.assertEqual(owner_initials("  "), "user")
+            self.assertEqual(next_experiment_id("", directory), "user-0001")
+            self.assertEqual(next_experiment_id("  ", directory), "user-0002")
+
     def test_invalid_owner_does_not_become_shared_default(self):
-        for owner in ("", "../dyk", "김아무개", "spai1313"):
+        for owner in ("../dyk", "김아무개", "spai1313"):
             with self.assertRaises(ValueError):
                 owner_initials(owner)
 

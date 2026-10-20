@@ -15,6 +15,8 @@ import warnings
 
 import numpy as np
 
+from common_paths import model_directory
+
 SCENARIO = "B"
 
 from b_embedding import embed_texts
@@ -42,7 +44,7 @@ DEFAULT_MIN_SCORE = 0.40
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # 시나리오 A는 리랭커를 각자 HF 캐시로 내려받지 않고, 서버의 이 공용 폴더에 받아 둔 모델을 함께 씁니다.
 # .env의 A_RERANK_MODEL에는 이 폴더 아래 모델 폴더 이름만 적습니다 (예: bge-reranker-v2-m3).
-A_RERANK_MODEL_DIR = Path("/home/spai1313/models/rerank")
+A_RERANK_MODEL_DIR = Path(__file__).resolve().parent / "models/rerank"
 _cross_encoders = {}
 
 
@@ -60,10 +62,13 @@ def rerank_model_source():
     if SCENARIO != "A":
         return os.getenv("RETRIEVAL_RERANK_MODEL", DEFAULT_RERANK_MODEL)
     name = os.getenv("A_RERANK_MODEL", "").strip()
-    if not name or not (A_RERANK_MODEL_DIR / name).is_dir():
-        raise ValueError(f"시나리오 A 리랭커 모델 폴더가 없습니다: {A_RERANK_MODEL_DIR}/{name} "
+    directory = model_directory("rerank", A_RERANK_MODEL_DIR)
+    if name in {".", ".."} or "/" in name or "\\" in name:
+        raise ValueError("A_RERANK_MODEL에는 경로가 아닌 단일 모델 폴더 이름을 입력하세요.")
+    if not name or not (directory / name).is_dir():
+        raise ValueError(f"시나리오 A 리랭커 모델 폴더가 없습니다: {directory}/{name} "
                          "(.env의 A_RERANK_MODEL 확인, 모델 없이 실행하려면 RETRIEVAL_RERANK=lexical)")
-    return str(A_RERANK_MODEL_DIR / name)
+    return str(directory / name)
 
 
 def _bigrams(text):

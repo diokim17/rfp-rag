@@ -30,9 +30,10 @@ from a_parsing import read_json, write_json
 from a_retrieval import retrieve, retrieval_options
 from experiments.a_embedding_chy import verify_model, sha256
 from experiments.a_retrieval_metrics import score_case
+from common_paths import model_directory
 
-MODEL_ROOT = Path('/home/spai1313/models/embedding')
-RERANK_ROOT = Path('/home/spai1313/models/rerank')
+MODEL_ROOT = model_directory('embedding')
+RERANK_ROOT = model_directory('rerank')
 MODEL_NAME = 'default_model'
 MODEL_REVISION = '5617a9f61b028005a4858fdac845db406aefb181'
 VARIANTS = {'fixed': ('fixed', '1'), 'boundary': ('boundary', '1'),

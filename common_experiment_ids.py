@@ -13,6 +13,8 @@ TEAM_INITIALS = {
 
 def owner_initials(value):
     value = value.strip()
+    if not value:
+        return "user"
     if value in TEAM_INITIALS:
         return TEAM_INITIALS[value]
     if not re.fullmatch(r"[A-Za-z]{2,16}", value):
