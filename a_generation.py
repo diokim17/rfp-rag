@@ -5,7 +5,7 @@
 import json
 import re
 
-from a_observability import observed, model_call
+from common_observability import observed, model_call
 
 NO_HITS_ANSWER = ("질문과 관련된 RFP 문서가 없어 답변할 수 없습니다. "
                   "사업명이나 발주 기관을 넣거나 검색 조건을 바꿔 다시 질문해 주세요.")

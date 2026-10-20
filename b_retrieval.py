@@ -18,7 +18,7 @@ import numpy as np
 SCENARIO = "B"
 
 from b_embedding import embed_texts
-from b_observability import observed, record_retrieval
+from common_observability import observed, record_retrieval
 
 RERANK_MODES = ("none", "lexical", "cross-encoder")
 # 청크 본문에는 사업명이 거의 없으므로 리랭킹 입력 앞에 붙여 어느 사업의 청크인지 구분합니다.
@@ -648,7 +648,7 @@ def _fused_retrieve(question, client, index, chunks, config, top_k, pool, eligib
     """하이브리드·질문 재작성 경로. 질문마다 벡터(와 BM25) 순위를 만들고 RRF로 합친 뒤 기존과 같이 리랭킹합니다."""
     queries = [question]
     if options["rewrite"] != "off":
-        from b_query_rewrite import rewrite_question  # 재작성을 켰을 때만 불러옵니다.
+        from common_query_rewrite import rewrite_question  # 재작성을 켰을 때만 불러옵니다.
 
         rewritten, _ = rewrite_question(question, client, options["rewrite_model"], rewrite_cache)
         queries = [rewritten] if options["rewrite"] == "only" else list(dict.fromkeys([question, rewritten]))

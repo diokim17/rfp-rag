@@ -13,12 +13,12 @@ from dotenv import load_dotenv
 from openai import OpenAI, RateLimitError
 
 from b_embedding import build_index, load_index
-from b_evaluation import JUDGE_MODELS, evaluate, make_llm_judge
-from b_experiment_ids import next_experiment_id, owner_initials
-from b_experiment_reports import file_hash, save_report, text_file_hash, text_hash
+from common_evaluation import JUDGE_MODELS, evaluate, make_llm_judge
+from common_experiment_ids import next_experiment_id, owner_initials
+from common_experiment_reports import file_hash, save_report, text_file_hash, text_hash
 from b_generation import generate_answer
-from b_observability import Trace, code_version, observed
-from b_parsing import parse_documents, read_json, write_json
+from common_observability import Trace, code_version, observed
+from common_parsing import parse_documents, read_json, write_json
 from b_retrieval import retrieve, with_next_chunk
 
 ROOT = Path(__file__).resolve().parent
@@ -94,7 +94,7 @@ def main():
     parser.add_argument("--judge-model", choices=sorted(JUDGE_MODELS), help="LLM 문항 판정 모델 (추가 API 비용)")
     parser.add_argument("--judge-cache", type=Path, help="판정 결과 재사용 JSONL 경로 (--judge-model 필요)")
     parser.add_argument("--raw-dir", type=Path, default=ROOT / "data/raw")
-    parser.add_argument("--processed-dir", type=Path, default=ROOT / "data/processed/b")
+    parser.add_argument("--processed-dir", type=Path, default=ROOT / "data/processed/common")
     parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b")
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
     argv = sys.argv[1:]
