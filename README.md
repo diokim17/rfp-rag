@@ -25,212 +25,7 @@
 | 비교 실행 | 서버 모델과 API를 차례로 평가하고 터미널에 비교표 출력 |
 | 최종 산출물 | 재현 가능한 코드, 분석 보고서, 개인별 협업일지 |
 
-## 팀원 및 역할
-
-| 담당 역할 | 이름 | GitHub | 협업일지 |
-| --- | --- | --- | --- |
-| PM / 통합 | 김도영 | [@diokim17](https://github.com/diokim17) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.ka3ijil7t5i2) |
-| 파싱 / 전처리 | 나상훈 | [@Na-SangHun](https://github.com/Na-SangHun) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.4bl1rvpraiza#heading=h.qv2phv602y3p) |
-| 청킹 / 임베딩 | 유찬혁 | [@jins091125-gif](https://github.com/jins091125-gif) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.g14lnaobk5xt#heading=h.xrtl9g9gkphg) |
-| 검색 고도화 | 김연주 | [@AIengineeung](https://github.com/AIengineeung) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.sj1bxo9tvmqa#heading=h.qo3mm8oq6yi) |
-| 생성 / LLM | 박단비 | [@DBDBDEEP02](https://github.com/DBDBDEEP02) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.u2cla8e84xyr#heading=h.tg7gi3kx1lvh) |
-| 평가 | 김시현 | [@dypower1559-cell](https://github.com/dypower1559-cell) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.lijv4uvh1zh6#heading=h.qi25fkhl73oj) |
-
-### 데일리 스크럼
-
-[데일리 스크럼 일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.ka3ijil7t5i2)
-
-매일 10~15분 동안 어제 한 일, 오늘 할 일, 진행을 막는 이슈를 공유합니다.
-
-## 개발 환경 및 기술 스택
-
-팀 실행 기준은 Python 3.12.3 / GCP Linux x86_64 / NVIDIA L4입니다. 서버 생성 모델 로더는 CUDA GPU를 사용하며, API 방식도 cross-encoder 리랭킹에 GPU 사용을 권장합니다.
-
-| 공통 항목 | 사용 기술 |
-| --- | --- |
-| 문서 파싱 | PyMuPDF, olefile 기반 공통 파서 |
-| 평가·추적 | 공통 평가 모듈, 선택적 OpenAI 판정기·Langfuse |
-
-| 구분 | 서버 모델 실행 | OpenAI API 사용 |
-| --- | --- | --- |
-| 임베딩 | 로컬 BGE-M3 (팀 권장안) | `text-embedding-3-small` 기본값 |
-| 생성 모델 | 로컬 EXAONE | `gpt-5-mini` 기본값 / `gpt-5-nano` |
-| 검색 | FAISS, BM25, RRF, 후보 확장·리랭킹 | 동일한 구성, 실행 방식별 구현·설정 |
-| 청킹 방식 | 고정 길이 청킹 + 문서 개요 청크 추가 | 문서 구조 기반 청킹 |
-| 추론 패키지 | `transformers==5.1.0` | `transformers==4.57.1` |
-
-청킹 방식은 각 환경 설정 예시 파일을 기준으로 정리했습니다. 설치 기준은 [requirements-a.txt](requirements-a.txt)와 [requirements-b.txt](requirements-b.txt)이며, 패키지 버전이 달라 가상환경을 분리합니다.
-
-## 실행 방법
-
-### 1. 저장소 준비
-
-새 환경에서는 최신 `dev`를 받습니다. 아래 명령은 Linux Bash 기준입니다.
-
-```bash
-git clone --branch dev https://github.com/diokim17/rfp-rag.git
-cd rfp-rag
-python3.12 --version
-nvidia-smi
-```
-
-기존 저장소에서는 개인 변경을 보존한 상태에서 최신 `dev`를 반영하세요. 원본 데이터와 모델 가중치는 저장소에 포함되지 않으므로 별도로 준비합니다.
-
-### 2. 가상환경 수동 설정
-
-사용할 실행 방식의 환경만 설치해도 됩니다. 두 방식을 함께 실행하려면 두 환경을 모두 준비합니다. 가상환경 생성과 패키지 설치는 최초에 수동으로 진행하며, `run.py`는 자동 설치하지 않습니다.
-
-**서버 모델 직접 실행**
-
-```bash
-python3.12 -m venv .venv-a
-.venv-a/bin/python -m pip install -r requirements-a.txt
-.venv-a/bin/python -m pip check
-```
-
-**OpenAI API 사용**
-
-```bash
-python3.12 -m venv .venv-b
-.venv-b/bin/python -m pip install -r requirements-b.txt
-.venv-b/bin/python -m pip check
-```
-
-서버 모델은 `.venv-a`, API는 `.venv-b` 환경에서 실행합니다. 두 설치 파일은 CUDA 12.6용 PyTorch 패키지 경로를 포함합니다. 각 환경에는 위에서 안내한 설치 파일을 사용하세요.
-
-### 3. 환경 변수와 모델 준비
-
-기존 설정 파일을 덮어쓰지 않고 예시를 복사합니다.
-
-```bash
-test -f .env.a || cp .env.a.example .env.a
-test -f .env.b || cp .env.b.example .env.b
-```
-
-사용할 실행 방식의 파일을 열어 값을 입력합니다.
-
-| 파일 | 필수 설정 | 추가 설정 |
-| --- | --- | --- |
-| `.env.a` | `A_GENERATION_MODEL`, `A_EMBEDDING_MODEL` | `A_RERANK_MODEL`, 평가 판정기 사용 시 `OPENAI_API_KEY` |
-| `.env.b` | `OPENAI_API_KEY` | `OPENAI_EMBEDDING_MODEL`, `OPENAI_GENERATION_MODEL` |
-
-`EXPERIMENT_OWNER`와 Langfuse 설정은 입력하지 않아도 사용할 수 있습니다. 담당자를 비우면 `user-0001` 형식의 실행 번호가 자동 생성됩니다. 실행 기록을 사용자별로 구분하려면 `EXPERIMENT_OWNER` 또는 `--owner`에 영문 이름(2~16자)을 지정하세요. Langfuse 키를 비우면 외부 추적 없이 로컬 결과만 저장합니다. 추적 기능이 필요한 경우에만 [Langfuse 가이드](docs/LANGFUSE_GUIDE.md)를 참고하세요.
-
-서버에서 실행할 모델은 프로젝트의 `models/` 아래에 준비합니다. 모델 파일은 저장소에 포함되지 않으며, 사용할 모델의 가중치·토크나이저·설정 파일을 각자 내려받거나 팀에서 전달받아 배치합니다. 설정값에는 전체 경로나 Hugging Face 저장소 ID 대신 해당 경로 바로 아래의 **폴더 이름**을 입력합니다.
-
-```text
-models/
-├── generate/<생성 모델 폴더>/
-├── embedding/<임베딩 모델 폴더>/
-└── rerank/<리랭커 모델 폴더>/
-```
-
-모든 상대 경로는 프로젝트 루트를 기준으로 해석합니다. 다른 사용자의 홈 폴더에 접근할 필요가 없습니다. 이미 접근 가능한 별도 모델 폴더가 있다면 `.env.a`의 `A_MODELS_DIR=../shared-models`처럼 상대 경로를 지정하세요. 해당 폴더에도 `generate/`, `embedding/`, `rerank/` 구조가 필요합니다. 공유 폴더는 관리자가 읽기·접근 권한을 제공한 경우에만 사용할 수 있습니다. 모델을 준비하기 어려운 경우 API 방식을 선택할 수 있습니다. `A_RERANK_MODEL`을 비우면 경고와 함께 lexical 리랭킹을 사용하므로 cross-encoder 실험 결과와 달라질 수 있습니다. 서버 모델 실행 시 OpenAI 질문 재작성은 지원하지 않으므로 `RETRIEVAL_REWRITE=off`로 설정합니다.
-
-아래 명령으로 설정 읽기를 확인합니다. 모델 추론·API 호출은 없으며, 모델 파일이나 API 키의 유효성까지 검증하지는 않습니다.
-
-```bash
-.venv-a/bin/python a_run.py check-config
-.venv-b/bin/python b_run.py check-config
-```
-
-기존 프로세스 환경변수가 설정 파일보다 우선합니다. 공통 `.env`도 `run.py`가 읽으므로 실행 방식별 모델·검색 옵션과 API 키는 각각 `.env.a`·`.env.b`에서 관리하고 공통 `.env`에 중복 지정하지 않는 것을 권장합니다.
-
-### 4. 데이터 준비
-
-```text
-data/raw/
-├── data_list.csv
-└── files/
-    ├── <RFP 문서>.hwp
-    └── <RFP 문서>.pdf
-```
-
-CSV에는 `파일명` 열이 필요하며 `files/` 안의 실제 파일명과 일치해야 합니다. 파싱 시 본문 중복 문서는 하나로 합쳐질 수 있어 입력 파일 수와 최종 문서 수는 다를 수 있습니다. 실패·중복 내역은 `data/processed/common/parsing_errors.json`에서 확인합니다.
-
-### 5. 서버 모델 / API 선택 실행
-
-프로젝트 루트에서 실행합니다. 가상환경을 활성화하지 않아도 `run.py`가 선택한 실행 방식의 Python으로 별도 프로세스를 실행합니다.
-
-```bash
-python3.12 run.py check-config
-```
-
-| 메뉴 입력값 | 실행 방식 |
-| --- | --- |
-| `1` 또는 `A` | 서버 모델 직접 실행 |
-| `2` 또는 `B` | OpenAI API 사용 |
-| `3`, `AB` 또는 `A+B` | 두 방식 차례로 실행 |
-
-터미널에서는 환경변수와 관계없이 항상 메뉴가 나옵니다. 위 입력값으로 실행 방식을 선택합니다. Enter만 누르면 공통 `.env` 또는 환경변수의 `RFP_SCENARIO` 값, 미설정 시 API 사용을 선택합니다. 입력을 받을 수 없는 배치 환경에서는 그 기본값으로 바로 실행합니다.
-
-| 선택 | Python 탐색 순서 | 실행 환경 설정 |
-| --- | --- | --- |
-| 서버 모델 | `RFP_PYTHON_A` → `.venv-a` → 현재 Python | `.env.a` |
-| API | `RFP_PYTHON_B` → `.venv-b` | `.env.b` |
-| 함께 실행 | 서버 모델 실행 후 API 실행 | 각 파일을 별도 프로세스에서 읽음 |
-
-현재 코드는 가상환경을 찾지 못하면 현재 Python을 사용하므로 위 경로에 환경을 준비한 뒤 실행하세요. 다른 위치의 환경은 `RFP_PYTHON_A`·`RFP_PYTHON_B`에 프로젝트 기준 Python 실행 파일의 상대 경로를 지정할 수 있습니다.
-
-최초 전체 실행은 아래 순서로 진행합니다. 각 명령에서 실행 방식을 선택하세요. 공통 파싱은 한 번만 하면 되고, 실행 방식별 인덱스는 각각 구축합니다.
-
-```bash
-python3.12 run.py parse
-python3.12 run.py build
-python3.12 run.py ask --question "한영대학교 교육환경 구축 사업의 주요 요구사항은 무엇인가요?"
-```
-
-| 명령 | 동작 |
-| --- | --- |
-| `check-config` | 실행 환경 설정 읽기 확인 |
-| `parse` | 원본 → 공통 `documents.json`, 파싱 오류 기록 |
-| `build` | 전처리 문서 → 실행 방식별 청킹·임베딩·FAISS 인덱스 |
-| `ask --question "질문"` | 기존 인덱스 검색 후 답변·출처 생성 |
-| `all --question "질문"` | 파싱 → 인덱스 구축 → 질의응답 |
-| `evaluate --eval-file 경로` | 평가셋 질문 실행·지표 저장 |
-
-명령 없이 `python3.12 run.py`만 실행하면 실행 방식 선택 후 해당 인덱스가 있으면 `ask`, 없으면 `all`을 실행합니다. 질문과 문서 수는 `a_run.py`·`b_run.py`의 기본값을 사용하며 현재 `DEFAULT_LIMIT=3`입니다. 전체 데이터 구축은 위처럼 명령을 명시하고 `--limit`을 생략하세요. `all --limit 3`은 공통 전처리 파일도 3행 기준으로 다시 쓰므로 전체 데이터 실험과 섞지 마세요.
-
-특정 기관으로 범위를 좁힐 때는 `--filter "발주 기관=기관명"`, 결과 청크 수는 `--top-k 5`를 사용합니다. 메뉴 없는 직접 실행은 `.venv-a/bin/python a_run.py ...` 또는 `.venv-b/bin/python b_run.py ...`로 할 수 있습니다.
-
-### 6. 성능 평가와 실행 방식 비교
-
-평가 JSON은 팀 공유 경로에서 받아 준비합니다. 다음 예시는 `data/eval_v4.json`이 있을 때 사용합니다. 두 방식 비교에는 동일한 평가셋을 지정하고 각 인덱스의 문서·모델·청킹 조건을 함께 기록하세요.
-
-```bash
-python3.12 run.py evaluate \
-  --eval-file data/eval_v4.json \
-  --judge-model gpt-5-nano
-```
-
-메뉴에서 `3`을 선택하면 서버 모델과 API를 차례로 실행하고 답변 정확도, 내용 정확도, 거절 정확도, 오거절률, Recall@k, MRR@k, 응답 시간 p50/p95를 터미널의 표 하나로 보여줍니다. 서버 모델 실행이 실패하면 API는 실행하지 않습니다. 결과 JSON과 보고서는 실행 방식별로 저장하며 통합 결과 파일을 추가 생성하지는 않습니다.
-
-두 방식 모두 `--judge-model gpt-5-nano` 또는 `gpt-5-mini`를 지원합니다. 판정기에는 각 실행 방식의 API 키가 필요하고 추가 비용이 발생합니다. 생략하면 `llm` 채점 문항은 미채점됩니다. 반복 평가에는 `--judge-cache`를 지정할 수 있습니다. API 방식의 단독 평가 예:
-
-```bash
-.venv-b/bin/python b_run.py evaluate \
-  --eval-file data/eval_v4.json \
-  --judge-model gpt-5-nano \
-  --judge-cache results/b/judge-cache.jsonl
-```
-
-### 7. 저장 경로와 재실행
-
-| 산출물 | 경로 |
-| --- | --- |
-| 공통 전처리 문서·오류 | `data/processed/common/` |
-| 실행 방식별 인덱스 | `indexes/a/`, `indexes/b/` |
-| 질의·평가 결과 JSON | `results/a/`, `results/b/` |
-| 실행별 요약 보고서 | `results/a/reports/`, `results/b/reports/` |
-| 실험 번호 상태 | `.experiment-state/a/`, `.experiment-state/b/` |
-
-기존 `data/processed/a` 또는 `data/processed/b`를 사용했다면 파싱을 다시 실행하거나 기존 `documents.json`을 `data/processed/common/`으로 복사하세요. 인덱스와 문서 해시가 다르면 질의·평가가 중단되므로 같은 문서로 `build`를 다시 실행합니다. 실행 방식별 실험 번호는 별도 관리되므로 결과에는 실행 방식도 함께 기록합니다.
-
-임베딩 모델·청킹을 바꾸면 인덱스를 다시 구축합니다. 생성 모델만 바꿀 때는 기존 인덱스를 사용할 수 있습니다. 실험은 `--processed-dir`, `--index-dir`, `--results-dir`, `--reports-dir`로 별도 경로를 지정하고 질의·평가에도 같은 문서와 인덱스 경로를 사용하세요. 두 방식을 함께 실행할 때는 같은 옵션이 양쪽에 전달되므로 `--index-dir`·`--results-dir`를 같은 경로로 강제하지 말고 기본 분리 경로를 사용하세요.
-
-## 프로젝트
-
-### 처리 흐름과 구조
+## 처리 흐름과 구조
 
 ```mermaid
 flowchart TD
@@ -290,30 +85,283 @@ rfp-rag/
 
 공통 구현은 `common_*.py`에서 관리합니다. 기존 `a_parsing`·`b_parsing` 등 6종 모듈 이름은 호환용으로 남아 같은 공통 모듈을 가리킵니다. 임베딩·검색·생성은 각 실행 방식에서 개발합니다. 이전 코드는 [legacy 안내](legacy/README.md), 입출력·협업 규칙은 [팀 개발 가이드](docs/TEAM_DEVELOPMENT_GUIDE.md)를 참고하세요.
 
-### 브랜치 운영과 검증
+## 팀원 및 역할
 
-최신 `dev`에서 개인 기능 브랜치를 만들고 PR 대상도 `dev`로 지정합니다. 리뷰와 검증 후 통합하며 최종 검증된 `dev`를 `main`에 반영합니다. 공통 모듈 변경 시 두 실행 방식의 회귀 영향을 확인합니다.
+| 담당 역할 | 이름 | GitHub | 협업일지 |
+| --- | --- | --- | --- |
+| PM / 통합 | 김도영 | [@diokim17](https://github.com/diokim17) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.ka3ijil7t5i2) |
+| 파싱 / 전처리 | 나상훈 | [@Na-SangHun](https://github.com/Na-SangHun) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.4bl1rvpraiza#heading=h.qv2phv602y3p) |
+| 청킹 / 임베딩 | 유찬혁 | [@jins091125-gif](https://github.com/jins091125-gif) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.g14lnaobk5xt#heading=h.xrtl9g9gkphg) |
+| 검색 고도화 | 김연주 | [@AIengineeung](https://github.com/AIengineeung) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.sj1bxo9tvmqa#heading=h.qo3mm8oq6yi) |
+| 생성 / LLM | 박단비 | [@DBDBDEEP02](https://github.com/DBDBDEEP02) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.u2cla8e84xyr#heading=h.tg7gi3kx1lvh) |
+| 평가 | 김시현 | [@dypower1559-cell](https://github.com/dypower1559-cell) | [협업일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.lijv4uvh1zh6#heading=h.qi25fkhl73oj) |
+
+### 데일리 스크럼
+
+[데일리 스크럼 일지](https://docs.google.com/document/d/1UcFhq4vEb1SL2uDldYpeGibJ07wi1n34tP9XeckNyWs/edit?tab=t.ka3ijil7t5i2)
+
+매일 10~15분 동안 어제 한 일, 오늘 할 일, 이슈를 공유합니다.
+
+## 개발 환경 및 기술 스택
+
+팀 실행 기준은 Python 3.12.3 / GCP Linux x86_64 / NVIDIA L4입니다. 서버 생성 모델 로더는 CUDA GPU를 사용하며, API 방식도 cross-encoder 리랭킹에 GPU 사용을 권장합니다.
+
+| 공통 항목 | 사용 기술 |
+| --- | --- |
+| 문서 파싱 | PyMuPDF, olefile 기반 공통 파서 |
+| 평가·추적 | 공통 평가 모듈, 선택적 OpenAI 판정기·Langfuse |
+
+| 구분 | 서버 모델 실행 | OpenAI API 사용 |
+| --- | --- | --- |
+| 임베딩 | 로컬 BGE-M3 (팀 권장안) | `text-embedding-3-small` |
+| 생성 모델 | 로컬 EXAONE | `gpt-5-mini`  |
+| 검색 | FAISS, BM25, RRF, 후보 확장·리랭킹 | 동일한 구성, 실행 방식별 구현·설정 |
+| 청킹 방식 | 고정 길이 청킹 + 문서 개요 청크 추가 | 문서 구조 기반 청킹 |
+| 추론 패키지 | `transformers==5.1.0` | `transformers==4.57.1` |
+
+설치 기준은 [requirements-a.txt](requirements-a.txt)와 [requirements-b.txt](requirements-b.txt)이며, 패키지 버전이 달라 가상환경을 분리합니다.
+
+## 실행 방법
+
+프로젝트 루트에서 아래 순서대로 진행합니다.
+
+1. 저장소 클론
+2. 사용할 방식의 가상환경·패키지 설치
+3. 서버 모델 사용 시 `models/`에 모델 다운로드
+4. `data/`에 원본 데이터 배치
+5. `.env.a` 또는 `.env.b` 설정
+6. `run.py` 실행
+
+### 1. 저장소 준비
+
+새 환경에서는 최신 `dev`를 받습니다. 아래 명령은 Linux Bash 기준입니다.
 
 ```bash
-.venv-a/bin/python -m unittest discover -s tests -v
-.venv-b/bin/python -m unittest discover -s tests -v
+git clone --branch dev https://github.com/diokim17/rfp-rag.git
+cd rfp-rag
+python3.12 --version
+nvidia-smi
 ```
 
-단위 테스트는 가짜 모델·API를 사용해 파싱·검색·생성·평가 연결과 오류 처리를 확인합니다. 실제 모델 품질, GPU 메모리, API 접속은 별도 실행으로 검증합니다.
+원본 데이터와 모델 파일은 저장소에 포함되지 않습니다. 아래 단계에 따라 별도로 준비하세요.
 
-### 성능 평가 기록
+### 2. 가상환경 설정
 
-아래는 저장된 실험 보고서의 측정값입니다. 평가셋·파싱 버전·검색 설정이 달라 **서버 모델과 API 간 우열을 직접 비교하는 표가 아닙니다.** 동일 조건 비교에는 위 비교 평가 명령을 사용하세요.
+사용할 실행 방식의 환경만 설치해도 됩니다. 두 방식을 함께 실행하려면 두 환경을 모두 준비합니다. 가상환경 생성과 패키지 설치는 최초에 수동으로 한 번 진행하며, 자동 설치되지 않습니다.
 
-| 실험 | 평가 조건 | 주요 결과 | 시간·비용 |
-| --- | --- | --- | --- |
-| 서버 모델: 고정 길이 청킹 | 100문서, eval_v4 50문항, 근거 지표 20문항 | Recall@5 0.976190, MRR@5 0.976190, 근거 적중률 0.90 | build 159.43초, 평균 검색 0.970초 |
-| 서버 모델: 문서 개요 청크 추가 | 위와 같은 조건, 기존 청크 보존 + 개요 48청크 | Recall@5 0.976190, MRR@5 0.976190, 근거 적중률 0.95 | build 158.09초, 평균 검색 0.955초 |
-| API: 검색 설정 비교 | eval_v2 본 집계 62문항, k=5, cross-encoder·후보 확장 | 문서 Recall@5 0.963, 문서 MRR 0.981, 정답청크 5위 내 0.984 | 답변 생성 제외, API 비용 별도 집계 필요 |
+**서버 모델 직접 실행**
 
-서버 모델 수치는 전체 재임베딩 후 검색만 측정한 단일 실행으로 시간 차이를 속도 개선으로 단정하지 않습니다. 답변 정확도나 생성 비용을 의미하지 않습니다. 출처: [서버 모델 전체 재구축 결과](results/reports/pr37_full_rebuild_result.md), [서버 모델 임베딩·청킹 권장안](results/reports/a_embedding_chunking_final_recommendation.md), [API 검색 설정·성능표](results/reports/b_retrieval_settings_yjk.md).
+```bash
+python3.12 -m venv .venv-a
+.venv-a/bin/python -m pip install -r requirements-a.txt
+.venv-a/bin/python -m pip check
+```
 
-### 결론 및 개선 사항
+**OpenAI API 사용**
+
+```bash
+python3.12 -m venv .venv-b
+.venv-b/bin/python -m pip install -r requirements-b.txt
+.venv-b/bin/python -m pip check
+```
+
+서버 모델은 `.venv-a`, API는 `.venv-b` 환경에서 실행합니다. 두 설치 파일은 CUDA 12.6용 PyTorch 패키지 경로를 포함합니다. 각 환경에는 위에서 안내한 설치 파일을 사용하세요.
+
+### 3. 서버 모델 다운로드
+
+**OpenAI API만 사용한다면 이 단계는 건너뜁니다.** API 방식의 검색용 리랭커는 첫 실행 시 Hugging Face에서 별도로 내려받을 수 있으므로 인터넷 연결과 저장 공간이 필요합니다.
+
+서버 모델은 프로젝트 루트에서 아래 명령으로 다운로드합니다. 설치한 서버용 가상환경의 `huggingface_hub`를 사용하며, 기존 실행 환경에서 확인한 commit revision으로 버전을 고정합니다. 사용 전 각 모델 저장소의 이용 조건을 확인하세요.
+
+| 용도 | Hugging Face 저장소 | 저장 위치 |
+| --- | --- | --- |
+| 답변 생성 | [LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct](https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct) | `models/generate/generation_model/` |
+| 임베딩 | [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3) | `models/embedding/default_model/` |
+| 리랭킹 | [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) | `models/rerank/bge-reranker-v2-m3/` |
+
+먼저 `df -h .`로 여유 공간을 확인하세요. 생성 모델을 포함한 가중치는 수십 GB 규모이므로 다운로드 중 임시 파일과 가상환경까지 고려해 공간을 확보해야 합니다.
+
+```bash
+.venv-a/bin/python - <<'PYMODELS'
+from huggingface_hub import snapshot_download
+
+models = [
+    ("LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct",
+     "553ea250b9a5317231459279d5847d6cf955b9aa",
+     "models/generate/generation_model"),
+    ("BAAI/bge-m3",
+     "5617a9f61b028005a4858fdac845db406aefb181",
+     "models/embedding/default_model"),
+    ("BAAI/bge-reranker-v2-m3",
+     "953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e",
+     "models/rerank/bge-reranker-v2-m3"),
+]
+for repo_id, revision, destination in models:
+    snapshot_download(
+        repo_id=repo_id,
+        revision=revision,
+        local_dir=destination,
+        allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.py", "*.md"],
+    )
+    print(f"다운로드 완료: {destination}")
+PYMODELS
+```
+
+가중치와 모델 실행에 필요한 설정·토크나이저·Python 파일만 받아 다른 형식의 중복 가중치 다운로드를 줄입니다. 같은 명령을 다시 실행하면 다운로드 메타데이터를 사용해 필요한 파일을 확인합니다. 인증이 필요한 경우 아래 명령으로 본인의 Hugging Face 계정에 로그인한 뒤 다시 실행하세요. 토큰은 저장소에 커밋하지 않습니다.
+
+```bash
+.venv-a/bin/hf auth login
+```
+
+다운로드 후 폴더 구조는 다음과 같습니다. 모델 파일은 Git에 올라가지 않습니다.
+
+```text
+rfp-rag/
+├── data/
+├── models/
+│   ├── generate/generation_model/
+│   ├── embedding/default_model/
+│   └── rerank/bge-reranker-v2-m3/
+└── run.py
+```
+
+### 4. 데이터 준비
+
+```text
+data/raw/
+├── data_list.csv
+└── files/
+    ├── <RFP 문서>.hwp
+    └── <RFP 문서>.pdf
+```
+
+CSV에는 `파일명` 열이 필요하며 `files/` 안의 실제 파일명과 일치해야 합니다. 파싱 시 본문 중복 문서는 하나로 합쳐질 수 있어 입력 파일 수와 최종 문서 수는 다를 수 있습니다. 실패·중복 내역은 `data/processed/common/parsing_errors.json`에서 확인합니다.
+
+### 5. 환경 변수 설정
+
+사용할 방식의 예시 파일을 복사합니다. 아래 명령은 기존 설정 파일을 덮어쓰지 않습니다.
+
+```bash
+test -f .env.a || cp .env.a.example .env.a
+test -f .env.b || cp .env.b.example .env.b
+```
+
+| 실행 방식 | 설정 파일 | 입력할 내용 |
+| --- | --- | --- |
+| 서버 모델 | `.env.a` | 위 다운로드 경로를 사용하면 추가 입력 없음 |
+| OpenAI API | `.env.b` | 본인의 `OPENAI_API_KEY` |
+
+모델 설정은 예시 파일의 기본값을 사용합니다. 서버 모델에서 OpenAI 평가 판정기를 사용할 때는 `.env.a`에도 `OPENAI_API_KEY`를 입력하세요.
+
+**선택 설정**
+
+- 모델 위치 변경: `.env.a`의 `A_MODELS_DIR`에 `../shared-models` 같은 프로젝트 기준 상대 경로를 지정합니다. 해당 폴더에 `generate/`, `embedding/`, `rerank/` 구조와 접근 권한이 필요합니다.
+- 실행 기록 구분: `EXPERIMENT_OWNER` 또는 `--owner`에 영문 이름(2~16자)을 지정합니다. 비우면 `user-0001` 형식으로 실행 번호를 생성합니다.
+- 외부 추적: Langfuse 키를 비우면 로컬 결과만 저장합니다. 필요한 경우 [Langfuse 가이드](docs/LANGFUSE_GUIDE.md)에 따라 설정하세요.
+
+준비한 환경의 설정을 확인합니다. 모델 추론·API 호출은 없으며, 모델 파일이나 API 키의 유효성까지 검증하지는 않습니다.
+
+```bash
+.venv-a/bin/python a_run.py check-config
+.venv-b/bin/python b_run.py check-config
+```
+
+프로세스 환경변수는 설정 파일보다 우선합니다. 실행 방식별 설정은 `.env.a`·`.env.b`에서 관리하고, 공통 `.env`에 중복 지정하지 마세요.
+
+### 6. 서버 모델 / API 선택 실행
+
+프로젝트 루트에서 실행합니다. 가상환경을 활성화하지 않아도 `run.py`가 선택한 실행 방식의 Python으로 별도 프로세스를 실행합니다.
+
+```bash
+python3.12 run.py check-config
+```
+
+| 메뉴 입력값 | 실행 방식 |
+| --- | --- |
+| `1` 또는 `A` | 서버 모델 직접 실행 |
+| `2` 또는 `B` | OpenAI API 사용 |
+| `3`, `AB` 또는 `A+B` | 두 방식 차례로 실행 |
+
+터미널에서는 환경변수와 관계없이 항상 메뉴가 나옵니다. 위 입력값으로 실행 방식을 선택합니다. Enter만 누르면 공통 `.env` 또는 환경변수의 `RFP_SCENARIO` 값, 미설정 시 API 사용을 선택합니다. 입력을 받을 수 없는 배치 환경에서는 그 기본값으로 바로 실행합니다.
+
+| 선택 | Python 탐색 순서 | 실행 환경 설정 |
+| --- | --- | --- |
+| 서버 모델 | `RFP_PYTHON_A` → `.venv-a` → 현재 Python | `.env.a` |
+| API | `RFP_PYTHON_B` → `.venv-b` | `.env.b` |
+| 함께 실행 | 서버 모델 실행 후 API 실행 | 각 파일을 별도 프로세스에서 읽음 |
+
+현재 코드는 가상환경을 찾지 못하면 현재 Python을 사용하므로 위 경로에 환경을 준비한 뒤 실행하세요. 다른 위치의 환경은 `RFP_PYTHON_A`·`RFP_PYTHON_B`에 프로젝트 기준 Python 실행 파일의 상대 경로를 지정할 수 있습니다.
+
+최초 전체 실행은 아래 순서로 진행합니다. 각 명령에서 실행 방식을 선택하세요. 공통 파싱은 한 번만 하면 되고, 실행 방식별 인덱스는 각각 구축합니다.
+
+```bash
+python3.12 run.py parse
+python3.12 run.py build
+python3.12 run.py ask --question "한영대학교 교육환경 구축 사업의 주요 요구사항은 무엇인가요?"
+```
+
+| 명령 | 동작 |
+| --- | --- |
+| `check-config` | 실행 환경 설정 읽기 확인 |
+| `parse` | 원본 → 공통 `documents.json`, 파싱 오류 기록 |
+| `build` | 전처리 문서 → 실행 방식별 청킹·임베딩·FAISS 인덱스 |
+| `ask --question "질문"` | 기존 인덱스 검색 후 답변·출처 생성 |
+| `all --question "질문"` | 파싱 → 인덱스 구축 → 질의응답 |
+| `evaluate --eval-file 경로` | 평가셋 질문 실행·지표 저장 |
+
+명령 없이 `python3.12 run.py`만 실행하면 실행 방식 선택 후 해당 인덱스가 있으면 `ask`, 없으면 `all`을 실행합니다. 질문과 문서 수는 `a_run.py`·`b_run.py`의 기본값을 사용하며 현재 `DEFAULT_LIMIT=3`입니다. 전체 데이터 구축은 위처럼 명령을 명시하고 `--limit`을 생략하세요. `all --limit 3`은 공통 전처리 파일도 3행 기준으로 다시 쓰므로 전체 데이터 실험과 섞지 마세요.
+
+특정 기관으로 범위를 좁힐 때는 `--filter "발주 기관=기관명"`, 결과 청크 수는 `--top-k 5`를 사용합니다. 메뉴 없는 직접 실행은 `.venv-a/bin/python a_run.py ...` 또는 `.venv-b/bin/python b_run.py ...`로 할 수 있습니다.
+
+### 7. 성능 평가와 실행 방식 비교
+
+평가 JSON은 팀 공유 경로에서 받아 준비합니다. 다음 예시는 `data/eval_v4.json`이 있을 때 사용합니다. 두 방식 비교에는 동일한 평가셋을 지정하고 각 인덱스의 문서·모델·청킹 조건을 함께 기록하세요.
+
+```bash
+python3.12 run.py evaluate \
+  --eval-file data/eval_v4.json \
+  --judge-model gpt-5-nano
+```
+
+메뉴에서 `3`을 선택하면 서버 모델과 API를 차례로 실행하고 답변 정확도, 내용 정확도, 거절 정확도, 오거절률, Recall@k, MRR@k, 응답 시간 p50/p95를 터미널의 표 하나로 보여줍니다. 서버 모델 실행이 실패하면 API는 실행하지 않습니다. 결과 JSON과 보고서는 실행 방식별로 저장하며 통합 결과 파일을 추가 생성하지는 않습니다.
+
+두 방식 모두 `--judge-model gpt-5-nano` 또는 `gpt-5-mini`를 지원합니다. 판정기에는 각 실행 방식의 API 키가 필요하고 추가 비용이 발생합니다. 생략하면 `llm` 채점 문항은 미채점됩니다. 반복 평가에는 `--judge-cache`를 지정할 수 있습니다. API 방식의 단독 평가 예:
+
+```bash
+.venv-b/bin/python b_run.py evaluate \
+  --eval-file data/eval_v4.json \
+  --judge-model gpt-5-nano \
+  --judge-cache results/b/judge-cache.jsonl
+```
+
+### 8. 저장 경로와 재실행
+
+| 산출물 | 경로 |
+| --- | --- |
+| 공통 전처리 문서·오류 | `data/processed/common/` |
+| 실행 방식별 인덱스 | `indexes/a/`, `indexes/b/` |
+| 질의·평가 결과 JSON | `results/a/`, `results/b/` |
+| 실행별 요약 보고서 | `results/a/reports/`, `results/b/reports/` |
+| 실험 번호 상태 | `.experiment-state/a/`, `.experiment-state/b/` |
+
+기존 `data/processed/a` 또는 `data/processed/b`를 사용했다면 파싱을 다시 실행하거나 기존 `documents.json`을 `data/processed/common/`으로 복사하세요. 인덱스와 문서 해시가 다르면 질의·평가가 중단되므로 같은 문서로 `build`를 다시 실행합니다. 실행 방식별 실험 번호는 별도 관리되므로 결과에는 실행 방식도 함께 기록합니다.
+
+임베딩 모델·청킹을 바꾸면 인덱스를 다시 구축합니다. 생성 모델만 바꿀 때는 기존 인덱스를 사용할 수 있습니다. 실험은 `--processed-dir`, `--index-dir`, `--results-dir`, `--reports-dir`로 별도 경로를 지정하고 질의·평가에도 같은 문서와 인덱스 경로를 사용하세요. 두 방식을 함께 실행할 때는 같은 옵션이 양쪽에 전달되므로 `--index-dir`·`--results-dir`를 같은 경로로 강제하지 말고 기본 분리 경로를 사용하세요.
+
+## 최종 성능 평가
+
+동일한 전처리 문서 98개와 평가 질문 50개(답변 가능 42개, 답변 불가 8개)를 사용해 각 실행 방식을 3회 평가했습니다. 판정 모델은 GPT-5 nano입니다.
+
+| 실행 방식 | 문서 Recall@5 | MRR@5 | 평균 답변 점수 | 평균 내용 점수 | 답변 불가 질문 거절 | 평균 응답 시간 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| OpenAI API | 1.000 | 1.000 | 0.996 | 0.996 | 8/8 | 9.59초 |
+| 서버 모델 | 1.000 | 1.000 | 0.849 | 0.897 | 7/8 | 15.55초 |
+
+검색 지표는 답변 가능한 42문항 기준입니다. 답변·내용 점수는 3회 평균으로, 부분 정답을 포함한 자동 채점 점수이며 엄격한 정답률을 뜻하지 않습니다. 응답 시간은 질문 임베딩부터 답변 생성까지이며 평가 판정 시간은 제외합니다.
+
+최종 보고서 초안에 정리된 평가 기록을 기준으로 작성했습니다. API는 `yjk-0004~0006`, 서버 모델은 `shn-0106~0108`의 결과이며, 최신 코드에서 이번 README 작성 중 다시 실행한 수치는 아닙니다. 서버 모델은 동일한 답변에도 자동 판정 점수가 달라질 수 있습니다.
+
+## 결론 및 개선 사항
 
 - **주요 성과:** 서버 모델·API 독립 환경을 공통 CLI로 연결하고 파싱·평가·추적 코드를 통합했습니다. 검색 근거와 답변 출처, 실행별 평가 결과로 변경 전후를 확인할 수 있습니다.
 - **의사결정:** 서버 모델 실행은 고정 길이 청크에 문서 개요를 추가하고, API 사용은 문서 구조 기반 청킹을 적용합니다. 하이브리드 검색·리랭킹으로 세부 근거를 찾고, 문서 해시로 인덱스와 입력 문서의 불일치를 검사합니다.
@@ -329,7 +377,7 @@ rfp-rag/
 | 실험·검증 보고서 | [results/reports](results/reports/) |
 | 실행별 평가 결과 | 로컬 `results/a/`, `results/b/`에 생성 |
 | 최종 보고서 PDF | 저장소 내 배포 파일 없음. 확정 후 링크 추가 |
-| 발표 자료 | 저장소 내 배포 파일 없음. 확정 후 링크 추가 |
+| 발표 자료 | [발표 슬라이드](https://docs.google.com/presentation/d/1-LDKJ6hyZBShjKUx_w0M7DLKIGuk9_GNyNIxGD8ZWxA/edit) |
 | 개인별 협업일지 | [팀원 및 역할](#팀원-및-역할) |
 
 ## 데이터 및 보안
