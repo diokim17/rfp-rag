@@ -38,7 +38,8 @@ A·B에서 내용이 같은 모듈(parsing·evaluation·observability·experimen
 `python run.py [명령 ...]`을 실행하면 A / B / A+B 중 하나를 고릅니다. 고른 시나리오의 가상환경(A `.venv-a`,
 B `rag-b` 또는 `.venv`, `RFP_PYTHON_A`·`RFP_PYTHON_B`로 변경 가능) 파이썬으로 따로 실행하므로 어느 환경에서 실행해도 됩니다.
 A+B는 같은 명령을 A, B 순서로 실행하고 `evaluate`이면 두 결과를 표 하나로 출력합니다.
-`RFP_SCENARIO`(A·B·AB)를 정하면 묻지 않고, 입력을 받을 수 없는 환경(배치 실행 등)에서는 기존처럼 B를 실행합니다.
+터미널에서는 항상 묻고, `RFP_SCENARIO`(A·B·AB, 없으면 B)는 Enter만 눌렀을 때의 기본값입니다.
+입력을 받을 수 없는 환경(배치 실행 등)에서는 묻지 않고 그 기본값으로 실행합니다.
 기존 무접두사 모듈과 `scenario_a*.py`, `legacy_run.py`는 `legacy/`에 보관했습니다.
 테스트는 `python -m unittest discover -s tests -v`로 실행합니다. 공통 계약은 A·B 각각 검증하고,
 이전 코드 전용 테스트는 `legacy/tests/`에 보관합니다. `experiments/a_embedding_chy.py`는 A 모듈·경로,
@@ -290,7 +291,7 @@ B 환경에는 torch 2.8.0을 지정한 `experiments/requirements-rerank.txt`나
 
 ### A additive 적용과 복귀
 
-`run.py`는 실행할 때 A·B를 고릅니다. A는 `.venv-a/bin/python a_run.py` 또는 `RFP_SCENARIO=A python run.py`로 바로 실행할 수도 있습니다. 공개 함수 인자와 인덱스 3파일 형식은 그대로입니다.
+`run.py`는 실행할 때 A·B를 고릅니다. 메뉴 없이 A만 실행하려면 `.venv-a/bin/python a_run.py`를 직접 실행합니다. 공개 함수 인자와 인덱스 3파일 형식은 그대로입니다.
 
 - 전략 환경변수는 새 build에만 적용됩니다. 기존 fixed 인덱스는 그대로 읽을 수 있습니다.
 - 기존 문서를 그대로 사용하면 parse는 필요 없습니다. 전략·문서·모델이 달라지면 새 별도 경로에 build한 뒤 검색 경로를 전환합니다.

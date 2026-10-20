@@ -2,7 +2,8 @@
 
 A(로컬 모델, transformers 5.1)와 B(OpenAI API, transformers 4.57)는 패키지 버전이 달라 한 가상환경에서
 함께 돌 수 없으므로, 고른 시나리오의 가상환경 파이썬으로 a_run.py·b_run.py를 별도 프로세스로 실행합니다.
-RFP_SCENARIO(A·B·AB)를 정하면 묻지 않습니다. 입력을 받을 수 없는 환경에서는 기존처럼 B를 실행합니다.
+터미널에서는 항상 묻고, RFP_SCENARIO(A·B·AB, 없으면 B)는 Enter만 눌렀을 때의 기본값입니다.
+입력을 받을 수 없는 환경(배치 실행 등)에서는 묻지 않고 그 기본값으로 실행합니다.
 가상환경은 .venv-a(A), rag-b 또는 .venv(B) 순서로 찾고, RFP_PYTHON_A·RFP_PYTHON_B로 바꿀 수 있습니다.
 """
 import json
@@ -22,13 +23,13 @@ SUMMARY_ROWS = (("답변 정확도", "answer_accuracy"), ("내용 정확도", "a
 
 
 def choose_scenario():
-    value = os.getenv("RFP_SCENARIO", "").strip().upper()
-    if not value and sys.stdin.isatty():
+    value = default = os.getenv("RFP_SCENARIO", "").strip().upper() or "B"
+    if sys.stdin.isatty():
         print("실행할 시나리오를 선택하세요\n  1) A    서버에서 모델 직접 실행\n  2) B    외부 API(OpenAI)\n  3) A+B  A와 B를 차례로 실행")
-        value = input("> ").strip().upper()
-    if (value or "B") not in CHOICES:
+        value = input(f"> (Enter: {default}) ").strip().upper() or default
+    if value not in CHOICES:
         raise SystemExit("A, B, AB(또는 1, 2, 3) 중에서 고르세요.")
-    return CHOICES[value or "B"]
+    return CHOICES[value]
 
 
 def python_for(scenario):

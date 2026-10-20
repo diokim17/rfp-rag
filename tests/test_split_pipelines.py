@@ -107,6 +107,7 @@ class SplitPipelineTests(unittest.TestCase):
         import run
         for value, script in (('A', 'a_run.py'), ('2', 'b_run.py')):
             with patch.dict(os.environ, {'RFP_SCENARIO': value, 'RFP_PYTHON_A': 'py-a', 'RFP_PYTHON_B': 'py-b'}), \
+                    patch.object(run.sys.stdin, 'isatty', return_value=False), \
                     patch('sys.argv', ['run.py', 'check-config']), patch.object(run.subprocess, 'call', return_value=0) as call:
                 with self.assertRaises(SystemExit) as stop:
                     run.main()
@@ -117,11 +118,14 @@ class SplitPipelineTests(unittest.TestCase):
             self.assertEqual(command[2:], ['check-config'])
             self.assertEqual(call.call_args.kwargs['env']['RFP_SCENARIO'], script[0].upper())
 
-    def test_run_asks_when_scenario_is_not_set(self):
+    def test_run_always_asks_in_terminal_and_uses_setting_as_default(self):
         import run
-        with patch.dict(os.environ, {}, clear=True), patch.object(run.sys.stdin, 'isatty', return_value=True), \
-                patch('builtins.input', return_value='3'), redirect_stdout(io.StringIO()):
-            self.assertEqual(run.choose_scenario(), 'AB')
+        for env, answer, expected in (({}, '3', 'AB'), ({'RFP_SCENARIO': 'B'}, '1', 'A'),
+                                      ({'RFP_SCENARIO': 'A'}, '', 'A'), ({}, '', 'B')):
+            with patch.dict(os.environ, env, clear=True), patch.object(run.sys.stdin, 'isatty', return_value=True), \
+                    patch('builtins.input', return_value=answer) as asked, redirect_stdout(io.StringIO()):
+                self.assertEqual(run.choose_scenario(), expected)
+            asked.assert_called_once()
         with patch.dict(os.environ, {}, clear=True), patch.object(run.sys.stdin, 'isatty', return_value=False):
             self.assertEqual(run.choose_scenario(), 'B')
 
@@ -134,6 +138,7 @@ class SplitPipelineTests(unittest.TestCase):
                 saved[scenario].write_text(json.dumps({'summary': {'answer_accuracy': accuracy, 'recall_at_k': 1.0}}))
             out = io.StringIO()
             with patch.dict(os.environ, {'RFP_SCENARIO': 'AB'}), patch('sys.argv', ['run.py', 'evaluate']), \
+                    patch.object(run.sys.stdin, 'isatty', return_value=False), \
                     patch.object(run, 'run_and_capture', side_effect=lambda s, args: str(saved[s])) as runner, \
                     redirect_stdout(out):
                 run.main()
