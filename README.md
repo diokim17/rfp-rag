@@ -210,11 +210,14 @@ models = [
      "models/rerank/bge-reranker-v2-m3"),
 ]
 for repo_id, revision, destination in models:
+    patterns = ["*.json", "*.safetensors", "*.model", "*.txt", "*.py", "*.md"]
+    if repo_id == "BAAI/bge-m3":
+        patterns.append("pytorch_model.bin")
     snapshot_download(
         repo_id=repo_id,
         revision=revision,
         local_dir=destination,
-        allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.py", "*.md"],
+        allow_patterns=patterns,
     )
     print(f"다운로드 완료: {destination}")
 PYMODELS
