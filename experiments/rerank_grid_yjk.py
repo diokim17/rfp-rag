@@ -33,7 +33,7 @@ from retrieval_metrics_yjk import score_case  # noqa: E402
 MODES = ("lexical", "cross-encoder")
 CANDIDATES = (30, 50, 70, 100)
 TOP_KS = (3, 5, 10)
-SEED_CACHE = ROOT / "results/b/cache/query_embeddings.json"
+SEED_CACHE = ROOT / "results/api/cache/query_embeddings.json"
 TABLE_HEADER = ["| 리랭킹 | 후보 수 | top-k | Recall@k | MRR@k | 질문당 평균(ms) | 중앙(ms) | p95(ms) | 전체(ms) |",
                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
 
@@ -145,7 +145,7 @@ def table_row(row):
 
 
 def save_results(eval_file, index_dir, config, prep, load_ms, summary, records,
-                 results_dir=ROOT / "results/b", reports_dir=ROOT / "results/b/reports"):
+                 results_dir=ROOT / "results/api", reports_dir=ROOT / "results/api/reports"):
     """상세 결과 JSON(Git 제외)과 공유용 요약 Markdown을 저장합니다. 반환: (JSON 경로, 요약 경로, 설정)."""
     eval_file = Path(eval_file)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -170,9 +170,9 @@ def save_results(eval_file, index_dir, config, prep, load_ms, summary, records,
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/parsing-v2-yjk")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/api/parsing-v2-yjk")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/api")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/api/reports")
     parser.add_argument("--cache-file", type=Path, default=SEED_CACHE)
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문의 임베딩 API 호출을 허용")
     args = parser.parse_args()

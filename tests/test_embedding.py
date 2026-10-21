@@ -189,8 +189,8 @@ class IndexContractTests(unittest.TestCase):
         expected = {
             chunk_documents: "(documents, chunk_size=1000, chunk_overlap=150)",
             embed_texts: "(texts, client, model)",
-            build_index: "(documents, client, index_dir='indexes/b', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
-            load_index: "(index_dir='indexes/b')",
+            build_index: "(documents, client, index_dir='indexes/api', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
+            load_index: "(index_dir='indexes/api')",
         }
         for fn, signature in expected.items():
             self.assertEqual(str(inspect.signature(fn)), signature)

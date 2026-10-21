@@ -31,8 +31,8 @@ class ScenarioAClient:
     임베딩은 입력 순서의 2차원 벡터, 생성은 기존 답변 dict를 반환합니다.
     """
     def __init__(self, settings, generation_dir, embedding_dir, *, need_generation=True):
-        self.embedding_model = settings["A_EMBEDDING_MODEL"]
-        self.generation_model = settings["A_GENERATION_MODEL"]
+        self.embedding_model = settings["SERVER_EMBEDDING_MODEL"]
+        self.generation_model = settings["SERVER_GENERATION_MODEL"]
         self.embedding_path = embedding_dir / self.embedding_model
         self.generation_path = generation_dir / self.generation_model
         self.embedding = load_component("pipelines.server.server_local_embedding", self.embedding_path, "embed_texts")

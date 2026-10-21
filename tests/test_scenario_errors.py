@@ -23,7 +23,7 @@ class ScenarioErrorsTests(unittest.TestCase):
         (self.gen/'gen').mkdir(parents=True)
         (self.emb/'emb').mkdir(parents=True)
         self.args = SimpleNamespace(command='ask', scenario_settings={
-            'scenario':'A', 'A_GENERATION_MODEL':'gen', 'A_EMBEDDING_MODEL':'emb'})
+            'scenario':'A', 'SERVER_GENERATION_MODEL':'gen', 'SERVER_EMBEDDING_MODEL':'emb'})
         self.modules = {
             'pipelines.server.server_local_embedding': SimpleNamespace(load_model=Mock(return_value=SimpleNamespace(embed_texts=Mock()))),
             'pipelines.server.server_local_generation': SimpleNamespace(load_model=Mock(return_value=SimpleNamespace(generate_answer=Mock()))),
@@ -32,8 +32,8 @@ class ScenarioErrorsTests(unittest.TestCase):
     def reject(self, message, rewrite='off'):
         output = io.StringIO()
         with patch.dict(os.environ, {'OPENAI_API_KEY':'fake', 'RETRIEVAL_REWRITE':rewrite}, clear=True), \
-                patch.object(run, 'A_GENERATION_MODEL_DIR', self.gen), \
-                patch.object(run, 'A_EMBEDDING_MODEL_DIR', self.emb), \
+                patch.object(run, 'SERVER_GENERATION_MODEL_DIR', self.gen), \
+                patch.object(run, 'SERVER_EMBEDDING_MODEL_DIR', self.emb), \
                 patch.dict('sys.modules', self.modules), \
                 patch('pipelines.server.server_run.check_index_documents'), patch('pipelines.server.server_run.OpenAI') as client, \
                 patch('pipelines.server.server_run.build_index') as build, patch('pipelines.server.server_run.retrieve') as retrieve, \
@@ -46,11 +46,11 @@ class ScenarioErrorsTests(unittest.TestCase):
             call.assert_not_called()
 
     def test_missing_embedding_and_generation_folders(self):
-        for field in ('A_EMBEDDING_MODEL', 'A_GENERATION_MODEL'):
+        for field in ('SERVER_EMBEDDING_MODEL', 'SERVER_GENERATION_MODEL'):
             with self.subTest(field=field):
                 self.args.scenario_settings[field] = 'missing'
                 self.reject('모델 폴더가 없습니다')
-                self.args.scenario_settings[field] = 'emb' if field == 'A_EMBEDDING_MODEL' else 'gen'
+                self.args.scenario_settings[field] = 'emb' if field == 'SERVER_EMBEDDING_MODEL' else 'gen'
 
     def test_missing_each_module(self):
         for name in self.modules:

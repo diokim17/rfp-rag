@@ -59,7 +59,7 @@ class SplitPipelineTests(unittest.TestCase):
             module = importlib.import_module('pipelines.server.server_run' if prefix == 'a' else 'pipelines.api.api_run')
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                (root / ('.env.' + prefix)).write_text('A_GENERATION_MODEL=gen\nA_EMBEDDING_MODEL=emb\n')
+                (root / ('.env.' + ('server' if prefix == 'a' else 'api'))).write_text('SERVER_GENERATION_MODEL=gen\nSERVER_EMBEDDING_MODEL=emb\n')
                 with patch.dict(os.environ, {'RFP_SCENARIO': 'B' if prefix == 'a' else 'A'}, clear=True), \
                         patch.object(module, 'ROOT', root), patch('sys.argv', ['server_run.py' if prefix == 'a' else 'api_run.py', 'build', '--owner', 'test']), \
                         patch.object(module, 'run_pipeline') as pipeline, \
@@ -69,10 +69,10 @@ class SplitPipelineTests(unittest.TestCase):
                 args = pipeline.call_args.args[0]
                 self.assertEqual(args.scenario_settings['scenario'], prefix.upper())
                 self.assertEqual(args.processed_dir, root / 'data/processed/common')
-                self.assertEqual(args.index_dir, root / 'indexes' / prefix)
-                self.assertEqual(args.results_dir, root / 'results' / prefix)
-                self.assertEqual(args.reports_dir, root / 'results' / prefix / 'reports')
-                self.assertEqual(ids.call_args.args[1], root / '.experiment-state' / prefix)
+                self.assertEqual(args.index_dir, root / 'indexes' / ('server' if prefix == 'a' else 'api'))
+                self.assertEqual(args.results_dir, root / 'results' / ('server' if prefix == 'a' else 'api'))
+                self.assertEqual(args.reports_dir, root / 'results' / ('server' if prefix == 'a' else 'api') / 'reports')
+                self.assertEqual(ids.call_args.args[1], root / '.experiment-state' / ('server' if prefix == 'a' else 'api'))
 
     def test_both_build_search_generate_and_isolate_trace_state(self):
         from pipelines.server import server_client
@@ -84,7 +84,7 @@ class SplitPipelineTests(unittest.TestCase):
                 args = SimpleNamespace(command='build', processed_dir=root/prefix/'processed',
                     index_dir=root/prefix/'index', results_dir=root/prefix/'results', owner='test',
                     chunk_size=1000, chunk_overlap=150, top_k=1, question='예산?',
-                    scenario_settings={'scenario':prefix.upper(), 'A_GENERATION_MODEL':'gen', 'A_EMBEDDING_MODEL':'emb'})
+                    scenario_settings={'scenario':prefix.upper(), 'SERVER_GENERATION_MODEL':'gen', 'SERVER_EMBEDDING_MODEL':'emb'})
                 module.write_json(args.processed_dir/'documents.json', [{'doc_id':'one', 'text':'예산은 100원입니다.', 'metadata':{'filename':'one.txt'}}])
                 trace = obs.Trace({})
                 with patch.dict(os.environ, {'OPENAI_API_KEY':'fake', 'OPENAI_GENERATION_MODEL':'gpt-5-mini',
@@ -113,7 +113,7 @@ class SplitPipelineTests(unittest.TestCase):
         import run
         for scenario, value, module in (('A', 'A', 'pipelines.server.server_run'),
                                          ('B', '2', 'pipelines.api.api_run')):
-            with patch.dict(os.environ, {'RFP_SCENARIO': value, 'RFP_PYTHON_A': 'py-a', 'RFP_PYTHON_B': 'py-b'}), \
+            with patch.dict(os.environ, {'RFP_SCENARIO': value, 'RFP_PYTHON_SERVER': 'py-a', 'RFP_PYTHON_API': 'py-b'}), \
                     patch.object(run.sys.stdin, 'isatty', return_value=False), \
                     patch('sys.argv', ['run.py', 'check-config']), patch.object(run.subprocess, 'call', return_value=0) as call:
                 with self.assertRaises(SystemExit) as stop:
@@ -125,7 +125,8 @@ class SplitPipelineTests(unittest.TestCase):
 
     def test_run_always_asks_in_terminal_and_uses_setting_as_default(self):
         import run
-        for env, answer, expected in (({}, '3', 'AB'), ({'RFP_SCENARIO': 'B'}, '1', 'A'),
+        for env, answer, expected in (({}, '3', 'AB'), ({}, 'server', 'A'), ({}, 'api', 'B'),
+                                      ({}, 'server+api', 'AB'), ({'RFP_SCENARIO': 'B'}, '1', 'A'),
                                       ({'RFP_SCENARIO': 'A'}, '', 'A'), ({}, '', 'B')):
             with patch.dict(os.environ, env, clear=True), patch.object(run.sys.stdin, 'isatty', return_value=True), \
                     patch('builtins.input', return_value=answer) as asked, redirect_stdout(io.StringIO()):
@@ -144,9 +145,9 @@ class SplitPipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for scenario in ('A', 'B'):
                 environment = {**os.environ, 'RFP_SCENARIO': scenario,
-                               'RFP_PYTHON_A': sys.executable, 'RFP_PYTHON_B': sys.executable,
-                               'A_GENERATION_MODEL': 'test-generation',
-                               'A_EMBEDDING_MODEL': 'test-embedding'}
+                               'RFP_PYTHON_SERVER': sys.executable, 'RFP_PYTHON_API': sys.executable,
+                               'SERVER_GENERATION_MODEL': 'test-generation',
+                               'SERVER_EMBEDDING_MODEL': 'test-embedding'}
                 result = subprocess.run([sys.executable, str(ROOT / 'run.py'), 'check-config'],
                                         cwd=directory, env=environment, capture_output=True,
                                         text=True, timeout=30, check=True)
@@ -171,7 +172,7 @@ class SplitPipelineTests(unittest.TestCase):
     def test_retrieval_scenario_does_not_follow_other_environment(self):
         from pipelines.server import server_retrieval
         from pipelines.api import api_retrieval
-        with patch.dict(os.environ, {'RFP_SCENARIO': 'B', 'A_RERANK_MODEL': ''}, clear=True), \
+        with patch.dict(os.environ, {'RFP_SCENARIO': 'B', 'SERVER_RERANK_MODEL': ''}, clear=True), \
                 patch.object(server_retrieval, '_cross_encoder_available', return_value=True):
             self.assertEqual(server_retrieval._min_score(None), server_retrieval.DEFAULT_MIN_SCORE_A)
             with self.assertWarns(RuntimeWarning):

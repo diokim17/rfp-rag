@@ -87,7 +87,7 @@ class CachedEmbeddingClient:
         if self.real is None:
             from dotenv import load_dotenv
             from openai import OpenAI
-            load_dotenv(ROOT / ".env.b", override=False)
+            load_dotenv(ROOT / ".env.api", override=False)
             self.real = OpenAI(timeout=60.0, max_retries=2)
         return self.real
 
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("--index-dir", type=Path)
     parser.add_argument("--eval-file", type=Path, required=True)
     parser.add_argument("--results-dir", type=Path)
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/api/reports")
     parser.add_argument("--label", default="baseline")
     parser.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args()

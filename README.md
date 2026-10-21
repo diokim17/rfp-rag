@@ -88,16 +88,16 @@ rfp-rag/
 ├── data/raw/                      # 원본 files/와 data_list.csv
 ├── data/processed/common/         # 공통 파싱 결과
 ├── models/                        # 생성·임베딩·리랭커 모델
-├── indexes/a/ , indexes/b/        # 실행 방식별 인덱스
-├── results/a/ , results/b/        # 실행 결과·reports/
+├── indexes/server/ , indexes/api/        # 실행 방식별 인덱스
+├── results/server/ , results/api/        # 실행 결과·reports/
 ├── results/reports/               # 팀 실험·검증 보고서
 ├── experiments/                   # 실험 실행기·의존성
 ├── tests/                         # 서버·API·공통 기능 테스트
 ├── docs/                          # 개발·추적 가이드, 과거 환경 파일
 ├── legacy/                        # 분리 전 코드·이전 테스트
-├── requirements-a.txt             # 서버 모델 환경 고정 버전
-├── requirements-b.txt             # API 환경 고정 버전
-└── .env.a.example / .env.b.example
+├── requirements-server.txt             # 서버 모델 환경 고정 버전
+├── requirements-api.txt             # API 환경 고정 버전
+└── .env.server.example / .env.api.example
 ```
 
 서버 모델과 API 코드는 각각 `pipelines/server/`, `pipelines/api/`에서 관리하며 파일에도 `server_`·`api_` 접두사를 사용합니다. 공통 기능은 역할별 패키지에서 함께 사용합니다. 이전 코드는 [legacy 안내](legacy/README.md), 입출력·협업 규칙은 [팀 개발 가이드](docs/TEAM_DEVELOPMENT_GUIDE.md)를 참고하세요.
@@ -136,7 +136,7 @@ rfp-rag/
 | 청킹 방식 | 고정 길이 청킹 + 문서 개요 청크 추가 | 문서 구조 기반 청킹 |
 | 추론 패키지 | `transformers==5.1.0` | `transformers==4.57.1` |
 
-설치 기준은 [requirements-a.txt](requirements-a.txt)와 [requirements-b.txt](requirements-b.txt)이며, 패키지 버전이 달라 가상환경을 분리합니다.
+설치 기준은 [requirements-server.txt](requirements-server.txt)와 [requirements-api.txt](requirements-api.txt)이며, 패키지 버전이 달라 가상환경을 분리합니다.
 
 ## 실행 방법
 
@@ -146,7 +146,7 @@ rfp-rag/
 2. 사용할 방식의 가상환경·패키지 설치
 3. 서버 모델 사용 시 `models/`에 모델 다운로드
 4. `data/`에 원본 데이터 배치
-5. `.env.a` 또는 `.env.b` 설정
+5. `.env.server` 또는 `.env.api` 설정
 6. `run.py` 실행
 
 ### 1. 저장소 준비
@@ -170,19 +170,19 @@ nvidia-smi
 
 ```bash
 python3.12 -m venv .venv-server
-.venv-a/bin/python -m pip install -r requirements-a.txt
-.venv-a/bin/python -m pip check
+.venv-server/bin/python -m pip install -r requirements-server.txt
+.venv-server/bin/python -m pip check
 ```
 
 **OpenAI API 사용**
 
 ```bash
 python3.12 -m venv .venv-api
-.venv-b/bin/python -m pip install -r requirements-b.txt
-.venv-b/bin/python -m pip check
+.venv-api/bin/python -m pip install -r requirements-api.txt
+.venv-api/bin/python -m pip check
 ```
 
-서버 모델은 `.venv-a`, API는 `.venv-b` 환경에서 실행합니다. 두 설치 파일은 CUDA 12.6용 PyTorch 패키지 경로를 포함합니다. 각 환경에는 위에서 안내한 설치 파일을 사용하세요.
+서버 모델은 `.venv-server`, API는 `.venv-api` 환경에서 실행합니다. 두 설치 파일은 CUDA 12.6용 PyTorch 패키지 경로를 포함합니다. 각 환경에는 위에서 안내한 설치 파일을 사용하세요.
 
 ### 3. 서버 모델 다운로드
 
@@ -199,7 +199,7 @@ python3.12 -m venv .venv-api
 먼저 `df -h .`로 여유 공간을 확인하세요. 생성 모델을 포함한 가중치는 수십 GB 규모이므로 다운로드 중 임시 파일과 가상환경까지 고려해 공간을 확보해야 합니다.
 
 ```bash
-.venv-a/bin/python - <<'PYMODELS'
+.venv-server/bin/python - <<'PYMODELS'
 from huggingface_hub import snapshot_download
 
 models = [
@@ -227,7 +227,7 @@ PYMODELS
 가중치와 모델 실행에 필요한 설정·토크나이저·Python 파일만 받아 다른 형식의 중복 가중치 다운로드를 줄입니다. 같은 명령을 다시 실행하면 다운로드 메타데이터를 사용해 필요한 파일을 확인합니다. 인증이 필요한 경우 아래 명령으로 본인의 Hugging Face 계정에 로그인한 뒤 다시 실행하세요. 토큰은 저장소에 커밋하지 않습니다.
 
 ```bash
-.venv-a/bin/hf auth login
+.venv-server/bin/hf auth login
 ```
 
 다운로드 후 폴더 구조는 다음과 같습니다. 모델 파일은 Git에 올라가지 않습니다.
@@ -272,15 +272,15 @@ test -f .env.api || cp .env.api.example .env.api
 
 **선택 설정**
 
-- 모델 위치 변경: `.env.server`의 `A_MODELS_DIR`에 `../shared-models` 같은 프로젝트 기준 상대 경로를 지정합니다. 해당 폴더에 `generate/`, `embedding/`, `rerank/` 구조와 접근 권한이 필요합니다.
+- 모델 위치 변경: `.env.server`의 `SERVER_MODELS_DIR`에 `../shared-models` 같은 프로젝트 기준 상대 경로를 지정합니다. 해당 폴더에 `generate/`, `embedding/`, `rerank/` 구조와 접근 권한이 필요합니다.
 - 실행 기록 구분: `EXPERIMENT_OWNER` 또는 `--owner`에 영문 이름(2~16자)을 지정합니다. 비우면 `user-0001` 형식으로 실행 번호를 생성합니다.
 - 외부 추적: Langfuse 키를 비우면 로컬 결과만 저장합니다. 필요한 경우 [Langfuse 가이드](docs/LANGFUSE_GUIDE.md)에 따라 설정하세요.
 
 준비한 환경의 설정을 확인합니다. 모델 추론·API 호출은 없으며, 모델 파일이나 API 키의 유효성까지 검증하지는 않습니다.
 
 ```bash
-.venv-a/bin/python -m pipelines.server.server_run check-config
-.venv-b/bin/python -m pipelines.api.api_run check-config
+.venv-server/bin/python -m pipelines.server.server_run check-config
+.venv-api/bin/python -m pipelines.api.api_run check-config
 ```
 
 프로세스 환경변수는 설정 파일보다 우선합니다. 실행 방식별 설정은 `.env.server`·`.env.api`에서 관리하고, 공통 `.env`에 중복 지정하지 마세요.
@@ -295,19 +295,19 @@ python3.12 run.py check-config
 
 | 메뉴 입력값 | 실행 방식 |
 | --- | --- |
-| `1` 또는 `A` | 서버 모델 직접 실행 |
-| `2` 또는 `B` | OpenAI API 사용 |
-| `3`, `AB` 또는 `A+B` | 두 방식 차례로 실행 |
+| `1` 또는 `server` | 서버 모델 직접 실행 |
+| `2` 또는 `api` | OpenAI API 사용 |
+| `3` 또는 `server+api` | 두 방식 차례로 실행 |
 
 터미널에서는 환경변수와 관계없이 항상 메뉴가 나옵니다. 위 입력값으로 실행 방식을 선택합니다. Enter만 누르면 공통 `.env` 또는 환경변수의 `RFP_SCENARIO` 값, 미설정 시 API 사용을 선택합니다. 입력을 받을 수 없는 배치 환경에서는 그 기본값으로 바로 실행합니다.
 
 | 선택 | Python 탐색 순서 | 실행 환경 설정 |
 | --- | --- | --- |
-| 서버 모델 | `RFP_PYTHON_A` → `.venv-server` → 현재 Python | `.env.server` |
-| API | `RFP_PYTHON_B` → `.venv-api` | `.env.api` |
+| 서버 모델 | `RFP_PYTHON_SERVER` → `.venv-server` → 현재 Python | `.env.server` |
+| API | `RFP_PYTHON_API` → `.venv-api` | `.env.api` |
 | 함께 실행 | 서버 모델 실행 후 API 실행 | 각 파일을 별도 프로세스에서 읽음 |
 
-현재 코드는 가상환경을 찾지 못하면 현재 Python을 사용하므로 위 경로에 환경을 준비한 뒤 실행하세요. 다른 위치의 환경은 `RFP_PYTHON_A`·`RFP_PYTHON_B`에 프로젝트 기준 Python 실행 파일의 상대 경로를 지정할 수 있습니다.
+현재 코드는 가상환경을 찾지 못하면 현재 Python을 사용하므로 위 경로에 환경을 준비한 뒤 실행하세요. 다른 위치의 환경은 `RFP_PYTHON_SERVER`·`RFP_PYTHON_API`에 프로젝트 기준 Python 실행 파일의 상대 경로를 지정할 수 있습니다.
 
 최초 전체 실행은 아래 순서로 진행합니다. 각 명령에서 실행 방식을 선택하세요. 공통 파싱은 한 번만 하면 되고, 실행 방식별 인덱스는 각각 구축합니다.
 
@@ -328,7 +328,7 @@ python3.12 run.py ask --question "한영대학교 교육환경 구축 사업의 
 
 명령 없이 `python3.12 run.py`만 실행하면 실행 방식 선택 후 해당 인덱스가 있으면 `ask`, 없으면 `all`을 실행합니다. 질문과 문서 수는 `pipelines/server/server_run.py`·`pipelines/api/api_run.py`의 기본값을 사용하며 현재 `DEFAULT_LIMIT=3`입니다. 전체 데이터 구축은 위처럼 명령을 명시하고 `--limit`을 생략하세요. `all --limit 3`은 공통 전처리 파일도 3행 기준으로 다시 쓰므로 전체 데이터 실험과 섞지 마세요.
 
-특정 기관으로 범위를 좁힐 때는 `--filter "발주 기관=기관명"`, 결과 청크 수는 `--top-k 5`를 사용합니다. 메뉴 없는 직접 실행은 `.venv-a/bin/python -m pipelines.server.server_run ...` 또는 `.venv-b/bin/python -m pipelines.api.api_run ...`로 할 수 있습니다.
+특정 기관으로 범위를 좁힐 때는 `--filter "발주 기관=기관명"`, 결과 청크 수는 `--top-k 5`를 사용합니다. 메뉴 없는 직접 실행은 `.venv-server/bin/python -m pipelines.server.server_run ...` 또는 `.venv-api/bin/python -m pipelines.api.api_run ...`로 할 수 있습니다.
 
 ### 7. 성능 평가와 실행 방식 비교
 
@@ -345,10 +345,10 @@ python3.12 run.py evaluate \
 두 방식 모두 `--judge-model gpt-5-nano` 또는 `gpt-5-mini`를 지원합니다. 판정기에는 각 실행 방식의 API 키가 필요하고 추가 비용이 발생합니다. 생략하면 `llm` 채점 문항은 미채점됩니다. 반복 평가에는 `--judge-cache`를 지정할 수 있습니다. API 방식의 단독 평가 예:
 
 ```bash
-.venv-b/bin/python -m pipelines.api.api_run evaluate \
+.venv-api/bin/python -m pipelines.api.api_run evaluate \
   --eval-file data/eval_v4.json \
   --judge-model gpt-5-nano \
-  --judge-cache results/b/judge-cache.jsonl
+  --judge-cache results/api/judge-cache.jsonl
 ```
 
 ### 8. 저장 경로와 재실행
@@ -356,12 +356,12 @@ python3.12 run.py evaluate \
 | 산출물 | 경로 |
 | --- | --- |
 | 공통 전처리 문서·오류 | `data/processed/common/` |
-| 실행 방식별 인덱스 | `indexes/a/`, `indexes/b/` |
-| 질의·평가 결과 JSON | `results/a/`, `results/b/` |
-| 실행별 요약 보고서 | `results/a/reports/`, `results/b/reports/` |
-| 실험 번호 상태 | `.experiment-state/a/`, `.experiment-state/b/` |
+| 실행 방식별 인덱스 | `indexes/server/`, `indexes/api/` |
+| 질의·평가 결과 JSON | `results/server/`, `results/api/` |
+| 실행별 요약 보고서 | `results/server/reports/`, `results/api/reports/` |
+| 실험 번호 상태 | `.experiment-state/server/`, `.experiment-state/api/` |
 
-기존 `data/processed/a` 또는 `data/processed/b`를 사용했다면 파싱을 다시 실행하거나 기존 `documents.json`을 `data/processed/common/`으로 복사하세요. 인덱스와 문서 해시가 다르면 질의·평가가 중단되므로 같은 문서로 `build`를 다시 실행합니다. 실행 방식별 실험 번호는 별도 관리되므로 결과에는 실행 방식도 함께 기록합니다.
+기존 `data/processed/server` 또는 `data/processed/api`를 사용했다면 파싱을 다시 실행하거나 기존 `documents.json`을 `data/processed/common/`으로 복사하세요. 인덱스와 문서 해시가 다르면 질의·평가가 중단되므로 같은 문서로 `build`를 다시 실행합니다. 실행 방식별 실험 번호는 별도 관리되므로 결과에는 실행 방식도 함께 기록합니다.
 
 임베딩 모델·청킹을 바꾸면 인덱스를 다시 구축합니다. 생성 모델만 바꿀 때는 기존 인덱스를 사용할 수 있습니다. 실험은 `--processed-dir`, `--index-dir`, `--results-dir`, `--reports-dir`로 별도 경로를 지정하고 질의·평가에도 같은 문서와 인덱스 경로를 사용하세요. 두 방식을 함께 실행할 때는 같은 옵션이 양쪽에 전달되므로 `--index-dir`·`--results-dir`를 같은 경로로 강제하지 말고 기본 분리 경로를 사용하세요.
 
@@ -392,7 +392,7 @@ python3.12 run.py evaluate \
 | --- | --- |
 | GitHub Repository | [rfp-rag](https://github.com/diokim17/rfp-rag) |
 | 실험·검증 보고서 | [results/reports](results/reports/) |
-| 실행별 평가 결과 | 로컬 `results/a/`, `results/b/`에 생성 |
+| 실행별 평가 결과 | 로컬 `results/server/`, `results/api/`에 생성 |
 | 최종 보고서 PDF | 저장소 내 배포 파일 없음. 확정 후 링크 추가 |
 | 발표 자료 | [발표 슬라이드](https://docs.google.com/presentation/d/1-LDKJ6hyZBShjKUx_w0M7DLKIGuk9_GNyNIxGD8ZWxA/edit) |
 | 개인별 협업일지 | [팀원 및 역할](#팀원-및-역할) |
@@ -400,6 +400,6 @@ python3.12 run.py evaluate \
 ## 데이터 및 보안
 
 - 제공받은 원본 RFP 문서는 외부 공유가 금지되어 있으므로 저장소에 업로드하지 않습니다.
-- API 키, SSH 키, `.env`·`.env.a`·`.env.b`, 모델 가중치는 커밋하지 않습니다.
+- API 키, SSH 키, `.env`·`.env.server`·`.env.api`, 모델 가중치는 커밋하지 않습니다.
 - 결과 JSON에는 질문·답변·문서 근거가 포함될 수 있으므로 공유 전에 확인합니다. 팀 공유용 요약은 각 실행 방식의 `reports/`를 사용합니다.
 - API 방식의 임베딩·생성과 OpenAI 판정기는 외부 API로 입력을 전송합니다. 서버 방식의 임베딩·생성은 로컬 모델을 사용하며 판정기·추적 사용 여부는 별도로 설정합니다.

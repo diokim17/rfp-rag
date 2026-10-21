@@ -341,7 +341,7 @@ def embed_texts(texts, client, model):
 
 
 @observed("build-index")
-def build_index(documents, client, index_dir="indexes/b", model="text-embedding-3-small",
+def build_index(documents, client, index_dir="indexes/api", model="text-embedding-3-small",
                 chunk_size=1000, chunk_overlap=150, documents_sha256=None):
     """호출자가 계산한 documents.json 해시를 재계산·변환 없이 config에 저장합니다."""
     strategy = _chunking_strategy()
@@ -373,7 +373,7 @@ def build_index(documents, client, index_dir="indexes/b", model="text-embedding-
     return config
 
 
-def load_index(index_dir="indexes/b"):
+def load_index(index_dir="indexes/api"):
     path = Path(index_dir)
     index = faiss.read_index(str(path / "index.faiss"))
     chunks, config = read_json(path / "chunks.json"), read_json(path / "config.json")

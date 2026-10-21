@@ -59,7 +59,7 @@ class IndexAcrossPlatformsTests(unittest.TestCase):
         self.args = SimpleNamespace(
             command="ask", processed_dir=root / "processed", index_dir=root / "index", owner="tester",
             raw_dir=root / "raw", limit=None, chunk_size=1000, chunk_overlap=150, top_k=5,
-            scenario_settings={"scenario":"A", "A_GENERATION_MODEL":"gen", "A_EMBEDDING_MODEL":"emb"}, question="예산?", results_dir=root / "results")
+            scenario_settings={"scenario":"A", "SERVER_GENERATION_MODEL":"gen", "SERVER_EMBEDDING_MODEL":"emb"}, question="예산?", results_dir=root / "results")
         self.documents_path = self.args.processed_dir / "documents.json"
         write_json(self.documents_path, DOCUMENTS)
         self.lf_hash = file_hash(self.documents_path)

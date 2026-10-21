@@ -13,7 +13,7 @@ python -m pip install -r requirements-server.lock.txt
 python -m pip check
 ```
 
-시나리오 A는 개인 `.env.a`, B는 `.env.b`에 본인 프로젝트의 설정을 넣습니다. run.py의 시나리오 선택용 `.env`와 프로세스 환경변수는 별도로 유지합니다. 키는 커밋하지 않습니다.
+시나리오 A는 개인 `.env.server`, B는 `.env.api`에 본인 프로젝트의 설정을 넣습니다. run.py의 시나리오 선택용 `.env`와 프로세스 환경변수는 별도로 유지합니다. 키는 커밋하지 않습니다.
 
 ```dotenv
 LANGFUSE_SECRET_KEY="sk-lf-..."
@@ -42,7 +42,7 @@ BASE_URL은 Markdown 링크가 아닌 URL 문자열입니다. 미국 리전 프�
 
 위 한글 이름을 owner에 넣어도 대응하는 이니셜로 변환합니다. 그 외에는 고유한 영문 2~16자를 설정합니다. 대문자는 소문자로 통일하고 owner가 없으면 설정 방법을 안내하며 실행을 중단합니다.
 
-현재 A 번호는 `.experiment-state/a/experiments.sqlite3`, B 번호는 `.experiment-state/b/experiments.sqlite3`에 owner별로 저장합니다. 결과 파일을 지워도 다음 번호가 유지되며, 동시 실행은 DB 잠금으로 서로 다른 번호를 받습니다. 실패한 실행도 번호를 소비하므로 번호가 건너뛰는 것은 정상입니다. parse/build/ask/all/evaluate는 같은 owner 번호를 공유하며 각 명령 실행마다 증가합니다. 질문별 평가 사례마다 증가하는 번호는 아닙니다.
+현재 A 번호는 `.experiment-state/server/experiments.sqlite3`, B 번호는 `.experiment-state/api/experiments.sqlite3`에 owner별로 저장합니다. 결과 파일을 지워도 다음 번호가 유지되며, 동시 실행은 DB 잠금으로 서로 다른 번호를 받습니다. 실패한 실행도 번호를 소비하므로 번호가 건너뛰는 것은 정상입니다. parse/build/ask/all/evaluate는 같은 owner 번호를 공유하며 각 명령 실행마다 증가합니다. 질문별 평가 사례마다 증가하는 번호는 아닙니다.
 
 상태 폴더는 Git에서 제외합니다. 삭제하면 번호가 처음부터 시작하므로 보존하세요. 같은 owner가 새 clone이나 다른 서버에서 별도 상태 파일로 실행하면 번호가 중복될 수 있으므로 기존 상태 파일을 실행이 없는 때 함께 이전하거나, 별도 작업 공간에는 다른 owner 식별자를 사용합니다. 팀원별 고유 이니셜을 정하면 서로 다른 계정의 첫 실행도 구분됩니다.
 

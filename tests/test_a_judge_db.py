@@ -23,7 +23,7 @@ class AJudgeTests(unittest.TestCase):
         self.args = SimpleNamespace(
             command="evaluate", processed_dir=root / "processed", index_dir=root / "index", owner="tester",
             top_k=5, results_dir=root / "results", reports_dir=root / "reports", eval_file=root / "eval.json",
-            scenario_settings={"scenario": "A", "A_GENERATION_MODEL": "g", "A_EMBEDDING_MODEL": "e"})
+            scenario_settings={"scenario": "A", "SERVER_GENERATION_MODEL": "g", "SERVER_EMBEDDING_MODEL": "e"})
         write_json(self.args.processed_dir / "documents.json", [{"doc_id": "a", "text": "예산", "metadata": {}}])
         digest = hashlib.sha256((self.args.processed_dir / "documents.json").read_bytes()).hexdigest()
         self.config = {"documents_sha256": digest, "chunk_count": 1}

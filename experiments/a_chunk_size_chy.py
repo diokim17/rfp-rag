@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 
 
 def main():
-    load_dotenv(ROOT / '.env.a', override=False)
+    load_dotenv(ROOT / '.env.server', override=False)
     documents = ROOT / 'data/processed/documents.json'
     evaluation = ROOT / 'data/eval_v4.json'
     implementation = base.code_hashes()

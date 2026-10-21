@@ -17,7 +17,7 @@ class ScenarioBTests(TestCase):
         for scenario in ('', 'RFP_SCENARIO=B\n'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                (root/'.env.b').write_text(scenario)
+                (root/'.env.api').write_text(scenario)
                 with patch.dict(os.environ, {}, clear=True), patch.object(run, 'ROOT', root), \
                         patch('sys.argv', ['pipelines/api/api_run.py','build']), \
                         patch('pipelines.api.api_run.owner_initials', return_value='test'), \
@@ -26,16 +26,16 @@ class ScenarioBTests(TestCase):
                     run.main()
                 args = pipeline.call_args.args[0]
                 self.assertEqual(args.scenario_settings['scenario'], 'B')
-                self.assertEqual(args.index_dir, root/'indexes/b')
-                self.assertEqual(args.results_dir, root/'results/b')
-                self.assertEqual(args.reports_dir, root/'results/b/reports')
+                self.assertEqual(args.index_dir, root/'indexes/api')
+                self.assertEqual(args.results_dir, root/'results/api')
+                self.assertEqual(args.reports_dir, root/'results/api/reports')
 
     def test_b_build_ask_evaluate_preserve_models_and_results(self):
         from types import SimpleNamespace
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             args = SimpleNamespace(command='build', scenario_settings={'scenario':'B'},
-                processed_dir=root/'processed', index_dir=root/'indexes/b', results_dir=root/'results/b',
+                processed_dir=root/'processed', index_dir=root/'indexes/api', results_dir=root/'results/api',
                 reports_dir=root/'reports', owner='test', chunk_size=1000, chunk_overlap=150,
                 top_k=1, question='예산?', eval_file=root/'eval.json')
             run.write_json(args.processed_dir/'documents.json', [

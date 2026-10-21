@@ -173,7 +173,7 @@ class LocalEmbeddingTests(unittest.TestCase):
             factory = Mock(return_value=model)
             with patch.dict(sys.modules, {"torch": fake_torch(),
                     "sentence_transformers": SimpleNamespace(SentenceTransformer=factory)}):
-                client = ScenarioAClient({"A_EMBEDDING_MODEL": "emb", "A_GENERATION_MODEL": "gen"},
+                client = ScenarioAClient({"SERVER_EMBEDDING_MODEL": "emb", "SERVER_GENERATION_MODEL": "gen"},
                                          root, root, need_generation=False)
             self.assertIsNone(client.generation)
             documents = [{"doc_id": "d", "text": "PRIVATE_DOCUMENT", "metadata": {"filename": "private"}}]

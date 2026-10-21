@@ -43,8 +43,8 @@ DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
 DEFAULT_MIN_SCORE = 0.40
 DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 # 시나리오 A는 리랭커를 각자 HF 캐시로 내려받지 않고, 서버의 이 공용 폴더에 받아 둔 모델을 함께 씁니다.
-# .env의 A_RERANK_MODEL에는 이 폴더 아래 모델 폴더 이름만 적습니다 (예: bge-reranker-v2-m3).
-A_RERANK_MODEL_DIR = Path(__file__).resolve().parents[2] / "models/rerank"
+# .env의 SERVER_RERANK_MODEL에는 이 폴더 아래 모델 폴더 이름만 적습니다 (예: bge-reranker-v2-m3).
+SERVER_RERANK_MODEL_DIR = Path(__file__).resolve().parents[2] / "models/rerank"
 _cross_encoders = {}
 
 
@@ -57,17 +57,17 @@ def rerank_model_source():
     """cross-encoder가 불러올 모델 위치를 돌려줍니다.
 
     B: RETRIEVAL_RERANK_MODEL (HF 모델 ID, 기본 BAAI/bge-reranker-v2-m3)
-    A: 공용 폴더 A_RERANK_MODEL_DIR/<A_RERANK_MODEL>. 로컬 폴더 경로를 넘기면 transformers가 Hub에 접속하지 않습니다.
+    A: 공용 폴더 SERVER_RERANK_MODEL_DIR/<SERVER_RERANK_MODEL>. 로컬 폴더 경로를 넘기면 transformers가 Hub에 접속하지 않습니다.
     """
     if SCENARIO != "A":
         return os.getenv("RETRIEVAL_RERANK_MODEL", DEFAULT_RERANK_MODEL)
-    name = os.getenv("A_RERANK_MODEL", "").strip()
-    directory = model_directory("rerank", A_RERANK_MODEL_DIR)
+    name = os.getenv("SERVER_RERANK_MODEL", "").strip()
+    directory = model_directory("rerank", SERVER_RERANK_MODEL_DIR)
     if name in {".", ".."} or "/" in name or "\\" in name:
-        raise ValueError("A_RERANK_MODEL에는 경로가 아닌 단일 모델 폴더 이름을 입력하세요.")
+        raise ValueError("SERVER_RERANK_MODEL에는 경로가 아닌 단일 모델 폴더 이름을 입력하세요.")
     if not name or not (directory / name).is_dir():
         raise ValueError(f"시나리오 A 리랭커 모델 폴더가 없습니다: {directory}/{name} "
-                         "(.env의 A_RERANK_MODEL 확인, 모델 없이 실행하려면 RETRIEVAL_RERANK=lexical)")
+                         "(.env의 SERVER_RERANK_MODEL 확인, 모델 없이 실행하려면 RETRIEVAL_RERANK=lexical)")
     return str(directory / name)
 
 
@@ -206,7 +206,7 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
 
     결과 파일에 이 값을 그대로 기록하면 설명과 실제 동작이 어긋나지 않습니다.
     candidates·벡터/BM25 후보 수·RRF 상수는 그 값을 쓰는 기능이 켜졌을 때만 채웁니다.
-    리랭킹 방식을 지정하지 않았는데 torch·transformers가 없거나, 시나리오 A에서 A_RERANK_MODEL이 비어 있으면
+    리랭킹 방식을 지정하지 않았는데 torch·transformers가 없거나, 시나리오 A에서 SERVER_RERANK_MODEL이 비어 있으면
     cross-encoder 대신 lexical을 쓰고 경고합니다.
     """
     mode = (os.getenv("RETRIEVAL_RERANK", "") if rerank is None else rerank).strip().lower()
@@ -218,8 +218,8 @@ def retrieval_options(*, rerank=None, candidates=None, max_per_doc=None, hybrid=
             mode = "lexical"
         # A에서 리랭커 모델을 아직 공용 폴더에 받지 않았으면, 모델이 필요 없는 lexical로 실행합니다.
         elif (mode == "cross-encoder" and SCENARIO == "A"
-              and not os.getenv("A_RERANK_MODEL", "").strip()):
-            warnings.warn("시나리오 A에 A_RERANK_MODEL이 없어 기본 리랭킹을 cross-encoder 대신 lexical로 실행합니다.",
+              and not os.getenv("SERVER_RERANK_MODEL", "").strip()):
+            warnings.warn("시나리오 A에 SERVER_RERANK_MODEL이 없어 기본 리랭킹을 cross-encoder 대신 lexical로 실행합니다.",
                           RuntimeWarning, stacklevel=2)
             mode = "lexical"
     if mode not in RERANK_MODES:

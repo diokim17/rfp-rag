@@ -123,7 +123,7 @@ class ObservabilityTests(unittest.TestCase):
             argv = ["pipelines/server/server_run.py", "evaluate", "--eval-file", str(eval_file),
                     "--processed-dir", str(root / "data/processed"), "--index-dir", str(root / "index"), "--results-dir", str(root / "results"),
                     "--reports-dir", str(root / "reports"), "--owner", "tester"]
-            with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "LANGFUSE_ENABLED": "false", "A_GENERATION_MODEL": "gen", "A_EMBEDDING_MODEL": "text-embedding-3-small"}, clear=True), \
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "fake", "LANGFUSE_ENABLED": "false", "SERVER_GENERATION_MODEL": "gen", "SERVER_EMBEDDING_MODEL": "text-embedding-3-small"}, clear=True), \
                     patch("sys.argv", argv), patch("pipelines.server.server_run.load_dotenv"), \
                     patch("pipelines.server.server_client.ScenarioAClient", LocalFake), patch.object(run, "ROOT", root):
                 run.main()

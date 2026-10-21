@@ -51,7 +51,7 @@ class LocalGenerator:
 
 
 def load_model(model_path):
-    """모델 폴더(.env의 A_GENERATION_MODEL)를 GPU에 올립니다."""
+    """모델 폴더(.env의 SERVER_GENERATION_MODEL)를 GPU에 올립니다."""
     # EXAONE은 모델 폴더에 든 전용 코드로 동작해서 trust_remote_code=True가 필요합니다.
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, dtype=torch.bfloat16,

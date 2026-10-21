@@ -21,10 +21,10 @@ class ProjectPathTests(unittest.TestCase):
         for kind in ("generate", "embedding", "rerank"):
             with patch.dict(os.environ, {}, clear=True):
                 self.assertEqual(config_paths.model_directory(kind), config_paths.ROOT / "models" / kind)
-            with patch.dict(os.environ, {"A_MODELS_DIR": "../shared-models"}, clear=True):
+            with patch.dict(os.environ, {"SERVER_MODELS_DIR": "../shared-models"}, clear=True):
                 self.assertEqual(config_paths.model_directory(kind), config_paths.ROOT / "../shared-models" / kind)
 
     def test_absolute_model_root_is_rejected(self):
-        with patch.dict(os.environ, {"A_MODELS_DIR": "/tmp/models"}, clear=True):
+        with patch.dict(os.environ, {"SERVER_MODELS_DIR": "/tmp/models"}, clear=True):
             with self.assertRaisesRegex(ValueError, "상대 경로"):
                 config_paths.model_directory("generate")

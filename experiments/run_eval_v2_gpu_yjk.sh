@@ -2,20 +2,20 @@
 # 김연주: eval_v2 cross-encoder 실험을 GPU 서버에서 한 번에 실행합니다.
 #   bash experiments/run_eval_v2_gpu_yjk.sh
 #   EVAL=data/eval_withindoc_yjk.json SETTINGS="prefix-hybrid-ce-c50-cap2 prefix-hybrid-ce-c50-cap2+wd" bash experiments/run_eval_v2_gpu_yjk.sh
-# 준비: 저장소 루트에 .env.b(OPENAI_API_KEY, EXPERIMENT_OWNER), data/raw(CSV + files), 평가셋(기본 data/eval_v2.json, EVAL로 변경)
+# 준비: 저장소 루트에 .env.api(OPENAI_API_KEY, EXPERIMENT_OWNER), data/raw(CSV + files), 평가셋(기본 data/eval_v2.json, EVAL로 변경)
 # 비용: 인덱스가 없으면 빌드(약 $0.25)와 질문 임베딩 65건. 인덱스가 있으면 질문 임베딩만. 경로는 PROCESSED·INDEX 환경 변수로 바꿀 수 있습니다.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=${PY:-.venv-b/bin/python}
-# 팀 공용 data/processed/b·indexes는 건드리지 않고 개인 경로를 씁니다.
-PROCESSED=${PROCESSED:-data/processed/b/eval-v2-yjk}
-INDEX=${INDEX:-indexes/b/eval-v2-structured-yjk}
+PY=${PY:-.venv-api/bin/python}
+# 팀 공용 data/processed/api·indexes는 건드리지 않고 개인 경로를 씁니다.
+PROCESSED=${PROCESSED:-data/processed/api/eval-v2-yjk}
+INDEX=${INDEX:-indexes/api/eval-v2-structured-yjk}
 # shn-0035·yjk-0005와 같은 문서(PR #8 파싱)의 LF 기준 documents_sha256
 EXPECTED_DOCS=0e93af3a97c4f261ea7304aa8db76b7638ed02eadf021eb6babc279ef7a5842c
 export PYTHONUTF8=1 LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-false}
 
 "$PY" -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 'CUDA 없음: GPU 서버에서 실행하세요')"
-"$PY" -c "import transformers" 2>/dev/null || "$PY" -m pip install -r requirements-b.txt
+"$PY" -c "import transformers" 2>/dev/null || "$PY" -m pip install -r requirements-api.txt
 EVAL=${EVAL:-data/eval_v2.json}
 [ -f "$EVAL" ] || { echo "평가셋 $EVAL 이 없습니다."; exit 1; }
 [ -f data/raw/data_list.csv ] || { echo "data/raw/data_list.csv와 data/raw/files/가 필요합니다."; exit 1; }
@@ -44,4 +44,4 @@ done
 fi
 "$PY" -u experiments/eval_v2_yjk.py --eval-file "$EVAL" --index-dir "$INDEX" --top-k 5 \
   --settings $SETTINGS --fresh-query-embeddings
-ls -t results/b/reports/eval_v2_yjk_*.md | head -1
+ls -t results/api/reports/eval_v2_yjk_*.md | head -1

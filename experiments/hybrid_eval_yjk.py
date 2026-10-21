@@ -189,16 +189,16 @@ def report_lines(meta, results, rewrite_info):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/parsing-v2-yjk")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/api/parsing-v2-yjk")
     parser.add_argument("--settings", nargs="+", choices=list(SETTINGS), default=NO_API)
-    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/b/cache/query_embeddings.json")
-    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/b/cache/query_rewrite_gpt-5-mini.json")
+    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/api/cache/query_embeddings.json")
+    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/api/cache/query_rewrite_gpt-5-mini.json")
     parser.add_argument("--rewrite-model", default="gpt-5-mini")
     parser.add_argument("--allow-api", action="store_true", help="재작성·임베딩 API 호출을 허용")
     parser.add_argument("--plan-rewrite", action="store_true", help="API 없이 재작성 예상 호출 수만 계산")
     parser.add_argument("--pilot", type=int, help="앞쪽 N개 질문만 재작성해 실제 토큰 사용량을 확인하고 종료")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/api")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/api/reports")
     args = parser.parse_args()
 
     cases = read_json(args.eval_file)
@@ -234,8 +234,8 @@ def main():
     from tracking.tracking_ids import next_experiment_id, owner_initials
     import pipelines.api.api_retrieval as retrieval
 
-    load_dotenv(ROOT / ".env.b", override=False)  # 키는 환경 변수로만 읽고 결과에 남기지 않습니다.
-    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/b")
+    load_dotenv(ROOT / ".env.api", override=False)  # 키는 환경 변수로만 읽고 결과에 남기지 않습니다.
+    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/api")
     index, chunks, config = load_index(args.index_dir)
     client = EvalClient(args.cache_file, args.allow_api)
     print(f"실험 ID: {experiment_id} / 설정 {len(args.settings)}개 / 질문 {len(cases)}건")

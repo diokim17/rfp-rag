@@ -114,8 +114,8 @@ Answer = {
 | `parse_documents` | `(raw_dir, output_dir, limit=None)` | Document 목록 및 documents/errors JSON 저장 |
 | `chunk_documents` | `(documents, chunk_size=1000, chunk_overlap=150)` | Chunk 목록 |
 | `embed_texts` | `(texts, client, model)` | 입력 순서와 같은 정규화된 float32 벡터 |
-| `build_index` (A) | `(documents, client, index_dir="indexes/a", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150, documents_sha256=None)` | config dict 및 인덱스 파일 저장 |
-| `load_index` (A) | `(index_dir="indexes/a")` | `(index, chunks, config)` 튜플 |
+| `build_index` (A) | `(documents, client, index_dir="indexes/server", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150, documents_sha256=None)` | config dict 및 인덱스 파일 저장 |
+| `load_index` (A) | `(index_dir="indexes/server")` | `(index, chunks, config)` 튜플 |
 | `retrieve` | `(question, client, index, chunks, config, top_k=5, filters=None)` | Hit 목록 |
 | `generate_answer` | `(question, hits, client, model="gpt-5-mini")` | Answer dict |
 | `evaluate` | `(cases, answer_fn)` | `{"summary": {...}, "records": [...]}` |

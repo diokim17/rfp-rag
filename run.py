@@ -4,7 +4,7 @@ A(로컬 모델, transformers 5.1)와 B(OpenAI API, transformers 4.57)는 패키
 함께 돌 수 없으므로, 고른 시나리오의 가상환경 파이썬으로 pipelines/server/server_run.py·pipelines/api/api_run.py를 별도 프로세스로 실행합니다.
 터미널에서는 항상 묻고, RFP_SCENARIO(A·B·AB, 없으면 B)는 Enter만 눌렀을 때의 기본값입니다.
 입력을 받을 수 없는 환경(배치 실행 등)에서는 묻지 않고 그 기본값으로 실행합니다.
-가상환경은 .venv-a(A), .venv-b(B)를 사용하며 B는 기존 rag-b·.venv도 탐색합니다. RFP_PYTHON_A·RFP_PYTHON_B로 바꿀 수 있습니다.
+가상환경은 .venv-server(A), .venv-api(B)를 사용하며 B는 기존 rag-b·.venv도 탐색합니다. RFP_PYTHON_SERVER·RFP_PYTHON_API로 바꿀 수 있습니다.
 """
 import json
 import os
@@ -14,9 +14,9 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent
-CHOICES = {"1": "A", "2": "B", "3": "AB", "A": "A", "B": "B", "AB": "AB", "A+B": "AB"}
+CHOICES = {"1": "A", "2": "B", "3": "AB", "A": "A", "B": "B", "SERVER": "A", "API": "B", "BOTH": "AB", "SERVER+API": "AB", "AB": "AB", "A+B": "AB"}
 MODULES = {"A": "pipelines.server.server_run", "B": "pipelines.api.api_run"}
-VENVS = {"A": (".venv-a",), "B": (".venv-b", "rag-b", ".venv")}
+VENVS = {"A": (".venv-server", ".venv-a"), "B": (".venv-api", ".venv-b", "rag-b", ".venv")}
 SUMMARY_ROWS = (("답변 정확도", "answer_accuracy"), ("내용 정확도", "answer_content_accuracy"),
                 ("거절 정확도", "refusal_accuracy"), ("오거절률", "false_refusal_rate"),
                 ("Recall@k", "recall_at_k"), ("MRR@k", "mrr_at_k"),
@@ -24,18 +24,20 @@ SUMMARY_ROWS = (("답변 정확도", "answer_accuracy"), ("내용 정확도", "a
 
 
 def choose_scenario():
-    value = default = os.getenv("RFP_SCENARIO", "").strip().upper() or "B"
+    value = default = os.getenv("RFP_SCENARIO", "").strip().upper() or "API"
     if sys.stdin.isatty():
-        print("실행할 시나리오를 선택하세요\n  1) A    서버에서 모델 직접 실행\n  2) B    외부 API(OpenAI)\n  3) A+B  A와 B를 차례로 실행")
+        print("실행할 시나리오를 선택하세요\n  1) server    서버에서 모델 직접 실행\n  2) api       외부 API(OpenAI)\n  3) server+api  서버 모델과 API를 차례로 실행")
         value = input(f"> (Enter: {default}) ").strip().upper() or default
     if value not in CHOICES:
-        raise SystemExit("A, B, AB(또는 1, 2, 3) 중에서 고르세요.")
+        raise SystemExit("server, api, server+api(또는 1, 2, 3) 중에서 고르세요.")
     return CHOICES[value]
 
 
 def python_for(scenario):
-    if os.getenv(f"RFP_PYTHON_{scenario}"):
-        return os.environ[f"RFP_PYTHON_{scenario}"]
+    label = "SERVER" if scenario == "A" else "API"
+    configured = os.getenv(f"RFP_PYTHON_{label}") or os.getenv(f"RFP_PYTHON_{scenario}")
+    if configured:
+        return configured
     for venv in VENVS[scenario]:
         for name in ("bin/python", "Scripts/python.exe"):
             if (ROOT / venv / name).is_file():
@@ -74,11 +76,11 @@ def print_summary(saved):
             summaries[scenario] = result["summary"]
     if len(summaries) < 2:
         return
-    print("\n| 지표 | A | B |\n| --- | ---: | ---: |")
+    print("\n| 지표 | server | api |\n| --- | ---: | ---: |")
     for label, key in SUMMARY_ROWS:
         cells = [f"{summaries[s][key]:.3f}" if isinstance(summaries[s].get(key), (int, float)) else "-" for s in ("A", "B")]
         print(f"| {label} | {cells[0]} | {cells[1]} |")
-    print(f"\nA 결과: {saved['A']}\nB 결과: {saved['B']}")
+    print(f"\nserver 결과: {saved['A']}\napi 결과: {saved['B']}")
 
 
 def main():

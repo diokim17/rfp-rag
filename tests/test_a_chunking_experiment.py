@@ -39,8 +39,8 @@ class AChunkingContractTests(unittest.TestCase):
     def test_public_signatures_remain_unchanged(self):
         expected={server_embedding.chunk_documents:'(documents, chunk_size=1000, chunk_overlap=150)',
                   server_embedding.embed_texts:'(texts, client, model)',
-                  server_embedding.build_index:"(documents, client, index_dir='indexes/a', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
-                  server_embedding.load_index:"(index_dir='indexes/a')"}
+                  server_embedding.build_index:"(documents, client, index_dir='indexes/server', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
+                  server_embedding.load_index:"(index_dir='indexes/server')"}
         for fn,signature in expected.items(): self.assertEqual(str(inspect.signature(fn)),signature)
 
     def test_four_variants_coordinates_tables_json_and_full_connection(self):

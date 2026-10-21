@@ -7,8 +7,8 @@
 
 저장된 rerank_grid 결과로 지표를 다시 계산해 저장할 수도 있습니다 (API·모델 호출 없음):
 
-  python experiments/retrieval_metrics_yjk.py                       # 가장 최근 results/a/rerank_grid_*.json
-  python experiments/retrieval_metrics_yjk.py --result results/a/rerank_grid_20261006T043614Z.json
+  python experiments/retrieval_metrics_yjk.py                       # 가장 최근 results/server/rerank_grid_*.json
+  python experiments/retrieval_metrics_yjk.py --result results/server/rerank_grid_20261006T043614Z.json
 """
 
 import argparse
@@ -98,11 +98,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--result", type=Path, help="rerank_grid_*.json (생략: 가장 최근 파일)")
     parser.add_argument("--eval-file", type=Path, help="정답이 있는 평가 파일 (생략: data/<결과의 eval_file>)")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/a")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/a/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/server")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/server/reports")
     args = parser.parse_args()
 
-    path = args.result or max((ROOT / "results/a").glob("rerank_grid_*.json"), default=None)
+    path = args.result or max((ROOT / "results/server").glob("rerank_grid_*.json"), default=None)
     if path is None or not path.is_file():
         parser.error("결과 파일이 없습니다. 먼저 experiments/rerank_grid_yjk.py를 실행하세요.")
     result = read_json(path)

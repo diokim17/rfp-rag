@@ -124,9 +124,9 @@ def main():
     args=parser.parse_args()
     if args.repeat<1:parser.error('repeat must be positive')
     load_dotenv(ROOT/'.env',override=False)
-    load_dotenv(ROOT/'.env.a',override=False)
+    load_dotenv(ROOT/'.env.server',override=False)
     os.environ.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',HF_HUB_DISABLE_PROGRESS_BARS='1')
-    if os.getenv('A_RERANK_MODEL')!='bge-reranker-v2-m3':
+    if os.getenv('SERVER_RERANK_MODEL')!='bge-reranker-v2-m3':
         raise ValueError('Expected local bge-reranker-v2-m3')
     owner=base.owner_initials(os.getenv('EXPERIMENT_OWNER',''))
     sources=[read_source(*s) for s in SOURCES]
@@ -144,7 +144,7 @@ def main():
     base.wait_for_gpu(torch,'a-default',0)
     implementation=base.code_hashes()
     implementation[str(Path(__file__).relative_to(ROOT))]=base.text_file_hash(Path(__file__))
-    experiment_id=base.next_experiment_id(owner,ROOT/'.experiment-state/a')
+    experiment_id=base.next_experiment_id(owner,ROOT/'.experiment-state/server')
     paths={k:ROOT/p/'a-evidence-pipeline'/experiment_id for k,p in
            [('processed','data/processed'),('results','results')]}
     for path in paths.values():path.mkdir(parents=True,exist_ok=False)
@@ -162,7 +162,7 @@ def main():
     conditions=[]
     print(f'{experiment_id}: validated three existing indexes; {len(cases)} cases',flush=True)
     with trace.run('a-evidence-pipeline'):
-        client=ScenarioAClient({'A_EMBEDDING_MODEL':base.MODEL_NAME,'A_GENERATION_MODEL':'unused'},
+        client=ScenarioAClient({'SERVER_EMBEDDING_MODEL':base.MODEL_NAME,'SERVER_GENERATION_MODEL':'unused'},
                                base.MODEL_ROOT,base.MODEL_ROOT,need_generation=False)
         # 각 인덱스의 BM25/리랭커 워밍업. 평가 기록과 분리.
         for source in sources:
@@ -232,7 +232,7 @@ def main():
                  f'리랭커 토큰 재계산: `{json.dumps(r["rerank_stats"])}`','']
     rows += ['## 고정 옵션·재현 정보','','```json',json.dumps(dict(options=output['options'],experiment=experiment,
              code_hashes=implementation,source_results=[s['source_result'] for s in sources]),indent=2),'```',
-             '', '```bash','.venv-a/bin/python experiments/a_evidence_pipeline_chy.py --repeat 3','```',
+             '', '```bash','.venv-server/bin/python experiments/a_evidence_pipeline_chy.py --repeat 3','```',
              '', '리랭커 토큰은 동일 tokenizer 설정(only_second, 최대 1024)으로 측정 구간 밖에서 다시 계산한 padding 제외 입력 토큰이며 API 과금량이 아님.',
              '기존 추적·ID 생성·공개 계약을 유지. 다른 담당 모듈은 수정하지 않음. 독립 평가셋·답변 생성은 미검증.','']
     report=ROOT/'results/reports'/f'a_evidence_pipeline_{experiment_id}.md'

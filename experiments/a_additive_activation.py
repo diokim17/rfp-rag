@@ -33,14 +33,14 @@ def save(path, value):
 
 
 def main():
-    for path in (ROOT/'indexes/a', ROOT/'data/processed/a'):
+    for path in (ROOT/'indexes/server', ROOT/'data/processed/server'):
         if path.exists() or path.is_symlink():
             raise ValueError(f'Default path already exists; refusing to overwrite: {path}')
     load_dotenv(ROOT/'.env', override=False)
-    settings = read_scenario_settings(ROOT/'.env.a')
+    settings = read_scenario_settings(ROOT/'.env.server')
     if emb._chunking_strategy() != 'overview_additive' or emb._embedding_context() != 'none':
         raise ValueError('Personal environment overrides the verified default strategy/context')
-    if settings['A_EMBEDDING_MODEL'] != 'default_model':
+    if settings['SERVER_EMBEDDING_MODEL'] != 'default_model':
         raise ValueError('Personal embedding model differs from verified model')
     if retrieval.retrieval_options() != retrieval.retrieval_options(**OPTIONS):
         raise ValueError('Personal default retrieval options differ from verified settings')
@@ -67,7 +67,7 @@ def main():
         if text_file_hash(prep/'inputs'/name) != baseline['experiment'][key]:
             raise ValueError('Input snapshot changed')
     owner = owner_initials(os.getenv('EXPERIMENT_OWNER',''))
-    eid = next_experiment_id(owner, ROOT/'.experiment-state/a')
+    eid = next_experiment_id(owner, ROOT/'.experiment-state/server')
     result_dir = ROOT/'results/a-additive-activation'/eid
     processed = ROOT/'data/processed/a-additive-deploy'/eid
     index_dir = ROOT/'indexes/a-additive-deploy'/eid
@@ -132,7 +132,7 @@ def main():
     output['usage']=trace.usage
     output['trace_id']=trace.trace_id
     # Both destinations are absent, so no active readers can observe a mixed old/new pair.
-    for target,link in ((processed,ROOT/'data/processed/a'),(index_dir,ROOT/'indexes/a')):
+    for target,link in ((processed,ROOT/'data/processed/server'),(index_dir,ROOT/'indexes/server')):
         link.symlink_to(os.path.relpath(target,link.parent),target_is_directory=True)
     output['activated']=True
     save(result_dir/'evaluation.json',output)

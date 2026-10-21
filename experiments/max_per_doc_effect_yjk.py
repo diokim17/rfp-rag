@@ -1,10 +1,10 @@
 """김연주: 문서당 청크 상한(max_per_doc)의 효과를 검색 단계에서만 비교하는 개인 실험 도구 (생성 API 호출 없음).
 
-  python experiments/max_per_doc_effect_yjk.py --eval-file data/eval_retrieval_yjk.json --index-dir indexes/b
+  python experiments/max_per_doc_effect_yjk.py --eval-file data/eval_retrieval_yjk.json --index-dir indexes/api
 
 상한(없음·2·3)과 리랭킹(none·lexical 후보 50·lexical 후보 100)의 모든 조합을 같은 질문으로 비교합니다.
 문서 단위 Recall·MRR로는 보이지 않는 차이를 보려고 top-k 구성 지표(고유 문서 수, 정답 외 청크 비율 등)를 함께 계산합니다.
-질문 임베딩은 results/b/cache에 저장하며, 캐시에 없는 질문이 있으면 --allow-api를 주기 전에는 API를 호출하지 않고 멈춥니다.
+질문 임베딩은 results/api/cache에 저장하며, 캐시에 없는 질문이 있으면 --allow-api를 주기 전에는 API를 호출하지 않고 멈춥니다.
 """
 
 import argparse
@@ -25,7 +25,7 @@ from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 CAPS = (None, 2, 3)
 RERANKS = (("none", None), ("lexical", 50), ("lexical", 100))
 # 이전 실험(retrieval_eval_yjk.py)이 만든 캐시. 있으면 처음 한 번 가져와 API 재호출을 피합니다.
-SEED_CACHE = ROOT / "results/b/retrieval-rerank-yjk/query_embedding_cache.json"
+SEED_CACHE = ROOT / "results/api/retrieval-rerank-yjk/query_embedding_cache.json"
 
 
 def question_id(model, question):
@@ -127,9 +127,9 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
-    parser.add_argument("--cache-dir", type=Path, default=ROOT / "results/b/cache")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/api")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/api")
+    parser.add_argument("--cache-dir", type=Path, default=ROOT / "results/api/cache")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문의 임베딩 API 호출을 허용")
     run(parser.parse_args())

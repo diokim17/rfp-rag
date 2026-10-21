@@ -3,7 +3,7 @@
   python experiments/diagnose_misses_yjk.py --eval-file data/eval_retrieval_yjk.json
 
 기준 설정은 lexical 리랭킹 후보 100, top-k 5입니다 (--rerank, --candidates, --top-k로 변경).
-질문 임베딩은 results/b/cache/query_embeddings.json 캐시만 쓰며, 캐시에 없으면 멈춥니다.
+질문 임베딩은 results/api/cache/query_embeddings.json 캐시만 쓰며, 캐시에 없으면 멈춥니다.
 
 단계 구분: 필터를 적용한 코사인 순위에서 정답 문서의 첫 청크 순위가
   후보 수 이내 → 리랭킹 문제 (후보에는 있었으나 리랭킹 뒤 top-k 밖으로 밀림)
@@ -114,13 +114,13 @@ def classify(case, gold_doc, top_doc, chunks_by_doc, grams_by_doc, bigrams_fn):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/parsing-v2-yjk")
-    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/b/cache/query_embeddings.json")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/api/parsing-v2-yjk")
+    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/api/cache/query_embeddings.json")
     parser.add_argument("--rerank", default="lexical")
     parser.add_argument("--candidates", type=int, default=100)
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/api")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/api/reports")
     args = parser.parse_args()
 
     from pipelines.api.api_embedding import embed_texts, load_index

@@ -138,7 +138,7 @@ def report(result, path):
 def run(args):
     from dotenv import load_dotenv
     import torch
-    load_dotenv(ROOT / ".env.a", override=False)
+    load_dotenv(ROOT / ".env.server", override=False)
     owner = owner_initials(os.getenv("EXPERIMENT_OWNER", ""))
     if Path(args.model_folder).name != args.model_folder or args.model_folder in {".", ".."}:
         raise ValueError("model-folder must be a single directory name")
@@ -147,9 +147,9 @@ def run(args):
     documents, cases = read_json(args.documents), read_json(args.eval_file)
     validate_inputs(documents, cases)
     manifest = verify_model(MODEL_ROOT / args.model_folder)
-    experiment_id = next_experiment_id(owner, ROOT / ".experiment-state/a")
+    experiment_id = next_experiment_id(owner, ROOT / ".experiment-state/server")
     paths = {name: ROOT / base / "a-embedding" / experiment_id for name, base in
-             (("processed", "data/processed/a"), ("index", "indexes/a"), ("results", "results/a"))}
+             (("processed", "data/processed/server"), ("index", "indexes/server"), ("results", "results/server"))}
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=False)
     # Snapshot bytes, then read the snapshot used for both hashing and execution.
@@ -164,8 +164,8 @@ def run(args):
                   "evaluation_sha256": text_file_hash(paths["processed"] / "eval.json"),
                   "module_sha256": text_file_hash(ROOT / "pipelines/server/server_local_embedding.py"),
                   "runner_sha256": text_file_hash(Path(__file__))}
-    settings = {"scenario": "A", "A_EMBEDDING_MODEL": args.model_folder,
-                "A_GENERATION_MODEL": "unused-retrieval-only"}
+    settings = {"scenario": "A", "SERVER_EMBEDDING_MODEL": args.model_folder,
+                "SERVER_GENERATION_MODEL": "unused-retrieval-only"}
     os.environ.update(RFP_CHUNKING_STRATEGY="fixed", RFP_EMBEDDING_CONTEXT="none",
                       RETRIEVAL_REWRITE="off")
     trace = Trace.from_env(experiment)
@@ -212,7 +212,7 @@ def run(args):
                             "final_batch_size": client.embedding.batch_size},
                   "token_usage": trace.usage, "records": records}
     write_json(paths["results"] / "evaluation.json", result)
-    report_path = ROOT / "results/a/reports" / f"a_embedding_{experiment_id}.md"
+    report_path = ROOT / "results/server/reports" / f"a_embedding_{experiment_id}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report(result, report_path)
     print(json.dumps(summary))
@@ -229,7 +229,7 @@ def main():
     prep.add_argument("--revision", default="main", help="Resolved to an immutable commit before download")
     evaluate = sub.add_parser("run")
     evaluate.add_argument("--model-folder", required=True)
-    evaluate.add_argument("--documents", type=Path, default=ROOT / "data/processed/a/documents.json")
+    evaluate.add_argument("--documents", type=Path, default=ROOT / "data/processed/server/documents.json")
     evaluate.add_argument("--eval-file", type=Path, default=ROOT / "data/eval_v2.json")
     evaluate.add_argument("--repeat", type=int, default=3)
     args = parser.parse_args()

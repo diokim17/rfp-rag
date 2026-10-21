@@ -223,10 +223,10 @@ def wait_for_gpu(torch, profile, wait_seconds=600):
 
 def run_condition(args):
     from dotenv import load_dotenv
-    load_dotenv(ROOT/'.env.a',override=False)
+    load_dotenv(ROOT/'.env.server',override=False)
     owner=owner_initials(os.getenv('EXPERIMENT_OWNER',''))
-    if os.getenv('A_EMBEDDING_MODEL') != MODEL_NAME:
-        raise ValueError('This experiment pins A_EMBEDDING_MODEL=default_model')
+    if os.getenv('SERVER_EMBEDDING_MODEL') != MODEL_NAME:
+        raise ValueError('This experiment pins SERVER_EMBEDDING_MODEL=default_model')
     if args.repeat < 1:
         raise ValueError('repeat must be positive')
     source_docs=args.processed_dir/'documents.json' if args.command=='evaluate' else args.documents
@@ -261,8 +261,8 @@ def run_condition(args):
     profile=args.profile
     rerank_files={}
     if profile=='a-default':
-        if os.getenv('A_RERANK_MODEL')!='bge-reranker-v2-m3':
-            raise ValueError('This profile pins A_RERANK_MODEL=bge-reranker-v2-m3')
+        if os.getenv('SERVER_RERANK_MODEL')!='bge-reranker-v2-m3':
+            raise ValueError('This profile pins SERVER_RERANK_MODEL=bge-reranker-v2-m3')
         p=RERANK_ROOT/'bge-reranker-v2-m3'
         rerank_files={str(f.relative_to(p)):sha256(f) for f in sorted(p.rglob('*'))
                       if f.is_file() and '.cache' not in f.relative_to(p).parts}
@@ -271,7 +271,7 @@ def run_condition(args):
     import torch
     torch.set_num_threads(4)
     wait_for_gpu(torch,profile,args.gpu_wait_seconds)
-    experiment_id=next_experiment_id(owner,ROOT/'.experiment-state/a')
+    experiment_id=next_experiment_id(owner,ROOT/'.experiment-state/server')
     paths={name:ROOT/base/'a-chunking'/experiment_id for name,base in
            (('processed','data/processed'),('index','indexes'),('results','results'))}
     for name in ('processed','results'):
@@ -296,7 +296,7 @@ def run_condition(args):
     try:
         with trace.run('a-chunking-comparison'):
             started=time.perf_counter()
-            client=ScenarioAClient({'A_EMBEDDING_MODEL':MODEL_NAME,'A_GENERATION_MODEL':'unused'},
+            client=ScenarioAClient({'SERVER_EMBEDDING_MODEL':MODEL_NAME,'SERVER_GENERATION_MODEL':'unused'},
                                    MODEL_ROOT,MODEL_ROOT,need_generation=False)
             timing={'model_load_seconds':time.perf_counter()-started}
             print(f'{experiment_id}: model loaded',flush=True)
@@ -378,7 +378,7 @@ def run_condition(args):
 def compare(args):
     from dotenv import load_dotenv
     import tempfile
-    load_dotenv(ROOT/'.env.a',override=False)
+    load_dotenv(ROOT/'.env.server',override=False)
     implementation=code_hashes()
     expected=[text_file_hash(args.documents),text_file_hash(args.eval_file),
               file_hash(MODEL_ROOT/MODEL_NAME/'local_manifest.json'),

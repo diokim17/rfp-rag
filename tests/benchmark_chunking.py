@@ -98,13 +98,13 @@ def measure(documents, chunks, size, overlap):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-processed-dir", type=Path, default=ROOT / "data/processed/b")
+    parser.add_argument("--source-processed-dir", type=Path, default=ROOT / "data/processed/api")
     parser.add_argument("--baseline-ref", required=True, help="기존 fixed/boundary 동작을 검증할 로컬 Git 커밋")
     args = parser.parse_args()
-    original_files = [args.source_processed_dir / "documents.json"] + sorted((ROOT / "indexes/b").glob("*"))
+    original_files = [args.source_processed_dir / "documents.json"] + sorted((ROOT / "indexes/api").glob("*"))
     originals = {p: digest(p) for p in original_files if p.is_file()}
     label = "chy-project-context-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    processed, output = ROOT / "data/processed/b" / label, ROOT / "results/b" / label
+    processed, output = ROOT / "data/processed/api" / label, ROOT / "results/api" / label
     processed.mkdir(parents=True, exist_ok=False)
     output.mkdir(parents=True, exist_ok=False)
     shutil.copyfile(args.source_processed_dir / "documents.json", processed / "documents.json")
@@ -123,7 +123,7 @@ def main():
               "documents_sha256": digest(processed / "documents.json"),
               "embedding_py_sha256": digest(ROOT / "pipelines/api/api_embedding.py"),
               "benchmark_sha256": digest(Path(__file__)), "api_calls": 0, "strategies": {}}
-    result["baseline_index_hashes"] = {p.name: digest(p) for p in (ROOT / "indexes/b").glob("*") if p.is_file()}
+    result["baseline_index_hashes"] = {p.name: digest(p) for p in (ROOT / "indexes/api").glob("*") if p.is_file()}
     result["evaluation_hashes"] = {p.name: digest(p) for p in (ROOT / "data").glob("eval*_v0.json")}
     samples = {s: [] for s in ("fixed", "boundary", "structured")}
     for strategy in samples:

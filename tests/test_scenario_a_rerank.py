@@ -81,7 +81,7 @@ class ScenarioARerankTests(unittest.TestCase):
             command="all", raw_dir=root / "raw", processed_dir=root / "processed", index_dir=root / "index",
             results_dir=root / "results", reports_dir=root / "reports", limit=2, owner="test", chunk_size=1000,
             chunk_overlap=150, top_k=1, question=QUESTION, eval_file=None,
-            scenario_settings={"scenario": "A", "A_GENERATION_MODEL": "gen", "A_EMBEDDING_MODEL": "emb"})
+            scenario_settings={"scenario": "A", "SERVER_GENERATION_MODEL": "gen", "SERVER_EMBEDDING_MODEL": "emb"})
 
     def run_a(self, env, loads):
         """RFP_SCENARIO=A와 env만 둔 채(나머지 RETRIEVAL_*는 기본값) all을 실행하고 결과 JSON을 돌려줍니다."""
@@ -93,9 +93,9 @@ class ScenarioARerankTests(unittest.TestCase):
                 patch.dict("sys.modules", {**self.modules, **fake_rerank_libraries(loads)}), \
                 patch.dict(retrieval._cross_encoders, clear=True), \
                 patch.object(retrieval, "_cross_encoder_available", return_value=True), \
-                patch.object(retrieval, "A_RERANK_MODEL_DIR", self.rerank), \
-                patch.object(run, "A_GENERATION_MODEL_DIR", self.gen), \
-                patch.object(run, "A_EMBEDDING_MODEL_DIR", self.emb), \
+                patch.object(retrieval, "SERVER_RERANK_MODEL_DIR", self.rerank), \
+                patch.object(run, "SERVER_GENERATION_MODEL_DIR", self.gen), \
+                patch.object(run, "SERVER_EMBEDDING_MODEL_DIR", self.emb), \
                 patch("pipelines.server.server_run.parse_documents", side_effect=parse), \
                 patch("pipelines.server.server_run.OpenAI") as openai, redirect_stdout(io.StringIO()):
             run.run_pipeline(self.args, run.argparse.ArgumentParser(), {}, {"experiment_id": "test-0001"},
@@ -105,7 +105,7 @@ class ScenarioARerankTests(unittest.TestCase):
 
     def test_default_cross_encoder_loads_shared_folder_and_reorders(self):
         loads = []
-        result = self.run_a({"A_RERANK_MODEL": "reranker"}, loads)
+        result = self.run_a({"SERVER_RERANK_MODEL": "reranker"}, loads)
         self.assertEqual([source["doc_id"] for source in result["sources"]], ["second"])
         self.assertIn("rerank_score", result["sources"][0])
         self.assertEqual(loads, [str(self.rerank / "reranker")])
@@ -122,11 +122,11 @@ class ScenarioARerankTests(unittest.TestCase):
             result = self.run_a({}, loads)
         self.assertEqual(loads, [])
         self.assertEqual(len(result["sources"]), 1)
-        self.assertTrue(any("A_RERANK_MODEL" in str(item.message) for item in caught))
+        self.assertTrue(any("SERVER_RERANK_MODEL" in str(item.message) for item in caught))
 
     def test_missing_rerank_folder_stops_before_generation(self):
         with self.assertRaisesRegex(ValueError, "리랭커 모델 폴더가 없습니다"):
-            self.run_a({"A_RERANK_MODEL": "missing"}, [])
+            self.run_a({"SERVER_RERANK_MODEL": "missing"}, [])
         self.generation.generate_answer.assert_not_called()
 
 

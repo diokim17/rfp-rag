@@ -30,8 +30,8 @@ from pipelines.server.server_retrieval import retrieval_signals, retrieve
 ROOT = Path(__file__).resolve().parents[2]
 
 # 팀 공용 모델 기본 경로. A 모델 설정값은 이 경로 아래의 하위 폴더 이름입니다.
-A_GENERATION_MODEL_DIR = ROOT / "models/generate"
-A_EMBEDDING_MODEL_DIR = ROOT / "models/embedding"
+SERVER_GENERATION_MODEL_DIR = ROOT / "models/generate"
+SERVER_EMBEDDING_MODEL_DIR = ROOT / "models/embedding"
 
 # VS Code에서 인자 없이 실행할 때 사용할 설정입니다.
 DEFAULT_COMMAND = "auto"  # 인덱스가 있으면 ask, 없으면 all. 재생성하려면 "all"
@@ -40,11 +40,11 @@ DEFAULT_QUESTION = "한영대학교 교육환경 구축 사업의 주요 요구�
 
 
 def read_scenario_settings(env_path):
-    """설정만 읽고 검증합니다. 기존 프로세스 환경 변수는 .env.a보다 우선합니다."""
+    """설정만 읽고 검증합니다. 기존 프로세스 환경 변수는 .env.server보다 우선합니다."""
     load_dotenv(env_path, override=False)
     scenario = "A"
     settings = {"scenario": scenario}
-    for key in ("A_GENERATION_MODEL", "A_EMBEDDING_MODEL"):
+    for key in ("SERVER_GENERATION_MODEL", "SERVER_EMBEDDING_MODEL"):
         value = os.getenv(key, "").strip()
         if scenario == "A":
             if not value:
@@ -89,7 +89,7 @@ def main():
     parser.add_argument("command", choices=["parse", "build", "ask", "all", "evaluate", "check-config"])
     parser.add_argument("--question", help="ask/all 실행 질문")
     parser.add_argument("--owner", help="담당자 영문 이니셜 (선택, 기본: EXPERIMENT_OWNER 또는 user)")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/a/reports")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/server/reports")
     parser.add_argument("--limit", type=int, help="전처리할 CSV 앞쪽 N행 (생략: 전체)")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--max-per-doc", type=int, help="문서당 최대 청크 수 (생략: 제한 없음)")
@@ -101,14 +101,14 @@ def main():
     parser.add_argument("--judge-cache", type=Path, help="판정 결과 재사용 JSONL 경로 (--judge-model 필요)")
     parser.add_argument("--raw-dir", type=Path, default=ROOT / "data/raw")
     parser.add_argument("--processed-dir", type=Path, default=ROOT / "data/processed/common")
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/a")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/a")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/server")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/server")
     argv = sys.argv[1:]
     if not argv:
         command = DEFAULT_COMMAND
         if command == "auto":
             index_files = ("index.faiss", "chunks.json", "config.json")
-            command = "ask" if all((ROOT / "indexes/a" / name).is_file() for name in index_files) else "all"
+            command = "ask" if all((ROOT / "indexes/server" / name).is_file() for name in index_files) else "all"
         argv = [command, "--question", DEFAULT_QUESTION]
         if DEFAULT_LIMIT is not None:
             argv += ["--limit", str(DEFAULT_LIMIT)]
@@ -142,9 +142,9 @@ def main():
             parser.error("--filter는 '발주 기관=기관명' 형태로 입력하세요.")
         filters[key] = item
 
-    # 사용자가 실행할 때만 .env.a를 로드하며 키를 출력하거나 결과에 저장하지 않습니다.
+    # 사용자가 실행할 때만 .env.server를 로드하며 키를 출력하거나 결과에 저장하지 않습니다.
     try:
-        settings = read_scenario_settings(ROOT / ".env.a")
+        settings = read_scenario_settings(ROOT / ".env.server")
     except ValueError as exc:
         parser.error(str(exc))
     if args.command == "check-config":
@@ -153,7 +153,7 @@ def main():
     args.scenario_settings = settings
     try:
         owner = owner_initials(args.owner or os.getenv("EXPERIMENT_OWNER", ""))
-        experiment_id = next_experiment_id(owner, ROOT / ".experiment-state/a")
+        experiment_id = next_experiment_id(owner, ROOT / ".experiment-state/server")
     except (ValueError, OSError, sqlite3.Error) as exc:
         parser.error(str(exc))
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -198,13 +198,13 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
     if os.getenv("RETRIEVAL_REWRITE", "off").strip().lower() not in {"", "off"}:
         parser.error("시나리오 A에서는 OpenAI 질문 재작성을 끄세요: RETRIEVAL_REWRITE=off")
     try:
-        client = ScenarioAClient(settings, model_directory("generate", A_GENERATION_MODEL_DIR),
-                                 model_directory("embedding", A_EMBEDDING_MODEL_DIR),
+        client = ScenarioAClient(settings, model_directory("generate", SERVER_GENERATION_MODEL_DIR),
+                                 model_directory("embedding", SERVER_EMBEDDING_MODEL_DIR),
                                  need_generation=args.command != "build")
     except (ValueError, NotImplementedError) as exc:
         parser.error(str(exc))
-    generation_model = settings["A_GENERATION_MODEL"]
-    embedding_model = settings["A_EMBEDDING_MODEL"]
+    generation_model = settings["SERVER_GENERATION_MODEL"]
+    embedding_model = settings["SERVER_EMBEDDING_MODEL"]
     if args.command in {"build", "all"}:
         # 역직렬화와 해시에 동일한 바이트를 사용해 실제 빌드 입력을 식별합니다.
         documents_bytes = (args.processed_dir / "documents.json").read_bytes()
@@ -253,7 +253,7 @@ def run_pipeline(args, parser, filters, experiment, trace, timestamp):
                 detail = "요청/토큰 사용 한도에 도달했습니다. 한도를 확인하고 잠시 후 재시도하세요."
             parser.exit(1, f"\n답변 생성 실패 ({generation_model}): {detail}\n"
                         "OpenAI 프로젝트의 Limits에서 해당 모델의 사용 한도를 확인하세요.\n"
-                        "다른 사용 가능한 모델로 바꾸려면 .env.a의 OPENAI_GENERATION_MODEL을 설정하세요.\n"
+                        "다른 사용 가능한 모델로 바꾸려면 .env.server의 OPENAI_GENERATION_MODEL을 설정하세요.\n"
                         "인덱스는 저장되어 있으므로 기본 실행 ask로 재시도할 수 있습니다.\n")
         # 검색 결과가 얼마나 확실한지(문서 수·점수). 오답과 겹치는 신호를 찾아 조건 기반 라우팅 기준으로 씁니다.
         result["signals"] = retrieval_signals(hits)
