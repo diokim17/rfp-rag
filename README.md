@@ -147,10 +147,10 @@ rfp-rag/
 
 ### 1. 저장소 준비
 
-새 환경에서는 아래 미리보기 브랜치를 받습니다. 아직 `main`에는 반영하지 않은 실행용 구성입니다. 아래 명령은 Linux Bash 기준입니다.
+아래 명령은 Linux Bash 기준입니다.
 
 ```bash
-git clone --branch release/main-preview-dy https://github.com/diokim17/rfp-rag.git
+git clone --branch main https://github.com/diokim17/rfp-rag.git
 cd rfp-rag
 python3.12 --version
 nvidia-smi
