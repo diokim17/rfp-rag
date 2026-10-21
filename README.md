@@ -90,7 +90,6 @@ rfp-rag/
 ├── models/                        # 생성·임베딩·리랭커 모델
 ├── indexes/server/ , indexes/api/        # 실행 방식별 인덱스
 ├── results/server/ , results/api/        # 실행 결과·reports/
-├── tests/                         # 서버·API·공통 기능 테스트
 ├── docs/LANGFUSE_GUIDE.md         # 선택적 추적 설정 안내
 ├── requirements-server.txt             # 서버 모델 환경 고정 버전
 ├── requirements-api.txt             # API 환경 고정 버전
