@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 import numpy as np
-import a_embedding as emb
+import pipelines.server.server_embedding as emb
 from test_a_overview_chunking import document
 from test_a_chunking_experiment import client
 from experiments.a_overview_additive_chy import validate_additive, build_reusing_fixed, chunk_key

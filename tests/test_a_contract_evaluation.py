@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # discover 외 실행에서도 테스트 보조 모듈을 찾음
 
-from a_evaluation import amounts, citations, evaluate, is_refusal, make_llm_judge, periods
-from a_observability import Trace, model_call
+from evaluation.evaluation_metrics import amounts, citations, evaluate, is_refusal, make_llm_judge, periods
+from observability.observability_trace import Trace, model_call
 from test_a_contract_observability import FakeLangfuse
 
 

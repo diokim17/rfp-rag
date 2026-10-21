@@ -9,10 +9,10 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from a_embedding import build_index, load_index
-import a_query_rewrite as query_rewrite
-from a_query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, RewriteCache, rewrite_question
-from a_retrieval import retrieve
+from pipelines.server.server_embedding import build_index, load_index
+import retrieval.retrieval_query_rewrite as query_rewrite
+from retrieval.retrieval_query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, RewriteCache, rewrite_question
+from pipelines.server.server_retrieval import retrieve
 from test_a_contract_retrieval_rerank import FakeClient, document
 from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 

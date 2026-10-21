@@ -13,12 +13,12 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from a_embedding import _embedding_input, build_index, chunk_documents, load_index
-from a_evaluation import evaluate
-from a_generation import generate_answer
-from a_observability import Trace
-from a_parsing import write_json
-from a_retrieval import retrieve
+from pipelines.server.server_embedding import _embedding_input, build_index, chunk_documents, load_index
+from evaluation.evaluation_metrics import evaluate
+from pipelines.server.server_generation import generate_answer
+from observability.observability_trace import Trace
+from parsing.parsing_documents import write_json
+from pipelines.server.server_retrieval import retrieve
 from test_embedding import document, response, response_client
 from test_a_contract_observability import FakeLangfuse
 from test_a_contract_pipeline import FakeClient

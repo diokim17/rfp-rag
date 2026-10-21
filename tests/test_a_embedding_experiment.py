@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from experiments.a_embedding_chy import measured_cases, summarize, validate_inputs, report, verify_model, sha256
-from a_parsing import write_json
+from parsing.parsing_documents import write_json
 
 
 class ExperimentTests(unittest.TestCase):

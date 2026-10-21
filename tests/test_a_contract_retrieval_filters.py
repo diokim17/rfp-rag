@@ -6,8 +6,8 @@
 import tempfile
 import unittest
 
-from a_embedding import build_index, load_index
-from a_retrieval import _resolve_filters, retrieve
+from pipelines.server.server_embedding import build_index, load_index
+from pipelines.server.server_retrieval import _resolve_filters, retrieve
 from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 from test_a_contract_retrieval_rerank import FakeClient, document
 

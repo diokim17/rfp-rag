@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from a_embedding import build_index, load_index
-import a_retrieval as retrieval
-from a_retrieval import retrieval_options, retrieve
+from pipelines.server.server_embedding import build_index, load_index
+import pipelines.server.server_retrieval as retrieval
+from pipelines.server.server_retrieval import retrieval_options, retrieve
 from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 from test_a_contract_retrieval_rerank import FakeClient, document
 

@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from retrieval_metrics_yjk import score_case  # noqa: E402
 
@@ -95,7 +95,7 @@ def relative(path):
 
 def plan_rewrite(cases, model, cache_path):
     """API를 부르지 않고 재작성 호출 수와 토큰 한도를 계산합니다."""
-    from b_query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, RewriteCache, cache_key, estimate_input_tokens
+    from retrieval.retrieval_query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, RewriteCache, cache_key, estimate_input_tokens
 
     cache = RewriteCache.open(cache_path)
     questions = sorted({case["question"] for case in cases})
@@ -114,8 +114,8 @@ def plan_rewrite(cases, model, cache_path):
 
 def prefill_rewrites(cases, client, config, model, cache_path):
     """재작성과 재작성 질문 임베딩을 측정 전에 채웁니다. 반환: 호출 기록."""
-    from b_embedding import embed_texts
-    from b_query_rewrite import rewrite_question
+    from pipelines.api.api_embedding import embed_texts
+    from retrieval.retrieval_query_rewrite import rewrite_question
 
     statuses, usage, rewritten = {}, {"input_tokens": 0, "output_tokens": 0}, []
     start = time.perf_counter()
@@ -136,7 +136,7 @@ def prefill_rewrites(cases, client, config, model, cache_path):
 
 
 def run_setting(name, options, cases, client, index, chunks, config, rewrite_cache):
-    from b_retrieval import retrieval_options, retrieve
+    from pipelines.api.api_retrieval import retrieval_options, retrieve
 
     # 검색 기본값이 바뀌어도 설정에 적지 않은 하이브리드·문서당 상한은 꺼진 상태로 비교합니다.
     options = {"hybrid": False, "max_per_doc": "none", **options}
@@ -189,16 +189,16 @@ def report_lines(meta, results, rewrite_info):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/parsing-v2-yjk")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/api/parsing-v2-yjk")
     parser.add_argument("--settings", nargs="+", choices=list(SETTINGS), default=NO_API)
-    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/b/cache/query_embeddings.json")
-    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/b/cache/query_rewrite_gpt-5-mini.json")
+    parser.add_argument("--cache-file", type=Path, default=ROOT / "results/api/cache/query_embeddings.json")
+    parser.add_argument("--rewrite-cache", type=Path, default=ROOT / "results/api/cache/query_rewrite_gpt-5-mini.json")
     parser.add_argument("--rewrite-model", default="gpt-5-mini")
     parser.add_argument("--allow-api", action="store_true", help="재작성·임베딩 API 호출을 허용")
     parser.add_argument("--plan-rewrite", action="store_true", help="API 없이 재작성 예상 호출 수만 계산")
     parser.add_argument("--pilot", type=int, help="앞쪽 N개 질문만 재작성해 실제 토큰 사용량을 확인하고 종료")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/api")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/api/reports")
     args = parser.parse_args()
 
     cases = read_json(args.eval_file)
@@ -209,7 +209,7 @@ def main():
     if args.pilot:
         if not args.allow_api:
             parser.error("--pilot은 재작성 API를 호출합니다. 확인 후 --allow-api를 붙이세요.")
-        from b_query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, rewrite_question
+        from retrieval.retrieval_query_rewrite import MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, rewrite_question
 
         client = EvalClient(args.cache_file, True)
         questions = list(dict.fromkeys(case["question"] for case in cases))[:args.pilot]
@@ -230,12 +230,12 @@ def main():
         SETTINGS[name]["rewrite_model"] = args.rewrite_model
 
     from dotenv import load_dotenv
-    from b_embedding import load_index
-    from b_experiment_ids import next_experiment_id, owner_initials
-    import b_retrieval as retrieval
+    from pipelines.api.api_embedding import load_index
+    from tracking.tracking_ids import next_experiment_id, owner_initials
+    import pipelines.api.api_retrieval as retrieval
 
-    load_dotenv(ROOT / ".env.b", override=False)  # 키는 환경 변수로만 읽고 결과에 남기지 않습니다.
-    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/b")
+    load_dotenv(ROOT / ".env.api", override=False)  # 키는 환경 변수로만 읽고 결과에 남기지 않습니다.
+    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/api")
     index, chunks, config = load_index(args.index_dir)
     client = EvalClient(args.cache_file, args.allow_api)
     print(f"실험 ID: {experiment_id} / 설정 {len(args.settings)}개 / 질문 {len(cases)}건")

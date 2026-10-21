@@ -14,12 +14,12 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from a_embedding import build_index, chunk_documents, embed_texts, load_index
-from a_evaluation import evaluate
-from a_generation import generate_answer
-from a_observability import Trace
-from a_parsing import read_json, write_json
-from a_retrieval import retrieve
+from pipelines.server.server_embedding import build_index, chunk_documents, embed_texts, load_index
+from evaluation.evaluation_metrics import evaluate
+from pipelines.server.server_generation import generate_answer
+from observability.observability_trace import Trace
+from parsing.parsing_documents import read_json, write_json
+from pipelines.server.server_retrieval import retrieve
 from test_a_contract_observability import FakeLangfuse
 from test_a_contract_pipeline import FakeClient
 
@@ -188,8 +188,8 @@ class IndexContractTests(unittest.TestCase):
         expected = {
             chunk_documents: "(documents, chunk_size=1000, chunk_overlap=150)",
             embed_texts: "(texts, client, model)",
-            build_index: "(documents, client, index_dir='indexes/a', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
-            load_index: "(index_dir='indexes/a')",
+            build_index: "(documents, client, index_dir='indexes/server', model='text-embedding-3-small', chunk_size=1000, chunk_overlap=150, documents_sha256=None)",
+            load_index: "(index_dir='indexes/server')",
         }
         for fn, signature in expected.items():
             self.assertEqual(str(inspect.signature(fn)), signature)

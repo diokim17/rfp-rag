@@ -1,2 +1,2 @@
-# 공통 직접 의존성의 기존 참조 호환용. 전체 설치는 requirements-a.txt 또는 requirements-b.txt를 사용합니다.
+# 공통 직접 의존성의 기존 참조 호환용. 전체 설치는 requirements-server.txt 또는 requirements-api.txt를 사용합니다.
 -r docs/environment_archive/requirements.txt

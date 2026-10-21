@@ -72,7 +72,7 @@ VS Code에서 본인 계정으로 서버에 접속하고 본인의 프로젝트 
 
 ## 2. 담당 파일과 수정 범위
 
-흐름: `parsing → embedding → retrieval → generation → evaluation`. 현재 A에서는 `run.py → a_run.py → a_embedding.build_index/chunk_documents`로 구축하고 `load_index → a_retrieval.retrieve → a_generation.generate_answer → a_evaluation.evaluate`로 연결합니다. 직접 a_run.py 실행도 가능합니다.
+흐름: `parsing → embedding → retrieval → generation → evaluation`. 현재 A에서는 `run.py → pipelines/server/server_run.py → pipelines.server.server_embedding.build_index/chunk_documents`로 구축하고 `load_index → pipelines.server.server_retrieval.retrieve → pipelines.server.server_generation.generate_answer → evaluation.evaluation_metrics.evaluate`로 연결합니다. `python -m pipelines.server.server_run`으로 직접 실행할 수도 있습니다.
 
 | 담당 | 주 파일 | 내부에서 실험할 수 있는 내용 | 유지할 연결 지점 |
 | --- | --- | --- | --- |
@@ -83,7 +83,7 @@ VS Code에서 본인 계정으로 서버에 접속하고 본인의 프로젝트 
 | 박단비 / 생성 | `generation.py` | 프롬프트, 근거 사용, 답변 품질 | Answer, sources와 인용 번호 |
 | 김시현 / 평가 | `evaluation.py` | 정답셋, 평가 지표, 비교 보고서 | evaluate 반환 구조, 정답 문서 ID |
 
-현재 코드는 A/B 시나리오별 모듈로 분리되어 있고 시나리오 A와 리랭킹이 구현돼 있습니다. 아래 담당 표의 공통 파일명은 초기 구조이며, 현재 A 담당 파일은 a_ 접두사 모듈입니다. run.py는 시나리오 선택 후 a_run.py 또는 b_run.py로 위임합니다. 담당 파일 외 수정이 필요하면 PR에 이유와 영향을 적고 관련 담당자와 함께 검토합니다. 함수 내부 보조 함수나 선택 옵션을 추가할 수 있지만 기존 호출이 그대로 동작해야 합니다.
+현재 코드는 A/B 시나리오별 모듈로 분리되어 있고 시나리오 A와 리랭킹이 구현돼 있습니다. 아래 담당 표의 공통 파일명은 초기 구조이며, 현재 서버 모델 코드는 pipelines/server/server_ 접두사 모듈, API 코드는 pipelines/api/api_ 접두사 모듈입니다. 공통 기능은 parsing·evaluation·observability·tracking·retrieval·config 패키지에서 관리합니다. run.py는 시나리오 선택 후 pipelines/server/server_run.py 또는 pipelines/api/api_run.py로 위임합니다. 담당 파일 외 수정이 필요하면 PR에 이유와 영향을 적고 관련 담당자와 함께 검토합니다. 함수 내부 보조 함수나 선택 옵션을 추가할 수 있지만 기존 호출이 그대로 동작해야 합니다.
 
 ## 3. 반드시 유지할 입출력 계약
 
@@ -114,8 +114,8 @@ Answer = {
 | `parse_documents` | `(raw_dir, output_dir, limit=None)` | Document 목록 및 documents/errors JSON 저장 |
 | `chunk_documents` | `(documents, chunk_size=1000, chunk_overlap=150)` | Chunk 목록 |
 | `embed_texts` | `(texts, client, model)` | 입력 순서와 같은 정규화된 float32 벡터 |
-| `build_index` (A) | `(documents, client, index_dir="indexes/a", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150, documents_sha256=None)` | config dict 및 인덱스 파일 저장 |
-| `load_index` (A) | `(index_dir="indexes/a")` | `(index, chunks, config)` 튜플 |
+| `build_index` (A) | `(documents, client, index_dir="indexes/server", model="text-embedding-3-small", chunk_size=1000, chunk_overlap=150, documents_sha256=None)` | config dict 및 인덱스 파일 저장 |
+| `load_index` (A) | `(index_dir="indexes/server")` | `(index, chunks, config)` 튜플 |
 | `retrieve` | `(question, client, index, chunks, config, top_k=5, filters=None)` | Hit 목록 |
 | `generate_answer` | `(question, hits, client, model="gpt-5-mini")` | Answer dict |
 | `evaluate` | `(cases, answer_fn)` | `{"summary": {...}, "records": [...]}` |

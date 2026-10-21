@@ -1,11 +1,11 @@
 """김연주: 평가셋(eval_v2·eval_v4)으로 검색 고도화 후보를 비교 (답변 생성 없음).
 
-  .venv-a/bin/python experiments/eval_v2_yjk.py --eval-file data/eval_v4.json --index-dir indexes/a --settings default
-  rag-b/bin/python experiments/eval_v2_yjk.py --scenario B --eval-file data/eval_v2.json --index-dir indexes/b --allow-api
+  .venv-server/bin/python experiments/eval_v2_yjk.py --eval-file data/eval_v4.json --index-dir indexes/server --settings default
+  rag-b/bin/python experiments/eval_v2_yjk.py --scenario B --eval-file data/eval_v2.json --index-dir indexes/api --allow-api
 
---scenario(기본 A)에 따라 a_*.py 또는 b_*.py 검색 코드와 .env.a 또는 .env.b를 씁니다. 실험 번호도 .experiment-state/a|b에서 따로 셉니다.
-A는 질문을 서버의 A 임베딩 모델(A_EMBEDDING_MODEL)로 임베딩합니다(API·질문 캐시 없음, 생성 모델은 안 불러옴).
-인덱스도 같은 A 모델로 만든 것이어야 합니다. 리랭커도 A 공용 폴더(A_RERANK_MODEL)의 모델을 씁니다.
+--scenario(기본 A)에 따라 pipelines/server/server_*.py 또는 pipelines/api/api_*.py 검색 코드와 .env.server 또는 .env.api를 씁니다. 실험 번호도 .experiment-state/a|b에서 따로 셉니다.
+A는 질문을 서버의 A 임베딩 모델(SERVER_EMBEDDING_MODEL)로 임베딩합니다(API·질문 캐시 없음, 생성 모델은 안 불러옴).
+인덱스도 같은 A 모델로 만든 것이어야 합니다. 리랭커도 A 공용 폴더(SERVER_RERANK_MODEL)의 모델을 씁니다.
 B는 질문 임베딩을 --cache-file에 캐시하고, 캐시에 없는 질문은 --allow-api를 붙여야 API로 받습니다.
 eval_v4의 답 없는 문항(answerable=false)은 검색 지표에서 빼고, 설정마다 빈 결과로 돌아온 수만 따로 봅니다.
 
@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from team_eval_yjk import file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
 
@@ -113,7 +113,7 @@ def cached_cross_encoder(retrieval, path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--scenario", choices=["A", "B"], default="A", help="A면 a_*.py·.env.a, B면 b_*.py·.env.b")
+    parser.add_argument("--scenario", choices=["A", "B"], default="A", help="A면 pipelines/server/server_*.py·.env.server, B면 pipelines/api/api_*.py·.env.api")
     parser.add_argument("--eval-file", type=Path, required=True)
     parser.add_argument("--index-dir", type=Path, required=True)
     parser.add_argument("--settings", nargs="+", choices=list(SETTINGS), default=list(SETTINGS))
@@ -130,8 +130,8 @@ def main():
     parser.add_argument("--results-dir", type=Path)
     parser.add_argument("--reports-dir", type=Path)
     args = parser.parse_args()
-    # 경로를 주지 않으면 시나리오별 폴더(results/a 또는 results/b) 아래에 캐시·결과·보고서를 둡니다.
-    out = ROOT / "results" / args.scenario.lower()
+    # 경로를 주지 않으면 시나리오별 폴더(results/server 또는 results/b) 아래에 캐시·결과·보고서를 둡니다.
+    out = ROOT / "results" / ("server" if args.scenario == "A" else "api")
     args.cache_file = args.cache_file or out / "cache/query_embeddings.json"
     args.ce_cache_file = args.ce_cache_file or out / "cache/cross_encoder_scores.json"
     args.rewrite_cache = args.rewrite_cache or out / "cache/query_rewrites.json"
@@ -141,17 +141,17 @@ def main():
     from dotenv import load_dotenv
     scenario_a = args.scenario == "A"
     if scenario_a:
-        from a_embedding import embed_texts, load_index
-        from a_experiment_ids import next_experiment_id, owner_initials
-        import a_query_rewrite as query_rewrite
-        import a_retrieval as retrieval
+        from pipelines.server.server_embedding import embed_texts, load_index
+        from tracking.tracking_ids import next_experiment_id, owner_initials
+        import retrieval.retrieval_query_rewrite as query_rewrite
+        import pipelines.server.server_retrieval as retrieval
     else:
-        from b_embedding import embed_texts, load_index
-        from b_experiment_ids import next_experiment_id, owner_initials
-        import b_query_rewrite as query_rewrite
-        import b_retrieval as retrieval
+        from pipelines.api.api_embedding import embed_texts, load_index
+        from tracking.tracking_ids import next_experiment_id, owner_initials
+        import retrieval.retrieval_query_rewrite as query_rewrite
+        import pipelines.api.api_retrieval as retrieval
 
-    env_file = ROOT / f".env.{args.scenario.lower()}"
+    env_file = ROOT / (".env.server" if args.scenario == "A" else ".env.api")
     load_dotenv(env_file, override=False)
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)
@@ -164,9 +164,9 @@ def main():
     model = config["embedding_model"]
     if scenario_a:
         # 질문은 retrieve가 부를 때마다 A 모델로 바로 임베딩하므로 미리 채울 캐시가 없습니다.
-        from a_client import ScenarioAClient
-        from a_run import A_EMBEDDING_MODEL_DIR, A_GENERATION_MODEL_DIR, read_scenario_settings
-        client = ScenarioAClient(read_scenario_settings(env_file), A_GENERATION_MODEL_DIR, A_EMBEDDING_MODEL_DIR,
+        from pipelines.server.server_client import ScenarioAClient
+        from pipelines.server.server_run import SERVER_EMBEDDING_MODEL_DIR, SERVER_GENERATION_MODEL_DIR, read_scenario_settings
+        client = ScenarioAClient(read_scenario_settings(env_file), SERVER_GENERATION_MODEL_DIR, SERVER_EMBEDDING_MODEL_DIR,
                                  need_generation=False)
         client.api_calls, client.save = 0, lambda: None  # 아래 B용 코드(API 호출 수 기록·캐시 저장)를 그대로 쓰기 위한 값
         missing = []
@@ -180,7 +180,7 @@ def main():
         if missing and not args.allow_api:
             parser.error(f"캐시에 없는 질문 {len(missing)}건은 임베딩 API를 호출합니다. 확인 후 --allow-api를 붙이세요.")
     experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")),
-                                       ROOT / ".experiment-state" / args.scenario.lower())
+                                       ROOT / ".experiment-state" / ("server" if args.scenario == "A" else "api"))
     print(f"실험 ID: {experiment_id} / 설정 {len(args.settings)}개 / 질문 {len(cases)}건 / 임베딩할 질문 {len(missing)}건")
     for start in range(0, len(missing), 64):
         embed_texts(missing[start:start + 64], client, model)

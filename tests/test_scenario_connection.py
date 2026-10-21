@@ -9,9 +9,9 @@ import unittest
 from unittest.mock import Mock, patch
 
 import numpy as np
-import a_run as run
-from a_observability import Trace
-from a_client import ScenarioAClient
+import pipelines.server.server_run as run
+from observability.observability_trace import Trace
+from pipelines.server.server_client import ScenarioAClient
 
 
 class ScenarioConnectionTests(unittest.TestCase):
@@ -28,9 +28,9 @@ class ScenarioConnectionTests(unittest.TestCase):
             generation = SimpleNamespace(generate_answer=Mock(side_effect=answer))
             emb_factory = Mock(return_value=embedding)
             gen_factory = Mock(return_value=generation)
-            modules = {'a_local_embedding': SimpleNamespace(load_model=emb_factory),
-                       'a_local_generation': SimpleNamespace(load_model=gen_factory)}
-            settings = {'scenario': 'A', 'A_GENERATION_MODEL': 'gen', 'A_EMBEDDING_MODEL': 'emb'}
+            modules = {'pipelines.server.server_local_embedding': SimpleNamespace(load_model=emb_factory),
+                       'pipelines.server.server_local_generation': SimpleNamespace(load_model=gen_factory)}
+            settings = {'scenario': 'A', 'SERVER_GENERATION_MODEL': 'gen', 'SERVER_EMBEDDING_MODEL': 'emb'}
             args = SimpleNamespace(command='all', scenario_settings=settings, raw_dir=root/'raw',
                 processed_dir=root/'processed', index_dir=root/'index', results_dir=root/'results',
                 reports_dir=root/'reports', limit=1, owner='test', chunk_size=1000,
@@ -43,10 +43,10 @@ class ScenarioConnectionTests(unittest.TestCase):
             with patch.dict(os.environ, {'RETRIEVAL_REWRITE': 'off', 'RETRIEVAL_RERANK': 'none',
                                          'RETRIEVAL_HYBRID': 'false'}, clear=True), \
                     patch.dict('sys.modules', modules), \
-                    patch.object(run, 'A_GENERATION_MODEL_DIR', gen), \
-                    patch.object(run, 'A_EMBEDDING_MODEL_DIR', emb), \
-                    patch('a_run.parse_documents', side_effect=parse), \
-                    patch('a_run.OpenAI') as openai, redirect_stdout(io.StringIO()):
+                    patch.object(run, 'SERVER_GENERATION_MODEL_DIR', gen), \
+                    patch.object(run, 'SERVER_EMBEDDING_MODEL_DIR', emb), \
+                    patch('pipelines.server.server_run.parse_documents', side_effect=parse), \
+                    patch('pipelines.server.server_run.OpenAI') as openai, redirect_stdout(io.StringIO()):
                 run.run_pipeline(args, run.argparse.ArgumentParser(), {}, {'experiment_id':'test-0001'}, Trace({}), 'test')
                 emb_factory.assert_called_once_with(emb/'emb')
                 gen_factory.assert_called_once_with(gen/'gen')
@@ -70,16 +70,16 @@ class ScenarioConnectionTests(unittest.TestCase):
         for explicit in (False, True):
             with self.subTest(explicit=explicit), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                (root/'.env.a').write_text('RFP_SCENARIO=A\nA_GENERATION_MODEL=gen\nA_EMBEDDING_MODEL=emb\n')
-                argv = ['a_run.py', 'build']
+                (root/'.env.server').write_text('RFP_SCENARIO=A\nSERVER_GENERATION_MODEL=gen\nSERVER_EMBEDDING_MODEL=emb\n')
+                argv = ['pipelines/server/server_run.py', 'build']
                 if explicit:
                     argv += ['--index-dir', str(root/'custom'), '--results-dir='+str(root/'output')]
                 with patch.dict(os.environ, {}, clear=True), patch.object(run, 'ROOT', root), \
-                        patch('sys.argv', argv), patch('a_run.owner_initials', return_value='test'), \
-                        patch('a_run.next_experiment_id', return_value='test-0001'), \
-                        patch('a_run.run_pipeline') as pipeline, redirect_stdout(io.StringIO()):
+                        patch('sys.argv', argv), patch('pipelines.server.server_run.owner_initials', return_value='test'), \
+                        patch('pipelines.server.server_run.next_experiment_id', return_value='test-0001'), \
+                        patch('pipelines.server.server_run.run_pipeline') as pipeline, redirect_stdout(io.StringIO()):
                     run.main()
                 args = pipeline.call_args.args[0]
-                self.assertEqual(args.index_dir, root/('custom' if explicit else 'indexes/a'))
-                self.assertEqual(args.results_dir, root/('output' if explicit else 'results/a'))
+                self.assertEqual(args.index_dir, root/('custom' if explicit else 'indexes/server'))
+                self.assertEqual(args.results_dir, root/('output' if explicit else 'results/server'))
                 self.assertEqual(args.scenario_settings['scenario'], 'A')

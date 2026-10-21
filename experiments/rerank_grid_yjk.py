@@ -26,14 +26,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from retrieval_metrics_yjk import score_case  # noqa: E402
 
 MODES = ("lexical", "cross-encoder")
 CANDIDATES = (30, 50, 70, 100)
 TOP_KS = (3, 5, 10)
-SEED_CACHE = ROOT / "results/b/cache/query_embeddings.json"
+SEED_CACHE = ROOT / "results/api/cache/query_embeddings.json"
 TABLE_HEADER = ["| 리랭킹 | 후보 수 | top-k | Recall@k | MRR@k | 질문당 평균(ms) | 중앙(ms) | p95(ms) | 전체(ms) |",
                 "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
 
@@ -80,7 +80,7 @@ def load_cases(eval_file):
 
 def prepare(cases, index_dir, cache_file=SEED_CACHE, allow_api=False):
     """인덱스를 읽고 질문 임베딩을 캐시에 채웁니다. 반환: (client, index, chunks, config, 준비 정보)."""
-    from b_embedding import embed_texts, load_index
+    from pipelines.api.api_embedding import embed_texts, load_index
 
     index, chunks, config = load_index(index_dir)
     model = config["embedding_model"]
@@ -104,7 +104,7 @@ def prepare(cases, index_dir, cache_file=SEED_CACHE, allow_api=False):
 
 def warm_up(cases, client, index, chunks, config, modes=MODES):
     """cross-encoder 모델 로드와 GPU 초기화를 측정에서 분리합니다. 반환: 준비 시간(ms)."""
-    from b_retrieval import retrieve
+    from pipelines.api.api_retrieval import retrieve
 
     if "cross-encoder" not in modes:
         return 0.0
@@ -117,7 +117,7 @@ def warm_up(cases, client, index, chunks, config, modes=MODES):
 
 def run_grid(cases, client, index, chunks, config, modes=MODES, candidates_list=CANDIDATES, top_ks=TOP_KS):
     """none(기준) → 리랭킹 × 후보 수 × top-k 순서로 실행하며 표를 한 줄씩 출력합니다."""
-    from b_retrieval import retrieve
+    from pipelines.api.api_retrieval import retrieve
 
     api_calls_before = client.api_calls
     settings = [("none", None, k) for k in top_ks]
@@ -145,7 +145,7 @@ def table_row(row):
 
 
 def save_results(eval_file, index_dir, config, prep, load_ms, summary, records,
-                 results_dir=ROOT / "results/b", reports_dir=ROOT / "results/b/reports"):
+                 results_dir=ROOT / "results/api", reports_dir=ROOT / "results/api/reports"):
     """상세 결과 JSON(Git 제외)과 공유용 요약 Markdown을 저장합니다. 반환: (JSON 경로, 요약 경로, 설정)."""
     eval_file = Path(eval_file)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -170,9 +170,9 @@ def save_results(eval_file, index_dir, config, prep, load_ms, summary, records,
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
-    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/b/parsing-v2-yjk")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
+    parser.add_argument("--index-dir", type=Path, default=ROOT / "indexes/api/parsing-v2-yjk")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/api")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/api/reports")
     parser.add_argument("--cache-file", type=Path, default=SEED_CACHE)
     parser.add_argument("--allow-api", action="store_true", help="캐시에 없는 질문의 임베딩 API 호출을 허용")
     args = parser.parse_args()

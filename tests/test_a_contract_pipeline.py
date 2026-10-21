@@ -6,10 +6,10 @@ import unittest
 
 from retrieval_baseline import setUpModule  # noqa: F401; isolate contract tests from real rerankers
 
-from a_embedding import build_index, chunk_documents, load_index
-from a_evaluation import evaluate
-from a_generation import generate_answer
-from a_retrieval import retrieve
+from pipelines.server.server_embedding import build_index, chunk_documents, load_index
+from evaluation.evaluation_metrics import evaluate
+from pipelines.server.server_generation import generate_answer
+from pipelines.server.server_retrieval import retrieve
 
 
 class FakeClient:

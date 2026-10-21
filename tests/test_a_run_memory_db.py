@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CHECK = "import os; import a_run; print(os.environ.get('PYTORCH_CUDA_ALLOC_CONF'))"
+CHECK = "import os; import pipelines.server.server_run; print(os.environ.get('PYTORCH_CUDA_ALLOC_CONF'))"
 
 
 class GpuMemorySettingTests(unittest.TestCase):

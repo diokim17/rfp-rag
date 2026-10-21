@@ -12,12 +12,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from b_embedding import build_index, load_index
-from b_evaluation import evaluate
-from b_generation import generate_answer
-from b_observability import Trace
-import b_retrieval as retrieval
-from b_retrieval import retrieve
+from pipelines.api.api_embedding import build_index, load_index
+from evaluation.evaluation_metrics import evaluate
+from pipelines.api.api_generation import generate_answer
+from observability.observability_trace import Trace
+import pipelines.api.api_retrieval as retrieval
+from pipelines.api.api_retrieval import retrieve
 from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 from test_observability import FakeLangfuse
 

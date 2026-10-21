@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 import faiss
 
-from a_embedding import embed_texts
-import a_retrieval as retrieval
-from a_retrieval import _residual_question, retrieval_options, retrieve
+from pipelines.server.server_embedding import embed_texts
+import pipelines.server.server_retrieval as retrieval
+from pipelines.server.server_retrieval import _residual_question, retrieval_options, retrieve
 from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 from test_a_contract_retrieval_rerank import FakeClient
 

@@ -2,8 +2,8 @@
 .env
 .env.*
 !.env.example
-!.env.a.example
-!.env.b.example
+!.env.server.example
+!.env.api.example
 
 # Markdown은 README와 아래의 공유용 보고서만 허용
 *.[mM][dD]
@@ -42,7 +42,16 @@ rag-b/
 
 !/legacy/README.md
 
-.venv-b/
+.venv-api/
 
-/models/
-.venv-a/
+/models/*
+!/models/generate/
+/models/generate/*
+!/models/generate/.gitkeep
+!/models/embedding/
+/models/embedding/*
+!/models/embedding/.gitkeep
+!/models/rerank/
+/models/rerank/*
+!/models/rerank/.gitkeep
+.venv-server/

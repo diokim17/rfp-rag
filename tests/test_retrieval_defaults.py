@@ -9,10 +9,10 @@ import unittest
 import warnings
 from unittest.mock import patch
 
-from b_embedding import build_index, load_index
-import a_retrieval
-import b_retrieval as retrieval
-from b_retrieval import retrieval_options, retrieve
+from pipelines.api.api_embedding import build_index, load_index
+from pipelines.server import server_retrieval
+import pipelines.api.api_retrieval as retrieval
+from pipelines.api.api_retrieval import retrieval_options, retrieve
 from test_retrieval_rerank import FakeClient, document
 
 QUESTION = "학사정보시스템 고도화 사업의 요구사항"
@@ -100,15 +100,15 @@ class DefaultRetrievalTests(unittest.TestCase):
     def test_scenario_a_min_score_uses_a_default_and_settable(self):
         """A는 A 임베딩으로 잰 0.53이 기본이고, 환경 변수·인자로 바꾸거나 끌 수 있습니다."""
         with patch.dict(os.environ, {"RETRIEVAL_RERANK": "lexical"}, clear=True):
-            self.assertEqual(a_retrieval.retrieval_options()["min_score"], 0.53)
-            self.assertEqual(a_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5), [])
-            self.assertEqual(a_retrieval.retrieval_options(min_score=0.3)["min_score"], 0.3)
+            self.assertEqual(server_retrieval.retrieval_options()["min_score"], 0.53)
+            self.assertEqual(server_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5), [])
+            self.assertEqual(server_retrieval.retrieval_options(min_score=0.3)["min_score"], 0.3)
             with patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "off"}):
-                hits = a_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5)
+                hits = server_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5)
                 self.assertEqual(len(hits), 4)
             with patch.dict(os.environ, {"RETRIEVAL_MIN_SCORE": "0.5"}):
-                self.assertEqual(a_retrieval.retrieval_options()["min_score"], 0.5)
-                self.assertEqual(a_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5), [])
+                self.assertEqual(server_retrieval.retrieval_options()["min_score"], 0.5)
+                self.assertEqual(server_retrieval.retrieve("점심 메뉴 추천해줘", self.client, self.index, self.chunks, self.config, 5), [])
 
     def test_missing_packages_fall_back_to_lexical_with_warning(self):
         with patch.object(retrieval, "_cross_encoder_available", return_value=False), \

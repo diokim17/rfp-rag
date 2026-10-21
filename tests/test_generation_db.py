@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from b_embedding import build_index, load_index
-from b_generation import generate_answer
-from b_retrieval import retrieve
+from pipelines.api.api_embedding import build_index, load_index
+from pipelines.api.api_generation import generate_answer
+from pipelines.api.api_retrieval import retrieve
 
 QUESTION = "학사정보시스템 고도화 사업의 요구사항"
 

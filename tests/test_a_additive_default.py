@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import a_embedding as emb
-import b_embedding
-from a_generation import generate_answer
-from a_retrieval import retrieve
+import pipelines.server.server_embedding as emb
+from pipelines.api import api_embedding
+from pipelines.server.server_generation import generate_answer
+from pipelines.server.server_retrieval import retrieve
 from test_a_overview_chunking import document
 from test_a_chunking_experiment import client
 
@@ -111,4 +111,4 @@ class AdditiveDefaultTests(unittest.TestCase):
                 self.assertEqual([s['citation'] for s in answer['sources']], list(range(1,len(hits)+1)))
 
     def test_b_default_stays_structured(self):
-        self.assertEqual(b_embedding._chunking_strategy(), 'structured')
+        self.assertEqual(api_embedding._chunking_strategy(), 'structured')

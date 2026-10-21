@@ -14,10 +14,10 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from dotenv import load_dotenv
 import numpy as np
-import a_embedding as embedding
-import a_retrieval as retrieval
-from a_client import ScenarioAClient
-from a_evaluation import _answer_chunk_hit
+import pipelines.server.server_embedding as embedding
+import pipelines.server.server_retrieval as retrieval
+from pipelines.server.server_client import ScenarioAClient
+from evaluation.evaluation_metrics import _answer_chunk_hit
 from experiments import a_chunking_chy as base
 from experiments.a_evidence_pipeline_chy import OPTIONS, read_source, capture_stages, diagnose, rerank_token_counts
 
@@ -52,11 +52,11 @@ def main():
     parser.add_argument('--repeat',type=int,default=3)
     args=parser.parse_args()
     if args.repeat<1:parser.error('repeat must be positive')
-    load_dotenv(ROOT/'.env',override=False);load_dotenv(ROOT/'.env.a',override=False)
+    load_dotenv(ROOT/'.env',override=False);load_dotenv(ROOT/'.env.server',override=False)
     os.environ.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',HF_HUB_DISABLE_PROGRESS_BARS='1',
                       RFP_EMBEDDING_CONTEXT='none',RFP_CHUNKING_STRATEGY='overview')
     owner=base.owner_initials(os.getenv('EXPERIMENT_OWNER',''))
-    if os.getenv('A_RERANK_MODEL')!='bge-reranker-v2-m3':raise ValueError('Pinned local reranker required')
+    if os.getenv('SERVER_RERANK_MODEL')!='bge-reranker-v2-m3':raise ValueError('Pinned local reranker required')
     sources=[read_source('fixed-none','chy-0011'),read_source('structured-v3-none','chy-0005')]
     for key in ('documents_sha256','evaluation_sha256','model_manifest_sha256'):
         if len({s['result']['experiment'][key] for s in sources})!=1:raise ValueError('Provenance differs')
@@ -80,7 +80,7 @@ def main():
         if _answer_chunk_hit(c,[by_doc[d] for d in c['expected_doc_ids']])!=1:raise ValueError('New case label not found')
     import torch
     torch.set_num_threads(4);base.wait_for_gpu(torch,'a-default',0)
-    eid=base.next_experiment_id(owner,ROOT/'.experiment-state/a')
+    eid=base.next_experiment_id(owner,ROOT/'.experiment-state/server')
     paths={k:ROOT/p/'a-overview'/eid for k,p in [('processed','data/processed'),('index','indexes'),('results','results')]}
     for p in paths.values():p.mkdir(parents=True,exist_ok=False)
     for name in ('documents.json','eval.json'):
@@ -102,7 +102,7 @@ def main():
     print(f'{eid}: frozen rules; {len(docs)} documents; {len(cases)} existing + {len(new_cases)} targeted new cases',flush=True)
     results=[]
     with trace.run('a-overview-chunking'):
-        client=ScenarioAClient({'A_EMBEDDING_MODEL':base.MODEL_NAME,'A_GENERATION_MODEL':'unused'},base.MODEL_ROOT,base.MODEL_ROOT,need_generation=False)
+        client=ScenarioAClient({'SERVER_EMBEDDING_MODEL':base.MODEL_NAME,'SERVER_GENERATION_MODEL':'unused'},base.MODEL_ROOT,base.MODEL_ROOT,need_generation=False)
         before=dict(client.embedding.stats);start=time.perf_counter()
         cfg=embedding.build_index(docs,client,paths['index'],base.MODEL_NAME,1000,150,documents_sha256=experiment['documents_sha256'])
         build_seconds=time.perf_counter()-start;build_stats={k:v-before[k] for k,v in client.embedding.stats.items()}
@@ -169,7 +169,7 @@ def main():
       '새 질문은 원문 근거 좌표로 전체 항목이 최종 청크에 포함되는지도 검사. 답변 생성·판정 미실행.',
       '',f'선택 문서 {output["selected_document_count"]}, 구간 {len(selected)}, 후보 청크 {len(chunks)}.',
       f'실제 후보 build {build_seconds:.2f}초, 로컬 임베딩 통계 `{json.dumps(build_stats)}`.',
-      '', '## 재현','', '```bash',f'.venv-a/bin/python experiments/a_overview_chy.py --new-cases {paths["processed"].relative_to(ROOT)}/new_cases.json --repeat 3','```',
+      '', '## 재현','', '```bash',f'.venv-server/bin/python experiments/a_overview_chy.py --new-cases {paths["processed"].relative_to(ROOT)}/new_cases.json --repeat 3','```',
       '', '```json',json.dumps(dict(experiment=experiment,options=output['options'],code_hashes=implementation),indent=2),'```','']
     report=ROOT/'results/reports'/f'a_overview_{eid}.md';report.write_text('\n'.join(rows),encoding='utf-8')
     print(f'REPORT={report}',flush=True)

@@ -1,9 +1,9 @@
 """김연주: rerank_grid_yjk.py 결과 JSON으로 PR 댓글(Markdown)을 자동 생성합니다.
 
-  python experiments/rerank_grid_pr_comment_yjk.py                      # 가장 최근 results/b/rerank_grid_*.json
-  python experiments/rerank_grid_pr_comment_yjk.py --result results/b/rerank_grid_20261006T025155Z.json
+  python experiments/rerank_grid_pr_comment_yjk.py                      # 가장 최근 results/api/rerank_grid_*.json
+  python experiments/rerank_grid_pr_comment_yjk.py --result results/api/rerank_grid_20261006T025155Z.json
 
-출력은 화면과 results/b/pr_comment_rerank_grid_<측정 시각>.md(Git 제외)에 저장합니다.
+출력은 화면과 results/api/pr_comment_rerank_grid_<측정 시각>.md(Git 제외)에 저장합니다.
 수치에서 바로 나오는 사실만 쓰며, 후보 수 권장 같은 판단은 직접 덧붙이세요.
 질문·원문·필터 값은 넣지 않고 질문 ID와 유형만 사용합니다.
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from b_parsing import read_json  # noqa: E402
+from parsing.parsing_documents import read_json  # noqa: E402
 
 BRANCH = "origin/retrieval/max-per-doc"
 
@@ -111,10 +111,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--result", type=Path, help="rerank_grid_*.json (생략: 가장 최근 파일)")
     parser.add_argument("--eval-file", type=Path, help="질문 유형을 읽을 평가 파일 (생략: data/<결과의 eval_file>)")
-    parser.add_argument("--output", type=Path, help="저장할 Markdown 경로 (생략: results/b/pr_comment_rerank_grid_<시각>.md)")
+    parser.add_argument("--output", type=Path, help="저장할 Markdown 경로 (생략: results/api/pr_comment_rerank_grid_<시각>.md)")
     args = parser.parse_args()
 
-    path = args.result or max((ROOT / "results/b").glob("rerank_grid_*.json"), default=None)
+    path = args.result or max((ROOT / "results/api").glob("rerank_grid_*.json"), default=None)
     if path is None or not path.is_file():
         parser.error("결과 파일이 없습니다. 먼저 experiments/rerank_grid_yjk.py를 실행하세요.")
     result = read_json(path)

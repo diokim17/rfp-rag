@@ -1,6 +1,6 @@
 """김연주: 같은 문서 안에서 청크를 다시 고르는 2단계 검색 실험 (eval_v2, 답변 생성 없음).
 
-  python experiments/within_doc_reselect_yjk.py --eval-file data/eval_v2.json --index-dir indexes/b/eval-v2-structured-yjk
+  python experiments/within_doc_reselect_yjk.py --eval-file data/eval_v2.json --index-dir indexes/api/eval-v2-structured-yjk
 
 1단계: retrieve(하이브리드 + BM25 접두, 리랭킹 없음)로 상위 50개를 받습니다.
 2단계: 순위에서 문서가 차지한 자리는 그대로 두고, 그 자리에 들어갈 청크만 그 문서의 전체 청크에서 다시 고릅니다.
@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from b_parsing import read_json, write_json  # noqa: E402
+from parsing.parsing_documents import read_json, write_json  # noqa: E402
 from retrieval_eval_yjk import CachedEmbeddingClient  # noqa: E402
 from team_eval_yjk import TOP_K, file_hash, relative, report_lines, score_case, summarize_groups  # noqa: E402
 
@@ -63,22 +63,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--eval-file", type=Path, required=True)
     parser.add_argument("--index-dir", type=Path, required=True)
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/b")
-    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/b/reports")
+    parser.add_argument("--results-dir", type=Path, default=ROOT / "results/api")
+    parser.add_argument("--reports-dir", type=Path, default=ROOT / "results/api/reports")
     args = parser.parse_args()
 
     from dotenv import load_dotenv
-    from b_embedding import embed_texts, load_index
-    from b_experiment_ids import next_experiment_id, owner_initials
-    import b_retrieval as retrieval
+    from pipelines.api.api_embedding import embed_texts, load_index
+    from tracking.tracking_ids import next_experiment_id, owner_initials
+    import pipelines.api.api_retrieval as retrieval
 
-    load_dotenv(ROOT / ".env.b", override=False)
+    load_dotenv(ROOT / ".env.api", override=False)
     cases = read_json(args.eval_file)
     index, chunks, config = load_index(args.index_dir)
     model = config["embedding_model"]
-    client = CachedEmbeddingClient(ROOT / "results/b/cache/unused.json")
+    client = CachedEmbeddingClient(ROOT / "results/api/cache/unused.json")
     client.cache, client.save = {}, lambda: None  # 캐시 없이 이번 실행 안에서만 재사용
-    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/b")
+    experiment_id = next_experiment_id(owner_initials(os.getenv("EXPERIMENT_OWNER", "")), ROOT / ".experiment-state/api")
 
     vectors = index.reconstruct_n(0, index.ntotal)
     by_doc = defaultdict(list)

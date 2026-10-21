@@ -1,9 +1,9 @@
 """evaluate 결과 JSON에서 검색 신호(문서 수·점수)와 답변 정답 여부의 관계를 봅니다 (조건 기반 라우팅 설계용).
 
-신호는 a_retrieval.retrieval_signals로 sources에서 다시 계산하므로 signals가 없는 예전 결과에도 쓸 수 있습니다.
+신호는 pipelines.server.server_retrieval.retrieval_signals로 sources에서 다시 계산하므로 signals가 없는 예전 결과에도 쓸 수 있습니다.
 API·모델 호출 없음. 본문·질문은 출력하지 않고 문항 ID와 숫자만 출력합니다.
 
-    python experiments/answer_signals_yjk.py results/a/evaluate_yjk-0040_....json
+    python experiments/answer_signals_yjk.py results/server/evaluate_yjk-0040_....json
 """
 
 import argparse
@@ -18,7 +18,7 @@ import unicodedata
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from a_retrieval import retrieval_signals
+from pipelines.server.server_retrieval import retrieval_signals
 
 SIGNALS = ("docs", "top_doc_share", "best_score", "rerank_gap")
 # 구간 경계. 재정렬 점수 범위는 실제 결과를 보고 다시 맞춥니다.

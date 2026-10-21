@@ -13,13 +13,13 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
-from a_experiment_ids import next_experiment_id, owner_initials
-from a_experiment_reports import text_file_hash
-from a_observability import Trace, code_version
-from a_run import read_scenario_settings
-from a_client import ScenarioAClient
-import a_embedding as emb
-import a_retrieval as retrieval
+from tracking.tracking_ids import next_experiment_id, owner_initials
+from tracking.tracking_reports import text_file_hash
+from observability.observability_trace import Trace, code_version
+from pipelines.server.server_run import read_scenario_settings
+from pipelines.server.server_client import ScenarioAClient
+import pipelines.server.server_embedding as emb
+import pipelines.server.server_retrieval as retrieval
 from experiments import a_chunking_chy as base
 from experiments.a_evidence_pipeline_chy import OPTIONS
 
@@ -33,14 +33,14 @@ def save(path, value):
 
 
 def main():
-    for path in (ROOT/'indexes/a', ROOT/'data/processed/a'):
+    for path in (ROOT/'indexes/server', ROOT/'data/processed/server'):
         if path.exists() or path.is_symlink():
             raise ValueError(f'Default path already exists; refusing to overwrite: {path}')
     load_dotenv(ROOT/'.env', override=False)
-    settings = read_scenario_settings(ROOT/'.env.a')
+    settings = read_scenario_settings(ROOT/'.env.server')
     if emb._chunking_strategy() != 'overview_additive' or emb._embedding_context() != 'none':
         raise ValueError('Personal environment overrides the verified default strategy/context')
-    if settings['A_EMBEDDING_MODEL'] != 'default_model':
+    if settings['SERVER_EMBEDDING_MODEL'] != 'default_model':
         raise ValueError('Personal embedding model differs from verified model')
     if retrieval.retrieval_options() != retrieval.retrieval_options(**OPTIONS):
         raise ValueError('Personal default retrieval options differ from verified settings')
@@ -67,7 +67,7 @@ def main():
         if text_file_hash(prep/'inputs'/name) != baseline['experiment'][key]:
             raise ValueError('Input snapshot changed')
     owner = owner_initials(os.getenv('EXPERIMENT_OWNER',''))
-    eid = next_experiment_id(owner, ROOT/'.experiment-state/a')
+    eid = next_experiment_id(owner, ROOT/'.experiment-state/server')
     result_dir = ROOT/'results/a-additive-activation'/eid
     processed = ROOT/'data/processed/a-additive-deploy'/eid
     index_dir = ROOT/'indexes/a-additive-deploy'/eid
@@ -132,14 +132,14 @@ def main():
     output['usage']=trace.usage
     output['trace_id']=trace.trace_id
     # Both destinations are absent, so no active readers can observe a mixed old/new pair.
-    for target,link in ((processed,ROOT/'data/processed/a'),(index_dir,ROOT/'indexes/a')):
+    for target,link in ((processed,ROOT/'data/processed/server'),(index_dir,ROOT/'indexes/server')):
         link.symlink_to(os.path.relpath(target,link.parent),target_is_directory=True)
     output['activated']=True
     save(result_dir/'evaluation.json',output)
     print('Default A paths activated; starting two local generation smoke cases',flush=True)
     for case in [c for c in cases if c['id'] in ('yB058','h10')]:
         with (result_dir/(case['id']+'-ask.log')).open('w') as log:
-            subprocess.run([sys.executable,str(ROOT/'a_run.py'),'ask','--question',case['question'],
+            subprocess.run([sys.executable,'-m','pipelines.server.server_run','ask','--question',case['question'],
                             '--results-dir',str(result_dir/'smoke'), '--reports-dir',str(result_dir/'reports')],
                            cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,check=True)
         print(case['id']+': default-path ask completed',flush=True)

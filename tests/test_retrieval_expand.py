@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 import faiss
 
-from b_embedding import embed_texts
-import b_retrieval as retrieval
-from b_retrieval import retrieval_options, retrieve
+from pipelines.api.api_embedding import embed_texts
+import pipelines.api.api_retrieval as retrieval
+from pipelines.api.api_retrieval import retrieval_options, retrieve
 from retrieval_baseline import setUpModule  # noqa: F401  검색 기본값을 baseline으로 고정
 from test_retrieval_rerank import FakeClient
 
