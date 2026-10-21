@@ -1,13 +1,55 @@
 # Local environment variables and secrets
 .env
 .env.*
-!.env.example
+!.env.server.example
+!.env.api.example
+
+# Markdown은 README와 아래의 공유용 보고서만 허용
+*.[mM][dD]
+![rR][eE][aA][dD][mM][eE].[mM][dD]
 
 # Project data (keep only directory placeholders)
 /data/*
 !/data/raw/
 /data/raw/*
 !/data/raw/.gitkeep
+!/data/raw/files/
+/data/raw/files/*
+!/data/raw/files/.gitkeep
 !/data/processed/
 /data/processed/*
 !/data/processed/.gitkeep
+!/data/processed/common/
+/data/processed/common/*
+!/data/processed/common/.gitkeep
+
+# Generated artifacts and local Python environment
+/indexes/*
+!/indexes/.gitkeep
+
+# 실행 결과 JSON 및 원문이 포함된 산출물은 제외
+/results/*
+!/results/.gitkeep
+# Local Python environment
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+.experiment-state/
+
+rag-b/
+
+
+.venv-api/
+
+/models/*
+!/models/generate/
+/models/generate/*
+!/models/generate/.gitkeep
+!/models/embedding/
+/models/embedding/*
+!/models/embedding/.gitkeep
+!/models/rerank/
+/models/rerank/*
+!/models/rerank/.gitkeep
+.venv-server/
