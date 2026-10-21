@@ -169,7 +169,7 @@ nvidia-smi
 **서버 모델 직접 실행**
 
 ```bash
-python3.12 -m venv .venv-a
+python3.12 -m venv .venv-server
 .venv-a/bin/python -m pip install -r requirements-a.txt
 .venv-a/bin/python -m pip check
 ```
@@ -177,7 +177,7 @@ python3.12 -m venv .venv-a
 **OpenAI API 사용**
 
 ```bash
-python3.12 -m venv .venv-b
+python3.12 -m venv .venv-api
 .venv-b/bin/python -m pip install -r requirements-b.txt
 .venv-b/bin/python -m pip check
 ```
@@ -259,20 +259,20 @@ CSV에는 `파일명` 열이 필요하며 `files/` 안의 실제 파일명과 �
 사용할 방식의 예시 파일을 복사합니다. 아래 명령은 기존 설정 파일을 덮어쓰지 않습니다.
 
 ```bash
-test -f .env.a || cp .env.a.example .env.a
-test -f .env.b || cp .env.b.example .env.b
+test -f .env.server || cp .env.server.example .env.server
+test -f .env.api || cp .env.api.example .env.api
 ```
 
 | 실행 방식 | 설정 파일 | 입력할 내용 |
 | --- | --- | --- |
-| 서버 모델 | `.env.a` | 위 다운로드 경로를 사용하면 추가 입력 없음 |
-| OpenAI API | `.env.b` | 본인의 `OPENAI_API_KEY` |
+| 서버 모델 | `.env.server` | 위 다운로드 경로를 사용하면 추가 입력 없음 |
+| OpenAI API | `.env.api` | 본인의 `OPENAI_API_KEY` |
 
-모델 설정은 예시 파일의 기본값을 사용합니다. 서버 모델에서 OpenAI 평가 판정기를 사용할 때는 `.env.a`에도 `OPENAI_API_KEY`를 입력하세요.
+모델 설정은 예시 파일의 기본값을 사용합니다. 서버 모델에서 OpenAI 평가 판정기를 사용할 때는 `.env.server`에도 `OPENAI_API_KEY`를 입력하세요.
 
 **선택 설정**
 
-- 모델 위치 변경: `.env.a`의 `A_MODELS_DIR`에 `../shared-models` 같은 프로젝트 기준 상대 경로를 지정합니다. 해당 폴더에 `generate/`, `embedding/`, `rerank/` 구조와 접근 권한이 필요합니다.
+- 모델 위치 변경: `.env.server`의 `A_MODELS_DIR`에 `../shared-models` 같은 프로젝트 기준 상대 경로를 지정합니다. 해당 폴더에 `generate/`, `embedding/`, `rerank/` 구조와 접근 권한이 필요합니다.
 - 실행 기록 구분: `EXPERIMENT_OWNER` 또는 `--owner`에 영문 이름(2~16자)을 지정합니다. 비우면 `user-0001` 형식으로 실행 번호를 생성합니다.
 - 외부 추적: Langfuse 키를 비우면 로컬 결과만 저장합니다. 필요한 경우 [Langfuse 가이드](docs/LANGFUSE_GUIDE.md)에 따라 설정하세요.
 
@@ -283,7 +283,7 @@ test -f .env.b || cp .env.b.example .env.b
 .venv-b/bin/python -m pipelines.api.api_run check-config
 ```
 
-프로세스 환경변수는 설정 파일보다 우선합니다. 실행 방식별 설정은 `.env.a`·`.env.b`에서 관리하고, 공통 `.env`에 중복 지정하지 마세요.
+프로세스 환경변수는 설정 파일보다 우선합니다. 실행 방식별 설정은 `.env.server`·`.env.api`에서 관리하고, 공통 `.env`에 중복 지정하지 마세요.
 
 ### 6. 서버 모델 / API 선택 실행
 
@@ -303,8 +303,8 @@ python3.12 run.py check-config
 
 | 선택 | Python 탐색 순서 | 실행 환경 설정 |
 | --- | --- | --- |
-| 서버 모델 | `RFP_PYTHON_A` → `.venv-a` → 현재 Python | `.env.a` |
-| API | `RFP_PYTHON_B` → `.venv-b` | `.env.b` |
+| 서버 모델 | `RFP_PYTHON_A` → `.venv-server` → 현재 Python | `.env.server` |
+| API | `RFP_PYTHON_B` → `.venv-api` | `.env.api` |
 | 함께 실행 | 서버 모델 실행 후 API 실행 | 각 파일을 별도 프로세스에서 읽음 |
 
 현재 코드는 가상환경을 찾지 못하면 현재 Python을 사용하므로 위 경로에 환경을 준비한 뒤 실행하세요. 다른 위치의 환경은 `RFP_PYTHON_A`·`RFP_PYTHON_B`에 프로젝트 기준 Python 실행 파일의 상대 경로를 지정할 수 있습니다.
