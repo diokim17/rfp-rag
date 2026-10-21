@@ -385,7 +385,7 @@ LLM 판정에는 선택한 실행 방식의 설정 파일에 `OPENAI_API_KEY`가
 | GitHub Repository | [rfp-rag](https://github.com/diokim17/rfp-rag) |
 | 실행별 평가 결과 | 로컬 `results/server/`, `results/api/`에 생성 |
 | 최종 보고서 PDF | [최종 보고서 v3 보기](docs/reports/AI13기_3팀_중급프로젝트_보고서.pdf) · [PDF 다운로드](https://github.com/diokim17/rfp-rag/raw/refs/heads/main/docs/reports/AI13기_3팀_중급프로젝트_보고서.pdf) |
-| 발표 자료 | [발표 슬라이드](https://docs.google.com/presentation/d/1-LDKJ6hyZBShjKUx_w0M7DLKIGuk9_GNyNIxGD8ZWxA/edit) |
+| 발표 자료 PDF | [발표 자료 보기](docs/reports/AI13기_3팀_중급프로젝트_발표자료.pdf) · [PDF 다운로드](https://github.com/diokim17/rfp-rag/raw/refs/heads/main/docs/reports/AI13기_3팀_중급프로젝트_발표자료.pdf) |
 | 개인별 협업일지 | [팀원 및 역할](#팀원-및-역할) |
 
 ## 데이터 및 보안
