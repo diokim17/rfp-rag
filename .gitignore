@@ -1,7 +1,6 @@
 # Local environment variables and secrets
 .env
 .env.*
-!.env.example
 !.env.server.example
 !.env.api.example
 
@@ -14,9 +13,15 @@
 !/data/raw/
 /data/raw/*
 !/data/raw/.gitkeep
+!/data/raw/files/
+/data/raw/files/*
+!/data/raw/files/.gitkeep
 !/data/processed/
 /data/processed/*
 !/data/processed/.gitkeep
+!/data/processed/common/
+/data/processed/common/*
+!/data/processed/common/.gitkeep
 
 # Generated artifacts and local Python environment
 /indexes/*
@@ -25,12 +30,6 @@
 # 실행 결과 JSON 및 원문이 포함된 산출물은 제외
 /results/*
 !/results/.gitkeep
-# 원문·민감정보를 제거한 평가 요약만 reports/에 선별하여 공유
-!/results/reports/
-/results/reports/*
-!/results/reports/*.[mM][dD]
-!/results/reports/*.csv
-
 # Local Python environment
 .venv/
 __pycache__/
@@ -40,7 +39,6 @@ __pycache__/
 
 rag-b/
 
-!/legacy/README.md
 
 .venv-api/
 

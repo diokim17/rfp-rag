@@ -4,15 +4,33 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import numpy as np
+
 import pipelines.server.server_embedding as emb
+from pipelines.server.server_client import ScenarioAClient
 from pipelines.api import api_embedding
+from parsing.parsing_documents import _sections
 from pipelines.server.server_generation import generate_answer
 from pipelines.server.server_retrieval import retrieve
-from test_a_overview_chunking import document
-from test_a_chunking_experiment import client
+
+
+def document(text, sections=None):
+    return {'doc_id': 'd', 'text': text, 'metadata': {'filename': 'test', '사업명': '테스트'},
+            'sections': _sections(text) if sections is None else sections}
+
+
+def client():
+    local = ScenarioAClient.__new__(ScenarioAClient)
+    local.embedding_model = 'emb'
+    local.embedding = SimpleNamespace(embed_texts=lambda texts: np.array([[len(text) + 1, 1] for text in texts]))
+    local.generation = SimpleNamespace(generate_answer=lambda question, hits, model: {
+        'question': question, 'answer': 'answer [1]', 'model': model, 'status': 'ok',
+        'sources': [{'citation': index, **hit} for index, hit in enumerate(hits, 1)]})
+    return local
 
 
 class AdditiveDefaultTests(unittest.TestCase):

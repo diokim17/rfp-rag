@@ -1,6 +1,6 @@
 """
 기본값은 eval_team_v1(yjk-0017)·eval_v2(yjk-0021, yjk-0025)·새 질문 19개(yjk-0024) 측정에서 가장 좋았던 조합이며,
-인자나 환경 변수로 끌 수 있습니다. 설정 근거는 results/reports/b_retrieval_settings_yjk.md.
+인자나 환경 변수로 끌 수 있습니다. 검색 설정은 인자와 환경 변수로 조정합니다.
 """
 
 from collections import Counter
@@ -37,7 +37,7 @@ DEFAULT_UNCAP_NAMED = True
 DEFAULT_EXPAND, EXPAND_DOCS = 5, 2
 # 범위 밖 질문 차단: 질문과 가장 가까운 청크의 코사인이 이 값보다 낮으면 빈 결과를 돌려줘 생성 API를 부르지 않습니다.
 # 기본 0.40(eval_v2 정상 질문 최소 0.423, 범위 밖 질문 24개 중 17개 차단). 나머지는 생성 프롬프트의 거절 규칙이 처리합니다.
-# 점수는 인덱스(청킹)·임베딩 모델마다 달라지므로 바꾸면 experiments/offtopic_threshold_yjk.py로 다시 잽니다. none·off로 끔.
+# 점수는 인덱스(청킹)·임베딩 모델마다 달라지므로 바꾸면 사용할 문서와 질문으로 다시 검증합니다. none·off로 끔.
 # 이 값은 B 임베딩(text-embedding-3-small)으로 잰 것이라, 시나리오 A는 A 모델로 검증하기 전까지 기본으로 끕니다
 # (A에서도 RETRIEVAL_MIN_SCORE나 min_score 인자로 기준값을 주면 차단합니다).
 DEFAULT_MIN_SCORE = 0.40
@@ -101,7 +101,7 @@ def _cross_encoder_scores(question, passages, model_name):
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
     except ImportError as exc:
         raise RuntimeError("cross-encoder 리랭킹에는 개인 가상환경에 torch, transformers 설치가 필요합니다 "
-                           "(pip install -r experiments/requirements-rerank.txt).") from exc
+                           "(pip install -r requirements-api.txt).") from exc
     if model_name not in _cross_encoders:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = AutoModelForSequenceClassification.from_pretrained(

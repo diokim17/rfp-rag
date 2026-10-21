@@ -90,17 +90,14 @@ rfp-rag/
 ├── models/                        # 생성·임베딩·리랭커 모델
 ├── indexes/server/ , indexes/api/        # 실행 방식별 인덱스
 ├── results/server/ , results/api/        # 실행 결과·reports/
-├── results/reports/               # 팀 실험·검증 보고서
-├── experiments/                   # 실험 실행기·의존성
 ├── tests/                         # 서버·API·공통 기능 테스트
-├── docs/                          # 개발·추적 가이드, 과거 환경 파일
-├── legacy/                        # 분리 전 코드·이전 테스트
+├── docs/LANGFUSE_GUIDE.md         # 선택적 추적 설정 안내
 ├── requirements-server.txt             # 서버 모델 환경 고정 버전
 ├── requirements-api.txt             # API 환경 고정 버전
 └── .env.server.example / .env.api.example
 ```
 
-서버 모델과 API 코드는 각각 `pipelines/server/`, `pipelines/api/`에서 관리하며 파일에도 `server_`·`api_` 접두사를 사용합니다. 공통 기능은 역할별 패키지에서 함께 사용합니다. 이전 코드는 [legacy 안내](legacy/README.md), 입출력·협업 규칙은 [팀 개발 가이드](docs/TEAM_DEVELOPMENT_GUIDE.md)를 참고하세요.
+서버 모델과 API 코드는 각각 `pipelines/server/`, `pipelines/api/`에서 관리하며 파일에도 `server_`·`api_` 접두사를 사용합니다. 공통 기능은 역할별 패키지에서 함께 사용합니다.
 
 ## 팀원 및 역할
 
@@ -151,10 +148,10 @@ rfp-rag/
 
 ### 1. 저장소 준비
 
-새 환경에서는 최신 `dev`를 받습니다. 아래 명령은 Linux Bash 기준입니다.
+새 환경에서는 아래 미리보기 브랜치를 받습니다. 아직 `main`에는 반영하지 않은 실행용 구성입니다. 아래 명령은 Linux Bash 기준입니다.
 
 ```bash
-git clone --branch dev https://github.com/diokim17/rfp-rag.git
+git clone --branch release/main-preview-dy https://github.com/diokim17/rfp-rag.git
 cd rfp-rag
 python3.12 --version
 nvidia-smi
@@ -330,28 +327,7 @@ python3.12 run.py ask --question "한영대학교 교육환경 구축 사업의 
 
 특정 기관으로 범위를 좁힐 때는 `--filter "발주 기관=기관명"`, 결과 청크 수는 `--top-k 5`를 사용합니다. 메뉴 없는 직접 실행은 `.venv-server/bin/python -m pipelines.server.server_run ...` 또는 `.venv-api/bin/python -m pipelines.api.api_run ...`로 할 수 있습니다.
 
-### 7. 성능 평가와 실행 방식 비교
-
-평가 JSON은 팀 공유 경로에서 받아 준비합니다. 다음 예시는 `data/eval_v4.json`이 있을 때 사용합니다. 두 방식 비교에는 동일한 평가셋을 지정하고 각 인덱스의 문서·모델·청킹 조건을 함께 기록하세요.
-
-```bash
-python3.12 run.py evaluate \
-  --eval-file data/eval_v4.json \
-  --judge-model gpt-5-nano
-```
-
-메뉴에서 `3`을 선택하면 서버 모델과 API를 차례로 실행하고 답변 정확도, 내용 정확도, 거절 정확도, 오거절률, Recall@k, MRR@k, 응답 시간 p50/p95를 터미널의 표 하나로 보여줍니다. 서버 모델 실행이 실패하면 API는 실행하지 않습니다. 결과 JSON과 보고서는 실행 방식별로 저장하며 통합 결과 파일을 추가 생성하지는 않습니다.
-
-두 방식 모두 `--judge-model gpt-5-nano` 또는 `gpt-5-mini`를 지원합니다. 판정기에는 각 실행 방식의 API 키가 필요하고 추가 비용이 발생합니다. 생략하면 `llm` 채점 문항은 미채점됩니다. 반복 평가에는 `--judge-cache`를 지정할 수 있습니다. API 방식의 단독 평가 예:
-
-```bash
-.venv-api/bin/python -m pipelines.api.api_run evaluate \
-  --eval-file data/eval_v4.json \
-  --judge-model gpt-5-nano \
-  --judge-cache results/api/judge-cache.jsonl
-```
-
-### 8. 저장 경로와 재실행
+### 7. 저장 경로와 재실행
 
 | 산출물 | 경로 |
 | --- | --- |
@@ -361,13 +337,27 @@ python3.12 run.py evaluate \
 | 실행별 요약 보고서 | `results/server/reports/`, `results/api/reports/` |
 | 실험 번호 상태 | `.experiment-state/server/`, `.experiment-state/api/` |
 
-기존 `data/processed/server` 또는 `data/processed/api`를 사용했다면 파싱을 다시 실행하거나 기존 `documents.json`을 `data/processed/common/`으로 복사하세요. 인덱스와 문서 해시가 다르면 질의·평가가 중단되므로 같은 문서로 `build`를 다시 실행합니다. 실행 방식별 실험 번호는 별도 관리되므로 결과에는 실행 방식도 함께 기록합니다.
+파싱한 문서와 인덱스의 해시가 다르면 질의·평가가 중단됩니다. 같은 문서로 `build`를 다시 실행하거나 해당 인덱스와 일치하는 `--processed-dir`를 지정하세요.
 
-임베딩 모델·청킹을 바꾸면 인덱스를 다시 구축합니다. 생성 모델만 바꿀 때는 기존 인덱스를 사용할 수 있습니다. 실험은 `--processed-dir`, `--index-dir`, `--results-dir`, `--reports-dir`로 별도 경로를 지정하고 질의·평가에도 같은 문서와 인덱스 경로를 사용하세요. 두 방식을 함께 실행할 때는 같은 옵션이 양쪽에 전달되므로 `--index-dir`·`--results-dir`를 같은 경로로 강제하지 말고 기본 분리 경로를 사용하세요.
+임베딩 모델·청킹을 바꾸면 인덱스를 다시 구축합니다. 생성 모델만 바꿀 때는 기존 인덱스를 사용할 수 있습니다. 별도 데이터를 사용할 때는 `--processed-dir`, `--index-dir`, `--results-dir`, `--reports-dir`로 별도 경로를 지정하고 질의·평가에도 같은 문서와 인덱스 경로를 사용하세요. 두 방식을 함께 실행할 때는 같은 옵션이 양쪽에 전달되므로 `--index-dir`·`--results-dir`를 같은 경로로 강제하지 말고 기본 분리 경로를 사용하세요.
+
+### 8. 평가 실행 (선택)
+
+질의응답 사용에는 평가셋이 필요하지 않습니다. 팀 내부 평가셋은 제공하지 않습니다. 본인이 평가 JSON을 준비한 경우에만 아래 명령을 실행하세요. `data/my-evaluation.json`은 사용자가 준비할 파일의 예시 경로입니다.
+
+```bash
+python3.12 run.py evaluate \
+  --eval-file data/my-evaluation.json \
+  --judge-model gpt-5-nano
+```
+
+메뉴에서 `server`, `api`, `server+api` 중 하나를 선택합니다. 두 방식을 선택하면 서버 모델 실행이 끝난 뒤 API를 실행하고 터미널에 비교표를 출력합니다. 결과 JSON과 보고서는 각각 `results/server/`, `results/api/`에 저장합니다.
+
+LLM 판정에는 선택한 실행 방식의 설정 파일에 `OPENAI_API_KEY`가 필요하며 추가 비용이 발생합니다. 판정 모델은 `gpt-5-nano` 또는 `gpt-5-mini`를 사용할 수 있습니다. 판정기를 생략하면 LLM 채점 대상 문항은 미채점됩니다. 단일 방식의 반복 평가에는 `--judge-cache`로 판정 캐시 경로를 지정할 수 있습니다.
 
 ## 최종 성능 평가
 
-동일한 전처리 문서 98개와 평가 질문 50개(답변 가능 42개, 답변 불가 8개)를 사용해 각 실행 방식을 3회 평가했습니다. 판정 모델은 GPT-5 nano입니다.
+프로젝트 내부 평가에서 동일한 전처리 문서 98개와 평가 질문 50개(답변 가능 42개, 답변 불가 8개)를 사용해 각 실행 방식을 3회 평가했습니다. 판정 모델은 GPT-5 nano입니다.
 
 | 실행 방식 | 문서 Recall@5 | MRR@5 | 평균 답변 점수 | 평균 내용 점수 | 답변 불가 질문 거절 | 평균 응답 시간 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -376,7 +366,7 @@ python3.12 run.py evaluate \
 
 검색 지표는 답변 가능한 42문항 기준입니다. 답변·내용 점수는 3회 평균으로, 부분 정답을 포함한 자동 채점 점수이며 엄격한 정답률을 뜻하지 않습니다. 응답 시간은 질문 임베딩부터 답변 생성까지이며 평가 판정 시간은 제외합니다.
 
-최종 보고서 초안에 정리된 평가 기록을 기준으로 작성했습니다. API는 `yjk-0004~0006`, 서버 모델은 `shn-0106~0108`의 결과이며, 최신 코드에서 이번 README 작성 중 다시 실행한 수치는 아닙니다. 서버 모델은 동일한 답변에도 자동 판정 점수가 달라질 수 있습니다.
+아래 수치는 내부 평가 기록이며, 실행에 필요한 입력 파일이나 평가셋을 제공하는 것은 아닙니다. 최종 보고서 초안에 정리된 평가 기록을 기준으로 작성했습니다. API는 `yjk-0004~0006`, 서버 모델은 `shn-0106~0108`의 결과이며, 최신 코드에서 이번 README 작성 중 다시 실행한 수치는 아닙니다. 서버 모델은 동일한 답변에도 자동 판정 점수가 달라질 수 있습니다.
 
 ## 결론 및 개선 사항
 
@@ -391,7 +381,6 @@ python3.12 run.py evaluate \
 | 구분 | 링크·상태 |
 | --- | --- |
 | GitHub Repository | [rfp-rag](https://github.com/diokim17/rfp-rag) |
-| 실험·검증 보고서 | [results/reports](results/reports/) |
 | 실행별 평가 결과 | 로컬 `results/server/`, `results/api/`에 생성 |
 | 최종 보고서 PDF | 저장소 내 배포 파일 없음. 확정 후 링크 추가 |
 | 발표 자료 | [발표 슬라이드](https://docs.google.com/presentation/d/1-LDKJ6hyZBShjKUx_w0M7DLKIGuk9_GNyNIxGD8ZWxA/edit) |

@@ -1,5 +1,5 @@
 # 서버 모델 실행 환경: 실제 실행 가상환경의 모든 패키지 버전을 고정했습니다.
-# 하위 의존성까지 포함합니다. 주요 패키지와 버전 선정 이유는 docs/environment_archive/setup_scenario_a.txt를 참고하세요.
+# 하위 의존성까지 포함합니다. 서버 모델 실행에는 이 파일을 사용하세요.
 # (Python 3.12.3 / Linux x86_64 / GCP L4, 2026-10-13)
 #
 #   python3 -m venv .venv-server
